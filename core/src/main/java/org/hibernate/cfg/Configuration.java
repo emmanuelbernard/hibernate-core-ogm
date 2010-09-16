@@ -1810,7 +1810,7 @@ public class Configuration implements Serializable {
 
 		enableLegacyHibernateValidator();
 		enableBeanValidation();
-		enableHibernateSearch();
+		//enableHibernateSearch();
 
 		validate();
 		Environment.verifyProperties( properties );
