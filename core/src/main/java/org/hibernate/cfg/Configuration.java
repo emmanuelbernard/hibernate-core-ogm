@@ -97,7 +97,10 @@ import org.hibernate.engine.ResultSetMappingDefinition;
 import org.hibernate.event.AutoFlushEventListener;
 import org.hibernate.event.DeleteEventListener;
 import org.hibernate.event.DirtyCheckEventListener;
+import org.hibernate.event.EventListenerRegistry;
+import org.hibernate.event.EventListenerRegsitrationException;
 import org.hibernate.event.EventListeners;
+import org.hibernate.event.EventType;
 import org.hibernate.event.EvictEventListener;
 import org.hibernate.event.FlushEntityEventListener;
 import org.hibernate.event.FlushEventListener;
@@ -121,8 +124,10 @@ import org.hibernate.event.PreInsertEventListener;
 import org.hibernate.event.PreLoadEventListener;
 import org.hibernate.event.PreUpdateEventListener;
 import org.hibernate.event.RefreshEventListener;
+import org.hibernate.event.RegisteredEventListeners;
 import org.hibernate.event.ReplicateEventListener;
 import org.hibernate.event.SaveOrUpdateEventListener;
+import org.hibernate.event.spi.EventListenerRegistrationService;
 import org.hibernate.id.IdentifierGenerator;
 import org.hibernate.id.IdentifierGeneratorAggregator;
 import org.hibernate.id.PersistentIdentifierGenerator;
@@ -261,6 +266,7 @@ public class Configuration implements Serializable {
 	private SessionFactoryObserver sessionFactoryObserver;
 
 	private EventListeners eventListeners;
+	private EventListenerRegistry eventListenerRegistry;
 
 	protected final SettingsFactory settingsFactory;
 
@@ -328,7 +334,8 @@ public class Configuration implements Serializable {
 		interceptor = EmptyInterceptor.INSTANCE;
 		properties = Environment.getProperties();
 		entityResolver = XMLHelper.DEFAULT_DTD_RESOLVER;
-		eventListeners = new EventListeners();
+		eventListeners = new EventListeners( new EventListeners.ConfigurationDelegate( this ) );
+		eventListenerRegistry = new EventListenerRegistry();
 
 		sqlFunctions = new HashMap<String, SQLFunction>();
 
@@ -1826,6 +1833,8 @@ public class Configuration implements Serializable {
 			log.warn( "mapping metadata cache was not completely processed" );
 		}
 
+		enableListenerServices();
+
 		enableLegacyHibernateValidator();
 		enableBeanValidation();
 		enableHibernateSearch();
@@ -1837,13 +1846,65 @@ public class Configuration implements Serializable {
 		PropertiesHelper.resolvePlaceHolders( copy );
 		Settings settings = buildSettings( copy );
 
+		EventListeners eventListener = prepareListenersForSessionFactory();
+
 		return new SessionFactoryImpl(
 				this,
 				mapping,
 				settings,
-				getInitializedEventListeners(),
+				eventListener,
 				sessionFactoryObserver
 			);
+	}
+
+	@SuppressWarnings({ "unchecked" })
+	private void enableListenerServices() {
+		// todo : probably need to pass ClassLoader to function properly here which means 2 forms of #buildSessionFactory
+		// 		(thinking JPA PUI cases)
+		Set<String> serviceNames = new HashSet<String>();
+		Set<URL> urls = ConfigHelper.findAsResources( "META-INF/org.hibernate.event.spi.EventListenerRegistrationService" );
+		for ( URL url : urls ) {
+			try {
+				final Properties properties = new Properties();
+				properties.load( url.openStream() );
+				if ( properties.size() != 1 ) {
+					log.warn(
+							"Listener service file contained unexpected number of entries [{}]; 1 expected",
+							properties.size()
+					);
+				}
+				serviceNames.add( (String) properties.keySet().iterator().next() );
+			}
+			catch ( IOException ioe ) {
+				log.error( "Unable to process listener service file [" + url.toExternalForm() + "]; skipping", ioe );
+			}
+		}
+		for ( String implClassName : serviceNames ) {
+			log.trace( "Starting listener service processing [{}]", implClassName );
+			try {
+				final Class implClass = ReflectHelper.classForName( implClassName, getClass() );
+				final EventListenerRegistrationService service = (EventListenerRegistrationService) implClass.newInstance();
+				service.registerEventListeners( this );
+			}
+			catch ( ClassNotFoundException e ) {
+				throw new EventListenerRegsitrationException(
+						"Unable to locate listener service class [" + implClassName + "]",
+						e
+				);
+			}
+			catch ( InstantiationException e ) {
+				throw new EventListenerRegsitrationException(
+						"Unable to instantiate listener service class [" + implClassName + "]",
+						e
+				);
+			}
+			catch ( IllegalAccessException e ) {
+				throw new EventListenerRegsitrationException(
+						"Unable to instantiate listener service class [" + implClassName + "]",
+						e
+				);
+			}
+		}
 	}
 
 	private static final String LEGACY_VALIDATOR_EVENT_LISTENER = "org.hibernate.validator.event.ValidateEventListener";
@@ -1973,11 +2034,57 @@ public class Configuration implements Serializable {
 		}
 	}
 
-	private EventListeners getInitializedEventListeners() {
-		EventListeners result = (EventListeners) eventListeners.shallowCopy();
-		result.initializeListeners( this );
-		return result;
+	private EventListeners prepareListenersForSessionFactory() {
+		final EventListeners.SessionFactoryDelegate delegate = new EventListeners.SessionFactoryDelegate(
+				getListenerArray( EventType.LOAD ),
+				getListenerArray( EventType.SAVE_UPDATE ),
+				getListenerArray( EventType.MERGE ),
+				getListenerArray( EventType.PERSIST ),
+				getListenerArray( EventType.PERSIST_ONFLUSH ),
+				getListenerArray( EventType.REPLICATE ),
+				getListenerArray( EventType.DELETE ),
+				getListenerArray( EventType.AUTO_FLUSH ),
+				getListenerArray( EventType.DIRTY_CHECK ),
+				getListenerArray( EventType.FLUSH ),
+				getListenerArray( EventType.EVICT ),
+				getListenerArray( EventType.LOCK ),
+				getListenerArray( EventType.REFRESH ),
+				getListenerArray( EventType.FLUSH_ENTITY ),
+				getListenerArray( EventType.INIT_COLLECTION ),
+				getListenerArray( EventType.POST_LOAD ),
+				getListenerArray( EventType.PRE_LOAD ),
+				getListenerArray( EventType.PRE_DELETE ),
+				getListenerArray( EventType.PRE_UPDATE ),
+				getListenerArray( EventType.PRE_INSERT ),
+				getListenerArray( EventType.POST_DELETE ),
+				getListenerArray( EventType.POST_UPDATE ),
+				getListenerArray( EventType.POST_INSERT ),
+				getListenerArray( EventType.POST_COMMIT_DELETE ),
+				getListenerArray( EventType.POST_COMMIT_UPDATE ),
+				getListenerArray( EventType.POST_COMMIT_INSERT ),
+				getListenerArray( EventType.PRE_COLLECTION_RECREATE ),
+				getListenerArray( EventType.POST_COLLECTION_RECREATE ),
+				getListenerArray( EventType.PRE_COLLECTION_REMOVE ),
+				getListenerArray( EventType.POST_COLLECTION_REMOVE ),
+				getListenerArray( EventType.PRE_COLLECTION_UPDATE ),
+				getListenerArray( EventType.POST_COLLECTION_UPDATE ),
+				getListenerArray( EventType.SAVE ),
+				getListenerArray( EventType.UPDATE ),
+				getListenerArray( EventType.SAVE_UPDATE_COPY )
+		);
+		delegate.initializeListeners( this );
+		return new EventListeners( delegate );
 	}
+
+	private <T> T[] getListenerArray(EventType<T> eventType) {
+		return eventListenerRegistry.getRegisteredEventListeners( eventType ).getListenerArray();
+	}
+
+//	private EventListeners getInitializedEventListeners() {
+//		EventListeners result = (EventListeners) eventListeners.shallowCopy();
+//		result.initializeListeners( this );
+//		return result;
+//	}
 
 	/**
 	 * Rterieve the configured {@link Interceptor}.
@@ -2386,332 +2493,360 @@ public class Configuration implements Serializable {
 	}
 
 	public void setListener(String type, String listener) {
-		String[] listeners = null;
-		if ( listener != null ) {
-			listeners = (String[]) Array.newInstance( String.class, 1 );
-			listeners[0] = listener;
-		}
-		setListeners( type, listeners );
+		eventListenerRegistry.getRegisteredEventListeners( type ).clear();
+		eventListenerRegistry.appendListener( type, listener );
+//		String[] listeners = null;
+//		if ( listener != null ) {
+//			listeners = (String[]) Array.newInstance( String.class, 1 );
+//			listeners[0] = listener;
+//		}
+//		setListeners( type, listeners );
 	}
 
 	public void setListeners(String type, String[] listenerClasses) {
-		Object[] listeners = null;
+		eventListenerRegistry.getRegisteredEventListeners( type ).clear();
 		if ( listenerClasses != null ) {
-			listeners = (Object[]) Array.newInstance( eventListeners.getListenerClassFor(type), listenerClasses.length );
-			for ( int i = 0; i < listeners.length ; i++ ) {
-				try {
-					listeners[i] = ReflectHelper.classForName( listenerClasses[i] ).newInstance();
-				}
-				catch (Exception e) {
-					throw new MappingException(
-							"Unable to instantiate specified event (" + type + ") listener class: " + listenerClasses[i],
-							e
-						);
-				}
+			for ( String listenerClassName : listenerClasses ) {
+				eventListenerRegistry.appendListener( type, listenerClassName );
 			}
 		}
-		setListeners( type, listeners );
+//		Object[] listeners = null;
+//		if ( listenerClasses != null ) {
+//			listeners = (Object[]) Array.newInstance( eventListeners.getListenerClassFor(type), listenerClasses.length );
+//			for ( int i = 0; i < listeners.length ; i++ ) {
+//				try {
+//					listeners[i] = ReflectHelper.classForName( listenerClasses[i] ).newInstance();
+//				}
+//				catch (Exception e) {
+//					throw new MappingException(
+//							"Unable to instantiate specified event (" + type + ") listener class: " + listenerClasses[i],
+//							e
+//						);
+//				}
+//			}
+//		}
+//		setListeners( type, listeners );
 	}
 
 	public void setListener(String type, Object listener) {
 		Object[] listeners = null;
+		EventType eventType = EventType.resolveEventTypeByName( type );
 		if ( listener != null ) {
-			listeners = (Object[]) Array.newInstance( eventListeners.getListenerClassFor(type), 1 );
+			listeners = (Object[]) Array.newInstance( eventType.baseListenerInterface(), 1 );
 			listeners[0] = listener;
 		}
-		setListeners( type, listeners );
+		eventListenerRegistry.setListeners( eventType, listeners );
+//		Object[] listeners = null;
+//		if ( listener != null ) {
+//			listeners = (Object[]) Array.newInstance( eventListeners.getListenerClassFor(type), 1 );
+//			listeners[0] = listener;
+//		}
+//		setListeners( type, listeners );
 	}
 
 	public void setListeners(String type, Object[] listeners) {
-		if ( "auto-flush".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setAutoFlushEventListeners( new AutoFlushEventListener[]{} );
-			}
-			else {
-				eventListeners.setAutoFlushEventListeners( (AutoFlushEventListener[]) listeners );
-			}
-		}
-		else if ( "merge".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setMergeEventListeners( new MergeEventListener[]{} );
-			}
-			else {
-				eventListeners.setMergeEventListeners( (MergeEventListener[]) listeners );
-			}
-		}
-		else if ( "create".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPersistEventListeners( new PersistEventListener[]{} );
-			}
-			else {
-				eventListeners.setPersistEventListeners( (PersistEventListener[]) listeners );
-			}
-		}
-		else if ( "create-onflush".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPersistOnFlushEventListeners( new PersistEventListener[]{} );
-			}
-			else {
-				eventListeners.setPersistOnFlushEventListeners( (PersistEventListener[]) listeners );
-			}
-		}
-		else if ( "delete".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setDeleteEventListeners( new DeleteEventListener[]{} );
-			}
-			else {
-				eventListeners.setDeleteEventListeners( (DeleteEventListener[]) listeners );
-			}
-		}
-		else if ( "dirty-check".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setDirtyCheckEventListeners( new DirtyCheckEventListener[]{} );
-			}
-			else {
-				eventListeners.setDirtyCheckEventListeners( (DirtyCheckEventListener[]) listeners );
-			}
-		}
-		else if ( "evict".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setEvictEventListeners( new EvictEventListener[]{} );
-			}
-			else {
-				eventListeners.setEvictEventListeners( (EvictEventListener[]) listeners );
-			}
-		}
-		else if ( "flush".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setFlushEventListeners( new FlushEventListener[]{} );
-			}
-			else {
-				eventListeners.setFlushEventListeners( (FlushEventListener[]) listeners );
-			}
-		}
-		else if ( "flush-entity".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setFlushEntityEventListeners( new FlushEntityEventListener[]{} );
-			}
-			else {
-				eventListeners.setFlushEntityEventListeners( (FlushEntityEventListener[]) listeners );
-			}
-		}
-		else if ( "load".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setLoadEventListeners( new LoadEventListener[]{} );
-			}
-			else {
-				eventListeners.setLoadEventListeners( (LoadEventListener[]) listeners );
-			}
-		}
-		else if ( "load-collection".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setInitializeCollectionEventListeners(
-						new InitializeCollectionEventListener[]{}
-					);
-			}
-			else {
-				eventListeners.setInitializeCollectionEventListeners(
-						(InitializeCollectionEventListener[]) listeners
-					);
-			}
-		}
-		else if ( "lock".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setLockEventListeners( new LockEventListener[]{} );
-			}
-			else {
-				eventListeners.setLockEventListeners( (LockEventListener[]) listeners );
-			}
-		}
-		else if ( "refresh".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setRefreshEventListeners( new RefreshEventListener[]{} );
-			}
-			else {
-				eventListeners.setRefreshEventListeners( (RefreshEventListener[]) listeners );
-			}
-		}
-		else if ( "replicate".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setReplicateEventListeners( new ReplicateEventListener[]{} );
-			}
-			else {
-				eventListeners.setReplicateEventListeners( (ReplicateEventListener[]) listeners );
-			}
-		}
-		else if ( "save-update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setSaveOrUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setSaveOrUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "save".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setSaveEventListeners( new SaveOrUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setSaveEventListeners( (SaveOrUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-load".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreLoadEventListeners( new PreLoadEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreLoadEventListeners( (PreLoadEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreUpdateEventListeners( new PreUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreUpdateEventListeners( (PreUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-delete".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreDeleteEventListeners( new PreDeleteEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreDeleteEventListeners( (PreDeleteEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-insert".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreInsertEventListeners( new PreInsertEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreInsertEventListeners( (PreInsertEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-collection-recreate".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreCollectionRecreateEventListeners( new PreCollectionRecreateEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreCollectionRecreateEventListeners( (PreCollectionRecreateEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-collection-remove".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreCollectionRemoveEventListeners( new PreCollectionRemoveEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreCollectionRemoveEventListeners( ( PreCollectionRemoveEventListener[]) listeners );
-			}
-		}
-		else if ( "pre-collection-update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPreCollectionUpdateEventListeners( new PreCollectionUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setPreCollectionUpdateEventListeners( ( PreCollectionUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "post-load".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostLoadEventListeners( new PostLoadEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostLoadEventListeners( (PostLoadEventListener[]) listeners );
-			}
-		}
-		else if ( "post-update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostUpdateEventListeners( new PostUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostUpdateEventListeners( (PostUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "post-delete".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostDeleteEventListeners( new PostDeleteEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostDeleteEventListeners( (PostDeleteEventListener[]) listeners );
-			}
-		}
-		else if ( "post-insert".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostInsertEventListeners( new PostInsertEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostInsertEventListeners( (PostInsertEventListener[]) listeners );
-			}
-		}
-		else if ( "post-commit-update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostCommitUpdateEventListeners(
-						new PostUpdateEventListener[]{}
-					);
-			}
-			else {
-				eventListeners.setPostCommitUpdateEventListeners( (PostUpdateEventListener[]) listeners );
-			}
-		}
-		else if ( "post-commit-delete".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostCommitDeleteEventListeners(
-						new PostDeleteEventListener[]{}
-					);
-			}
-			else {
-				eventListeners.setPostCommitDeleteEventListeners( (PostDeleteEventListener[]) listeners );
-			}
-		}
-		else if ( "post-commit-insert".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostCommitInsertEventListeners(
-						new PostInsertEventListener[]{}
-				);
-			}
-			else {
-				eventListeners.setPostCommitInsertEventListeners( (PostInsertEventListener[]) listeners );
-			}
-		}
-		else if ( "post-collection-recreate".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostCollectionRecreateEventListeners( new PostCollectionRecreateEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostCollectionRecreateEventListeners( (PostCollectionRecreateEventListener[]) listeners );
-			}
-		}
-		else if ( "post-collection-remove".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostCollectionRemoveEventListeners( new PostCollectionRemoveEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostCollectionRemoveEventListeners( ( PostCollectionRemoveEventListener[]) listeners );
-			}
-		}
-		else if ( "post-collection-update".equals( type ) ) {
-			if ( listeners == null ) {
-				eventListeners.setPostCollectionUpdateEventListeners( new PostCollectionUpdateEventListener[]{} );
-			}
-			else {
-				eventListeners.setPostCollectionUpdateEventListeners( ( PostCollectionUpdateEventListener[]) listeners );
-			}
-		}
-		else {
-			throw new MappingException("Unrecognized listener type [" + type + "]");
-		}
+		eventListenerRegistry.setListeners( EventType.resolveEventTypeByName( type ), listeners );
+//		if ( "auto-flush".equals( type ) ) {
+//
+//			if ( listeners == null ) {
+//				eventListeners.setAutoFlushEventListeners( new AutoFlushEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setAutoFlushEventListeners( (AutoFlushEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "merge".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setMergeEventListeners( new MergeEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setMergeEventListeners( (MergeEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "create".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPersistEventListeners( new PersistEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPersistEventListeners( (PersistEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "create-onflush".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPersistOnFlushEventListeners( new PersistEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPersistOnFlushEventListeners( (PersistEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "delete".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setDeleteEventListeners( new DeleteEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setDeleteEventListeners( (DeleteEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "dirty-check".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setDirtyCheckEventListeners( new DirtyCheckEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setDirtyCheckEventListeners( (DirtyCheckEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "evict".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setEvictEventListeners( new EvictEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setEvictEventListeners( (EvictEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "flush".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setFlushEventListeners( new FlushEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setFlushEventListeners( (FlushEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "flush-entity".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setFlushEntityEventListeners( new FlushEntityEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setFlushEntityEventListeners( (FlushEntityEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "load".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setLoadEventListeners( new LoadEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setLoadEventListeners( (LoadEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "load-collection".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setInitializeCollectionEventListeners(
+//						new InitializeCollectionEventListener[]{}
+//					);
+//			}
+//			else {
+//				eventListeners.setInitializeCollectionEventListeners(
+//						(InitializeCollectionEventListener[]) listeners
+//					);
+//			}
+//		}
+//		else if ( "lock".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setLockEventListeners( new LockEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setLockEventListeners( (LockEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "refresh".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setRefreshEventListeners( new RefreshEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setRefreshEventListeners( (RefreshEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "replicate".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setReplicateEventListeners( new ReplicateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setReplicateEventListeners( (ReplicateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "save-update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setSaveOrUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setSaveOrUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "save".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setSaveEventListeners( new SaveOrUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setSaveEventListeners( (SaveOrUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setUpdateEventListeners( new SaveOrUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setUpdateEventListeners( (SaveOrUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-load".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreLoadEventListeners( new PreLoadEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreLoadEventListeners( (PreLoadEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreUpdateEventListeners( new PreUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreUpdateEventListeners( (PreUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-delete".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreDeleteEventListeners( new PreDeleteEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreDeleteEventListeners( (PreDeleteEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-insert".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreInsertEventListeners( new PreInsertEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreInsertEventListeners( (PreInsertEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-collection-recreate".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreCollectionRecreateEventListeners( new PreCollectionRecreateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreCollectionRecreateEventListeners( (PreCollectionRecreateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-collection-remove".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreCollectionRemoveEventListeners( new PreCollectionRemoveEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreCollectionRemoveEventListeners( ( PreCollectionRemoveEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "pre-collection-update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPreCollectionUpdateEventListeners( new PreCollectionUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPreCollectionUpdateEventListeners( ( PreCollectionUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-load".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostLoadEventListeners( new PostLoadEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostLoadEventListeners( (PostLoadEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostUpdateEventListeners( new PostUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostUpdateEventListeners( (PostUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-delete".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostDeleteEventListeners( new PostDeleteEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostDeleteEventListeners( (PostDeleteEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-insert".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostInsertEventListeners( new PostInsertEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostInsertEventListeners( (PostInsertEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-commit-update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostCommitUpdateEventListeners(
+//						new PostUpdateEventListener[]{}
+//					);
+//			}
+//			else {
+//				eventListeners.setPostCommitUpdateEventListeners( (PostUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-commit-delete".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostCommitDeleteEventListeners(
+//						new PostDeleteEventListener[]{}
+//					);
+//			}
+//			else {
+//				eventListeners.setPostCommitDeleteEventListeners( (PostDeleteEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-commit-insert".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostCommitInsertEventListeners(
+//						new PostInsertEventListener[]{}
+//				);
+//			}
+//			else {
+//				eventListeners.setPostCommitInsertEventListeners( (PostInsertEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-collection-recreate".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostCollectionRecreateEventListeners( new PostCollectionRecreateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostCollectionRecreateEventListeners( (PostCollectionRecreateEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-collection-remove".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostCollectionRemoveEventListeners( new PostCollectionRemoveEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostCollectionRemoveEventListeners( ( PostCollectionRemoveEventListener[]) listeners );
+//			}
+//		}
+//		else if ( "post-collection-update".equals( type ) ) {
+//			if ( listeners == null ) {
+//				eventListeners.setPostCollectionUpdateEventListeners( new PostCollectionUpdateEventListener[]{} );
+//			}
+//			else {
+//				eventListeners.setPostCollectionUpdateEventListeners( ( PostCollectionUpdateEventListener[]) listeners );
+//			}
+//		}
+//		else {
+//			throw new MappingException("Unrecognized listener type [" + type + "]");
+//		}
 	}
 
+	/**
+	 * @deprecated Use {@link #getEventListenerRegistry} instead; {@link EventListeners} now simply delegates to
+	 * {@link EventListenerRegistry} while part of the Configuration.
+	 *
+	 * @return The listeners
+	 */
+	@Deprecated
 	public EventListeners getEventListeners() {
 		return eventListeners;
+	}
+
+	public EventListenerRegistry getEventListenerRegistry() {
+		return eventListenerRegistry;
 	}
 
 	RootClass getRootClassMapping(String clazz) throws MappingException {

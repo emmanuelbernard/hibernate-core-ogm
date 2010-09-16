@@ -23,6 +23,7 @@ package org.hibernate.test.event.collection.association;
 
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.hibernate.cfg.Configuration;
 import org.hibernate.test.event.collection.AbstractCollectionEventTest;
 import org.hibernate.test.event.collection.ChildEntity;
 import org.hibernate.test.event.collection.CollectionListeners;
@@ -39,7 +40,7 @@ public abstract class AbstractAssociationCollectionEventTest extends AbstractCol
 	}
 
 	public void testDeleteParentButNotChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
+		CollectionListeners listeners = getListeners();
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		ChildEntity child = ( ChildEntity ) parent.getChildren().iterator().next();
 		listeners.clear();

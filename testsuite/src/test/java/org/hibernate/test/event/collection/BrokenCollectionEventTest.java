@@ -30,6 +30,7 @@ import junit.framework.Test;
 
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.hibernate.cfg.Configuration;
 import org.hibernate.collection.PersistentCollection;
 import org.hibernate.event.AbstractCollectionEvent;
 import org.hibernate.testing.junit.functional.FunctionalTestCase;
@@ -45,7 +46,6 @@ import org.hibernate.test.event.collection.association.unidirectional.ParentWith
  * corresponding method will be moved into AbstractCollectionEventTest.
  */
 public class BrokenCollectionEventTest extends FunctionalTestCase {
-
 	public BrokenCollectionEventTest(String string) {
 		super( string );
 	}
@@ -56,6 +56,14 @@ public class BrokenCollectionEventTest extends FunctionalTestCase {
 
 	public String[] getMappings() {
 		return new String[] { "event/collection/association/unidirectional/onetomany/UnidirectionalOneToManySetMapping.hbm.xml" };
+	}
+
+	private CollectionListeners listeners;
+
+	@Override
+	public void configure(Configuration cfg) {
+		super.configure( cfg );
+		listeners = new CollectionListeners( cfg );
 	}
 
 	public ParentWithCollection createParent(String name) {
@@ -87,7 +95,6 @@ public class BrokenCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateDetachedParentNoChildrenToNullFailureExpected() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNoChildren( "parent" );
 		listeners.clear();
 		assertEquals( 0, parent.getChildren().size() );
@@ -138,7 +145,6 @@ public class BrokenCollectionEventTest extends FunctionalTestCase {
 	*/
 
 	public void testSaveParentNullChildrenFailureExpected() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNullChildren( "parent" );
 		assertNull( parent.getChildren() );
 		int index = 0;
@@ -157,7 +163,6 @@ public class BrokenCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentNoChildrenToNullFailureExpected() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNoChildren( "parent" );
 		listeners.clear();
 		assertEquals( 0, parent.getChildren().size() );

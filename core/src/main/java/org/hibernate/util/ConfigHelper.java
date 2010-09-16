@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2010, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,7 +20,6 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.util;
 
@@ -30,7 +29,10 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
 import java.util.Properties;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +94,53 @@ public final class ConfigHelper {
 
 		// Anywhere else we should look?
 		return url;
+	}
+
+	/**
+	 * Try to locate a local URL representing the incoming path.
+	 * This method <b>only</b> attempts to locate this URL as a
+	 * java system resource.
+	 *
+	 * @param path The path representing the config location.
+	 * @return An appropriate URL or null.
+	 */
+	public static Set<URL> findAsResources(final String path) {
+		LinkedHashSet<URL> urlSet = new LinkedHashSet<URL>();
+
+		ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+		if ( contextClassLoader != null ) {
+			try {
+				Enumeration<URL> locatedUrls = contextClassLoader.getResources( path );
+				while ( locatedUrls.hasMoreElements() ) {
+					urlSet.add( locatedUrls.nextElement() );
+				}
+			}
+			catch ( IOException ignore ) {
+				log.info( "Error locating resources via TCCL [{}]", ignore.toString() );
+			}
+		}
+
+		try {
+			Enumeration<URL> locatedUrls = ConfigHelper.class.getClassLoader().getResources( path );
+			while ( locatedUrls.hasMoreElements() ) {
+				urlSet.add( locatedUrls.nextElement() );
+			}
+		}
+		catch ( IOException ignore ) {
+			log.info( "Error locating resources via Hibernate CL [{}]", ignore.toString() );
+		}
+
+		try {
+			Enumeration<URL> locatedUrls = ClassLoader.getSystemClassLoader().getResources( path );
+			while ( locatedUrls.hasMoreElements() ) {
+				urlSet.add( locatedUrls.nextElement() );
+			}
+		}
+		catch ( IOException ignore ) {
+			log.info( "Error locating resources via system CL [{}]", ignore.toString() );
+		}
+
+		return urlSet;
 	}
 
 	/** Open an InputStream to the URL represented by the incoming path.  First makes a call

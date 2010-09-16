@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2010, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,167 +20,49 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.event;
 
 import java.io.Serializable;
 import java.lang.reflect.Field;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
-import org.hibernate.MappingException;
 import org.hibernate.HibernateException;
 import org.hibernate.cfg.Configuration;
-import org.hibernate.event.def.DefaultAutoFlushEventListener;
-import org.hibernate.event.def.DefaultDeleteEventListener;
-import org.hibernate.event.def.DefaultDirtyCheckEventListener;
-import org.hibernate.event.def.DefaultEvictEventListener;
-import org.hibernate.event.def.DefaultFlushEntityEventListener;
-import org.hibernate.event.def.DefaultFlushEventListener;
-import org.hibernate.event.def.DefaultInitializeCollectionEventListener;
-import org.hibernate.event.def.DefaultLoadEventListener;
-import org.hibernate.event.def.DefaultLockEventListener;
-import org.hibernate.event.def.DefaultMergeEventListener;
-import org.hibernate.event.def.DefaultPersistEventListener;
-import org.hibernate.event.def.DefaultPostLoadEventListener;
-import org.hibernate.event.def.DefaultPreLoadEventListener;
-import org.hibernate.event.def.DefaultRefreshEventListener;
-import org.hibernate.event.def.DefaultReplicateEventListener;
-import org.hibernate.event.def.DefaultSaveEventListener;
-import org.hibernate.event.def.DefaultSaveOrUpdateCopyEventListener;
-import org.hibernate.event.def.DefaultSaveOrUpdateEventListener;
-import org.hibernate.event.def.DefaultUpdateEventListener;
-import org.hibernate.event.def.DefaultPersistOnFlushEventListener;
 import org.hibernate.util.Cloneable;
+
+import static org.hibernate.event.EventType.*;
 
 /**
  * A convience holder for all defined session event listeners.
  *
  * @author Steve Ebersole
+ *
+ * @deprecated Actually it will eventually be retasked for the role it currently plays in the {@link SessionFactory};
+ * within the {@link Configuration} event listener collection will be the role of the
+ * {@link org.hibernate.event.EventListenerRegistry}
  */
+@Deprecated
 public class EventListeners extends Cloneable implements Serializable {
+	// IMPL NOTE : the delegate approach here (as opposed to an interface + impls) is used to avoid
+	// I
+	private final EventListenerDelegate delegate;
 
-	private LoadEventListener[] loadEventListeners = { new DefaultLoadEventListener() };
-	private SaveOrUpdateEventListener[] saveOrUpdateEventListeners = { new DefaultSaveOrUpdateEventListener() };
-	private MergeEventListener[] mergeEventListeners = { new DefaultMergeEventListener() };
-	private PersistEventListener[] persistEventListeners = { new DefaultPersistEventListener() };
-	private PersistEventListener[] persistOnFlushEventListeners = { new DefaultPersistOnFlushEventListener() };
-	private ReplicateEventListener[] replicateEventListeners = { new DefaultReplicateEventListener() };
-	private DeleteEventListener[] deleteEventListeners = { new DefaultDeleteEventListener() };
-	private AutoFlushEventListener[] autoFlushEventListeners = { new DefaultAutoFlushEventListener() };
-	private DirtyCheckEventListener[] dirtyCheckEventListeners = { new DefaultDirtyCheckEventListener() };
-	private FlushEventListener[] flushEventListeners = { new DefaultFlushEventListener() };
-	private EvictEventListener[] evictEventListeners = { new DefaultEvictEventListener() };
-	private LockEventListener[] lockEventListeners = { new DefaultLockEventListener() };
-	private RefreshEventListener[] refreshEventListeners = { new DefaultRefreshEventListener() };
-	private FlushEntityEventListener[] flushEntityEventListeners = { new DefaultFlushEntityEventListener() };
-	private InitializeCollectionEventListener[] initializeCollectionEventListeners = 
-			{ new DefaultInitializeCollectionEventListener() };
-
-	private PostLoadEventListener[] postLoadEventListeners = { new DefaultPostLoadEventListener() };
-	private PreLoadEventListener[] preLoadEventListeners = { new DefaultPreLoadEventListener() };
-	
-	private PreDeleteEventListener[] preDeleteEventListeners = {};
-	private PreUpdateEventListener[] preUpdateEventListeners = {};
-	private PreInsertEventListener[] preInsertEventListeners = {};
-	private PostDeleteEventListener[] postDeleteEventListeners = {};
-	private PostUpdateEventListener[] postUpdateEventListeners = {};
-	private PostInsertEventListener[] postInsertEventListeners = {};
-	private PostDeleteEventListener[] postCommitDeleteEventListeners = {};
-	private PostUpdateEventListener[] postCommitUpdateEventListeners = {};
-	private PostInsertEventListener[] postCommitInsertEventListeners = {};
-
-	private PreCollectionRecreateEventListener[] preCollectionRecreateEventListeners = {};
-	private PostCollectionRecreateEventListener[] postCollectionRecreateEventListeners = {};
-	private PreCollectionRemoveEventListener[] preCollectionRemoveEventListeners = {};
-	private PostCollectionRemoveEventListener[] postCollectionRemoveEventListeners = {};
-	private PreCollectionUpdateEventListener[] preCollectionUpdateEventListeners = {};
-	private PostCollectionUpdateEventListener[] postCollectionUpdateEventListeners = {};	
-
-	private SaveOrUpdateEventListener[] saveEventListeners = { new DefaultSaveEventListener() };
-	private SaveOrUpdateEventListener[] updateEventListeners = { new DefaultUpdateEventListener() };
-	private MergeEventListener[] saveOrUpdateCopyEventListeners = { new DefaultSaveOrUpdateCopyEventListener() };//saveOrUpdateCopy() is deprecated!
-
-	private static Map eventInterfaceFromType;
-
-	static {
-		eventInterfaceFromType = new HashMap();
-
-		eventInterfaceFromType.put("auto-flush", AutoFlushEventListener.class);
-		eventInterfaceFromType.put("merge", MergeEventListener.class);
-		eventInterfaceFromType.put("create", PersistEventListener.class);
-		eventInterfaceFromType.put("create-onflush", PersistEventListener.class);
-		eventInterfaceFromType.put("delete", DeleteEventListener.class);
-		eventInterfaceFromType.put("dirty-check", DirtyCheckEventListener.class);
-		eventInterfaceFromType.put("evict", EvictEventListener.class);
-		eventInterfaceFromType.put("flush", FlushEventListener.class);
-		eventInterfaceFromType.put("flush-entity", FlushEntityEventListener.class);
-		eventInterfaceFromType.put("load", LoadEventListener.class);
-		eventInterfaceFromType.put("load-collection", InitializeCollectionEventListener.class);
-		eventInterfaceFromType.put("lock", LockEventListener.class);
-		eventInterfaceFromType.put("refresh", RefreshEventListener.class);
-		eventInterfaceFromType.put("replicate", ReplicateEventListener.class);
-		eventInterfaceFromType.put("save-update", SaveOrUpdateEventListener.class);
-		eventInterfaceFromType.put("save", SaveOrUpdateEventListener.class);
-		eventInterfaceFromType.put("update", SaveOrUpdateEventListener.class);
-		eventInterfaceFromType.put("pre-load", PreLoadEventListener.class);
-		eventInterfaceFromType.put("pre-update", PreUpdateEventListener.class);
-		eventInterfaceFromType.put("pre-delete", PreDeleteEventListener.class);
-		eventInterfaceFromType.put("pre-insert", PreInsertEventListener.class);
-		eventInterfaceFromType.put("pre-collection-recreate", PreCollectionRecreateEventListener.class);
-		eventInterfaceFromType.put("pre-collection-remove", PreCollectionRemoveEventListener.class);
-		eventInterfaceFromType.put("pre-collection-update", PreCollectionUpdateEventListener.class);
-		eventInterfaceFromType.put("post-load", PostLoadEventListener.class);
-		eventInterfaceFromType.put("post-update", PostUpdateEventListener.class);
-		eventInterfaceFromType.put("post-delete", PostDeleteEventListener.class);
-		eventInterfaceFromType.put("post-insert", PostInsertEventListener.class);
-		eventInterfaceFromType.put("post-commit-update", PostUpdateEventListener.class);
-		eventInterfaceFromType.put("post-commit-delete", PostDeleteEventListener.class);
-		eventInterfaceFromType.put("post-commit-insert", PostInsertEventListener.class);
-		eventInterfaceFromType.put("post-collection-recreate", PostCollectionRecreateEventListener.class);
-		eventInterfaceFromType.put("post-collection-remove", PostCollectionRemoveEventListener.class);
-		eventInterfaceFromType.put("post-collection-update", PostCollectionUpdateEventListener.class);
-		eventInterfaceFromType = Collections.unmodifiableMap( eventInterfaceFromType );
+	public EventListeners(EventListenerDelegate delegate) {
+		this.delegate = delegate;
 	}
 
-	public Class getListenerClassFor(String type) {
-		Class clazz = (Class) eventInterfaceFromType.get(type);
-		
-		if (clazz == null) {
-			throw new MappingException("Unrecognized listener type [" + type + "]");
+	@Override
+	public Object shallowCopy() {
+		if ( delegate instanceof Cloneable ) {
+			return new EventListeners( (EventListenerDelegate) ( (Cloneable) delegate ).shallowCopy() );
 		}
-
-		return clazz;
+		else {
+			return new EventListeners( delegate );
+		}
 	}
 
 	private static interface ListenerProcesser {
 		public void processListener(Object listener);
-	}
-
-	private void processListeners(ListenerProcesser processer) {
-		Field[] fields = getClass().getDeclaredFields();
-		for ( int i = 0; i < fields.length; i++ ) {
-			final Object[] listeners;
-			try {
-				Object fieldValue = fields[i].get(this);
-				if ( fieldValue instanceof Object[] ) {
-					listeners = ( Object[] ) fieldValue;
-				}
-				else {
-					continue;
-				}
-			}
-			catch ( Throwable t ) {
-				throw new HibernateException( "could not init listeners", t );
-			}
-
-			int length = listeners.length;
-			for ( int index = 0 ; index < length ; index++ ) {
-				processer.processListener( listeners[index ] );
-			}
-		}
 	}
 
 	/**
@@ -190,20 +72,7 @@ public class EventListeners extends Cloneable implements Serializable {
 	 * @param cfg The configuration.
 	 */
 	public void initializeListeners(final Configuration cfg) {
-		try {
-			processListeners(
-					new ListenerProcesser() {
-						public void processListener(Object listener) {
-							if ( listener instanceof Initializable ) {
-								( ( Initializable ) listener ).initialize( cfg );
-							}
-						}
-					}
-			);
-		}
-		catch ( Exception e ) {
-			throw new HibernateException("could not init listeners", e);
-		}
+		delegate.initializeListeners( cfg );
 	}
 
 	/**
@@ -211,303 +80,1197 @@ public class EventListeners extends Cloneable implements Serializable {
 	 * {@link Destructible} interface.
 	 */
 	public void destroyListeners() {
-		try {
-			processListeners(
-					new ListenerProcesser() {
-						public void processListener(Object listener) {
-							if ( listener instanceof Destructible ) {
-								( ( Destructible ) listener ).cleanup();
-							}
-						}
-					}
-			);
-		}
-		catch ( Exception e ) {
-			throw new HibernateException("could not destruct listeners", e);
-		}
+		delegate.destroyListeners();
 	}
 
 	public LoadEventListener[] getLoadEventListeners() {
-        return loadEventListeners;
+		return delegate.getLoadEventListeners();
     }
 
     public void setLoadEventListeners(LoadEventListener[] loadEventListener) {
-        this.loadEventListeners = loadEventListener;
+		delegate.setLoadEventListeners( loadEventListener );
     }
 
 	public ReplicateEventListener[] getReplicateEventListeners() {
-		return replicateEventListeners;
+		return delegate.getReplicateEventListeners();
 	}
 
 	public void setReplicateEventListeners(ReplicateEventListener[] replicateEventListener) {
-		this.replicateEventListeners = replicateEventListener;
+		delegate.setReplicateEventListeners( replicateEventListener );
 	}
 
 	public DeleteEventListener[] getDeleteEventListeners() {
-		return deleteEventListeners;
+		return delegate.getDeleteEventListeners();
 	}
 
 	public void setDeleteEventListeners(DeleteEventListener[] deleteEventListener) {
-		this.deleteEventListeners = deleteEventListener;
+		delegate.setDeleteEventListeners( deleteEventListener );
 	}
 
 	public AutoFlushEventListener[] getAutoFlushEventListeners() {
-		return autoFlushEventListeners;
+		return delegate.getAutoFlushEventListeners();
 	}
 
 	public void setAutoFlushEventListeners(AutoFlushEventListener[] autoFlushEventListener) {
-		this.autoFlushEventListeners = autoFlushEventListener;
+		delegate.setAutoFlushEventListeners( autoFlushEventListener );
 	}
 
 	public DirtyCheckEventListener[] getDirtyCheckEventListeners() {
-		return dirtyCheckEventListeners;
+		return delegate.getDirtyCheckEventListeners();
 	}
 
 	public void setDirtyCheckEventListeners(DirtyCheckEventListener[] dirtyCheckEventListener) {
-		this.dirtyCheckEventListeners = dirtyCheckEventListener;
+		delegate.setDirtyCheckEventListeners( dirtyCheckEventListener );
 	}
 
 	public FlushEventListener[] getFlushEventListeners() {
-		return flushEventListeners;
+		return delegate.getFlushEventListeners();
 	}
 
 	public void setFlushEventListeners(FlushEventListener[] flushEventListener) {
-		this.flushEventListeners = flushEventListener;
+		delegate.setFlushEventListeners( flushEventListener );
 	}
 
 	public EvictEventListener[] getEvictEventListeners() {
-		return evictEventListeners;
+		return delegate.getEvictEventListeners();
 	}
 
 	public void setEvictEventListeners(EvictEventListener[] evictEventListener) {
-		this.evictEventListeners = evictEventListener;
+		delegate.setEvictEventListeners( evictEventListener );
 	}
 
 	public LockEventListener[] getLockEventListeners() {
-		return lockEventListeners;
+		return delegate.getLockEventListeners();
 	}
 
 	public void setLockEventListeners(LockEventListener[] lockEventListener) {
-		this.lockEventListeners = lockEventListener;
+		delegate.setLockEventListeners( lockEventListener );
 	}
 
 	public RefreshEventListener[] getRefreshEventListeners() {
-		return refreshEventListeners;
+		return delegate.getRefreshEventListeners();
 	}
 
 	public void setRefreshEventListeners(RefreshEventListener[] refreshEventListener) {
-		this.refreshEventListeners = refreshEventListener;
+		delegate.setRefreshEventListeners( refreshEventListener );
 	}
 
 	public InitializeCollectionEventListener[] getInitializeCollectionEventListeners() {
-		return initializeCollectionEventListeners;
+		return delegate.getInitializeCollectionEventListeners();
 	}
 
 	public void setInitializeCollectionEventListeners(InitializeCollectionEventListener[] initializeCollectionEventListener) {
-		this.initializeCollectionEventListeners = initializeCollectionEventListener;
+		delegate.setInitializeCollectionEventListeners( initializeCollectionEventListener );
 	}
 	
 	public FlushEntityEventListener[] getFlushEntityEventListeners() {
-		return flushEntityEventListeners;
+		return delegate.getFlushEntityEventListeners();
 	}
 	
 	public void setFlushEntityEventListeners(FlushEntityEventListener[] flushEntityEventListener) {
-		this.flushEntityEventListeners = flushEntityEventListener;
+		delegate.setFlushEntityEventListeners( flushEntityEventListener );
 	}
 	
 	public SaveOrUpdateEventListener[] getSaveOrUpdateEventListeners() {
-		return saveOrUpdateEventListeners;
+		return delegate.getSaveOrUpdateEventListeners();
 	}
 	
 	public void setSaveOrUpdateEventListeners(SaveOrUpdateEventListener[] saveOrUpdateEventListener) {
-		this.saveOrUpdateEventListeners = saveOrUpdateEventListener;
+		delegate.setSaveOrUpdateEventListeners( saveOrUpdateEventListener );
 	}
 	
 	public MergeEventListener[] getMergeEventListeners() {
-		return mergeEventListeners;
+		return delegate.getMergeEventListeners();
 	}
 	
 	public void setMergeEventListeners(MergeEventListener[] mergeEventListener) {
-		this.mergeEventListeners = mergeEventListener;
+		delegate.setMergeEventListeners( mergeEventListener );
 	}
 	
 	public PersistEventListener[] getPersistEventListeners() {
-		return persistEventListeners;
+		return delegate.getPersistEventListeners();
 	}
 	
 	public void setPersistEventListeners(PersistEventListener[] createEventListener) {
-		this.persistEventListeners = createEventListener;
+		delegate.setPersistEventListeners( createEventListener );
 	}
 
 	public PersistEventListener[] getPersistOnFlushEventListeners() {
-		return persistOnFlushEventListeners;
+		return delegate.getPersistOnFlushEventListeners();
 	}
 
 	public void setPersistOnFlushEventListeners(PersistEventListener[] createEventListener) {
-		this.persistOnFlushEventListeners = createEventListener;
+		delegate.setPersistOnFlushEventListeners( createEventListener );
 	}
 	
 	public MergeEventListener[] getSaveOrUpdateCopyEventListeners() {
-		return saveOrUpdateCopyEventListeners;
+		return delegate.getSaveOrUpdateCopyEventListeners();
 	}
 	
 	public void setSaveOrUpdateCopyEventListeners(MergeEventListener[] saveOrUpdateCopyEventListener) {
-		this.saveOrUpdateCopyEventListeners = saveOrUpdateCopyEventListener;
+		delegate.setSaveOrUpdateCopyEventListeners( saveOrUpdateCopyEventListener );
 	}
 	
 	public SaveOrUpdateEventListener[] getSaveEventListeners() {
-		return saveEventListeners;
+		return delegate.getSaveEventListeners();
 	}
 	
 	public void setSaveEventListeners(SaveOrUpdateEventListener[] saveEventListener) {
-		this.saveEventListeners = saveEventListener;
+		delegate.setSaveEventListeners( saveEventListener );
 	}
 	
 	public SaveOrUpdateEventListener[] getUpdateEventListeners() {
-		return updateEventListeners;
+		return delegate.getUpdateEventListeners();
 	}
 	
 	public void setUpdateEventListeners(SaveOrUpdateEventListener[] updateEventListener) {
-		this.updateEventListeners = updateEventListener;
+		delegate.setUpdateEventListeners( updateEventListener );
 	}
 
 	public PostLoadEventListener[] getPostLoadEventListeners() {
-		return postLoadEventListeners;
+		return delegate.getPostLoadEventListeners();
 	}
 
 	public void setPostLoadEventListeners(PostLoadEventListener[] postLoadEventListener) {
-		this.postLoadEventListeners = postLoadEventListener;
+		delegate.setPostLoadEventListeners( postLoadEventListener );
 	}
 
 	public PreLoadEventListener[] getPreLoadEventListeners() {
-		return preLoadEventListeners;
+		return delegate.getPreLoadEventListeners();
 	}
 
 	public void setPreLoadEventListeners(PreLoadEventListener[] preLoadEventListener) {
-		this.preLoadEventListeners = preLoadEventListener;
+		delegate.setPreLoadEventListeners( preLoadEventListener );
 	}
 
 	public PreCollectionRecreateEventListener[] getPreCollectionRecreateEventListeners() {
-		return preCollectionRecreateEventListeners;
+		return delegate.getPreCollectionRecreateEventListeners();
 	}
 
 	public void setPreCollectionRecreateEventListeners(PreCollectionRecreateEventListener[] preCollectionRecreateEventListener) {
-		this.preCollectionRecreateEventListeners = preCollectionRecreateEventListener;
+		delegate.setPreCollectionRecreateEventListeners( preCollectionRecreateEventListener );
 	}
 
 	public PreCollectionRemoveEventListener[] getPreCollectionRemoveEventListeners() {
-		return preCollectionRemoveEventListeners;
+		return delegate.getPreCollectionRemoveEventListeners();
 	}
 
 	public void setPreCollectionRemoveEventListeners(PreCollectionRemoveEventListener[] preCollectionRemoveEventListener) {
-		this.preCollectionRemoveEventListeners = preCollectionRemoveEventListener;
+		delegate.setPreCollectionRemoveEventListeners( preCollectionRemoveEventListener );
 	}
 
 	public PreCollectionUpdateEventListener[] getPreCollectionUpdateEventListeners() {
-		return preCollectionUpdateEventListeners;
+		return delegate.getPreCollectionUpdateEventListeners();
 	}
 
 	public void setPreCollectionUpdateEventListeners(PreCollectionUpdateEventListener[] preCollectionUpdateEventListeners) {
-		this.preCollectionUpdateEventListeners = preCollectionUpdateEventListeners;
+		delegate.setPreCollectionUpdateEventListeners( preCollectionUpdateEventListeners );
 	}
 
 	public PostDeleteEventListener[] getPostDeleteEventListeners() {
-		return postDeleteEventListeners;
+		return delegate.getPostDeleteEventListeners();
+	}
+
+	public void setPostDeleteEventListeners(PostDeleteEventListener[] postDeleteEventListener) {
+		delegate.setPostDeleteEventListeners( postDeleteEventListener );
 	}
 	
 	public PostInsertEventListener[] getPostInsertEventListeners() {
-		return postInsertEventListeners;
+		return delegate.getPostInsertEventListeners();
+	}
+
+	public void setPostInsertEventListeners(PostInsertEventListener[] postInsertEventListener) {
+		delegate.setPostInsertEventListeners( postInsertEventListener );
 	}
 	
 	public PostUpdateEventListener[] getPostUpdateEventListeners() {
-		return postUpdateEventListeners;
-	}
-	
-	public void setPostDeleteEventListeners(PostDeleteEventListener[] postDeleteEventListener) {
-		this.postDeleteEventListeners = postDeleteEventListener;
-	}
-	
-	public void setPostInsertEventListeners(PostInsertEventListener[] postInsertEventListener) {
-		this.postInsertEventListeners = postInsertEventListener;
+		return delegate.getPostUpdateEventListeners();
 	}
 	
 	public void setPostUpdateEventListeners(PostUpdateEventListener[] postUpdateEventListener) {
-		this.postUpdateEventListeners = postUpdateEventListener;
+		delegate.setPostUpdateEventListeners( postUpdateEventListener );
 	}
-	
+
 	public PostCollectionRecreateEventListener[] getPostCollectionRecreateEventListeners() {
-		return postCollectionRecreateEventListeners;
+		return delegate.getPostCollectionRecreateEventListeners();
 	}
 
 	public void setPostCollectionRecreateEventListeners(PostCollectionRecreateEventListener[] postCollectionRecreateEventListener) {
-		this.postCollectionRecreateEventListeners = postCollectionRecreateEventListener;
+		delegate.setPostCollectionRecreateEventListeners( postCollectionRecreateEventListener );
 	}
 
 	public PostCollectionRemoveEventListener[] getPostCollectionRemoveEventListeners() {
-		return postCollectionRemoveEventListeners;
+		return delegate.getPostCollectionRemoveEventListeners();
 	}
 
 	public void setPostCollectionRemoveEventListeners(PostCollectionRemoveEventListener[] postCollectionRemoveEventListener) {
-		this.postCollectionRemoveEventListeners = postCollectionRemoveEventListener;
+		delegate.setPostCollectionRemoveEventListeners( postCollectionRemoveEventListener );
 	}	        
 
 	public PostCollectionUpdateEventListener[] getPostCollectionUpdateEventListeners() {
-		return postCollectionUpdateEventListeners;
+		return delegate.getPostCollectionUpdateEventListeners();
 	}
 
 	public void setPostCollectionUpdateEventListeners(PostCollectionUpdateEventListener[] postCollectionUpdateEventListeners) {
-		this.postCollectionUpdateEventListeners = postCollectionUpdateEventListeners;
+		delegate.setPostCollectionUpdateEventListeners( postCollectionUpdateEventListeners );
 	}
 
 	public PreDeleteEventListener[] getPreDeleteEventListeners() {
-		return preDeleteEventListeners;
+		return delegate.getPreDeleteEventListeners();
 	}
 	
 	public void setPreDeleteEventListeners(PreDeleteEventListener[] preDeleteEventListener) {
-		this.preDeleteEventListeners = preDeleteEventListener;
+		delegate.setPreDeleteEventListeners( preDeleteEventListener );
 	}
 	
 	public PreInsertEventListener[] getPreInsertEventListeners() {
-		return preInsertEventListeners;
+		return delegate.getPreInsertEventListeners();
 	}
 	
 	public void setPreInsertEventListeners(PreInsertEventListener[] preInsertEventListener) {
-		this.preInsertEventListeners = preInsertEventListener;
+		delegate.setPreInsertEventListeners( preInsertEventListener );
 	}
 	
 	public PreUpdateEventListener[] getPreUpdateEventListeners() {
-		return preUpdateEventListeners;
+		return delegate.getPreUpdateEventListeners();
 	}
 	
 	public void setPreUpdateEventListeners(PreUpdateEventListener[] preUpdateEventListener) {
-		this.preUpdateEventListeners = preUpdateEventListener;
+		delegate.setPreUpdateEventListeners( preUpdateEventListener );
 	}
 
 	public PostDeleteEventListener[] getPostCommitDeleteEventListeners() {
-		return postCommitDeleteEventListeners;
+		return delegate.getPostCommitDeleteEventListeners();
 	}
 
-	public void setPostCommitDeleteEventListeners(
-			PostDeleteEventListener[] postCommitDeleteEventListeners) {
-		this.postCommitDeleteEventListeners = postCommitDeleteEventListeners;
+	public void setPostCommitDeleteEventListeners(PostDeleteEventListener[] postCommitDeleteEventListeners) {
+		delegate.setPostCommitDeleteEventListeners( postCommitDeleteEventListeners );
 	}
 
 	public PostInsertEventListener[] getPostCommitInsertEventListeners() {
-		return postCommitInsertEventListeners;
+		return delegate.getPostCommitInsertEventListeners();
 	}
 
-	public void setPostCommitInsertEventListeners(
-			PostInsertEventListener[] postCommitInsertEventListeners) {
-		this.postCommitInsertEventListeners = postCommitInsertEventListeners;
+	public void setPostCommitInsertEventListeners(PostInsertEventListener[] postCommitInsertEventListeners) {
+		delegate.setPostCommitInsertEventListeners( postCommitInsertEventListeners );
 	}
 
 	public PostUpdateEventListener[] getPostCommitUpdateEventListeners() {
-		return postCommitUpdateEventListeners;
+		return delegate.getPostCommitUpdateEventListeners();
 	}
 
-	public void setPostCommitUpdateEventListeners(
-			PostUpdateEventListener[] postCommitUpdateEventListeners) {
-		this.postCommitUpdateEventListeners = postCommitUpdateEventListeners;
+	public void setPostCommitUpdateEventListeners(PostUpdateEventListener[] postCommitUpdateEventListeners) {
+		delegate.setPostCommitUpdateEventListeners( postCommitUpdateEventListeners );
 	}
 
+	/**
+	 * Internally how do we delegate the method calls.  Again, this is just to support backwards compatibility for
+	 * a short time.
+	 */
+	public static interface EventListenerDelegate {
+		public void initializeListeners(Configuration configuration);
+		public void destroyListeners();
+
+		public LoadEventListener[] getLoadEventListeners();
+
+		public void setLoadEventListeners(LoadEventListener[] loadEventListener);
+
+		public ReplicateEventListener[] getReplicateEventListeners();
+
+		public void setReplicateEventListeners(ReplicateEventListener[] replicateEventListener);
+
+		public DeleteEventListener[] getDeleteEventListeners();
+
+		public void setDeleteEventListeners(DeleteEventListener[] deleteEventListener);
+
+		public AutoFlushEventListener[] getAutoFlushEventListeners();
+
+		public void setAutoFlushEventListeners(AutoFlushEventListener[] autoFlushEventListener);
+
+		public DirtyCheckEventListener[] getDirtyCheckEventListeners();
+
+		public void setDirtyCheckEventListeners(DirtyCheckEventListener[] dirtyCheckEventListener);
+
+		public FlushEventListener[] getFlushEventListeners();
+
+		public void setFlushEventListeners(FlushEventListener[] flushEventListener);
+
+		public EvictEventListener[] getEvictEventListeners();
+
+		public void setEvictEventListeners(EvictEventListener[] evictEventListener);
+
+		public LockEventListener[] getLockEventListeners();
+
+		public void setLockEventListeners(LockEventListener[] lockEventListener);
+
+		public RefreshEventListener[] getRefreshEventListeners();
+
+		public void setRefreshEventListeners(RefreshEventListener[] refreshEventListener);
+
+		public InitializeCollectionEventListener[] getInitializeCollectionEventListeners();
+
+		public void setInitializeCollectionEventListeners(InitializeCollectionEventListener[] initializeCollectionEventListener);
+
+		public FlushEntityEventListener[] getFlushEntityEventListeners();
+
+		public void setFlushEntityEventListeners(FlushEntityEventListener[] flushEntityEventListener);
+
+		public SaveOrUpdateEventListener[] getSaveOrUpdateEventListeners();
+
+		public void setSaveOrUpdateEventListeners(SaveOrUpdateEventListener[] saveOrUpdateEventListener);
+
+		public MergeEventListener[] getMergeEventListeners();
+
+		public void setMergeEventListeners(MergeEventListener[] mergeEventListener);
+
+		public PersistEventListener[] getPersistEventListeners();
+
+		public void setPersistEventListeners(PersistEventListener[] createEventListener);
+
+		public PersistEventListener[] getPersistOnFlushEventListeners();
+
+		public void setPersistOnFlushEventListeners(PersistEventListener[] createEventListener);
+
+		public MergeEventListener[] getSaveOrUpdateCopyEventListeners();
+
+		public void setSaveOrUpdateCopyEventListeners(MergeEventListener[] saveOrUpdateCopyEventListener);
+
+		public SaveOrUpdateEventListener[] getSaveEventListeners();
+
+		public void setSaveEventListeners(SaveOrUpdateEventListener[] saveEventListener);
+
+		public SaveOrUpdateEventListener[] getUpdateEventListeners();
+
+		public void setUpdateEventListeners(SaveOrUpdateEventListener[] updateEventListener);
+
+		public PostLoadEventListener[] getPostLoadEventListeners();
+
+		public void setPostLoadEventListeners(PostLoadEventListener[] postLoadEventListener);
+
+		public PreLoadEventListener[] getPreLoadEventListeners();
+
+		public void setPreLoadEventListeners(PreLoadEventListener[] preLoadEventListener);
+
+		public PreCollectionRecreateEventListener[] getPreCollectionRecreateEventListeners();
+
+		public void setPreCollectionRecreateEventListeners(PreCollectionRecreateEventListener[] preCollectionRecreateEventListener);
+
+		public PreCollectionRemoveEventListener[] getPreCollectionRemoveEventListeners();
+
+		public void setPreCollectionRemoveEventListeners(PreCollectionRemoveEventListener[] preCollectionRemoveEventListener);
+
+		public PreCollectionUpdateEventListener[] getPreCollectionUpdateEventListeners();
+
+		public void setPreCollectionUpdateEventListeners(PreCollectionUpdateEventListener[] preCollectionUpdateEventListeners);
+
+		public PostDeleteEventListener[] getPostDeleteEventListeners();
+
+		public PostInsertEventListener[] getPostInsertEventListeners();
+
+		public PostUpdateEventListener[] getPostUpdateEventListeners();
+
+		public void setPostDeleteEventListeners(PostDeleteEventListener[] postDeleteEventListener);
+
+		public void setPostInsertEventListeners(PostInsertEventListener[] postInsertEventListener);
+
+		public void setPostUpdateEventListeners(PostUpdateEventListener[] postUpdateEventListener);
+
+		public PostCollectionRecreateEventListener[] getPostCollectionRecreateEventListeners();
+
+		public void setPostCollectionRecreateEventListeners(PostCollectionRecreateEventListener[] postCollectionRecreateEventListener);
+
+		public PostCollectionRemoveEventListener[] getPostCollectionRemoveEventListeners();
+
+		public void setPostCollectionRemoveEventListeners(PostCollectionRemoveEventListener[] postCollectionRemoveEventListener);
+
+		public PostCollectionUpdateEventListener[] getPostCollectionUpdateEventListeners();
+
+		public void setPostCollectionUpdateEventListeners(PostCollectionUpdateEventListener[] postCollectionUpdateEventListeners);
+
+		public PreDeleteEventListener[] getPreDeleteEventListeners();
+
+		public void setPreDeleteEventListeners(PreDeleteEventListener[] preDeleteEventListener);
+
+		public PreInsertEventListener[] getPreInsertEventListeners();
+
+		public void setPreInsertEventListeners(PreInsertEventListener[] preInsertEventListener);
+
+		public PreUpdateEventListener[] getPreUpdateEventListeners();
+
+		public void setPreUpdateEventListeners(PreUpdateEventListener[] preUpdateEventListener);
+
+		public PostDeleteEventListener[] getPostCommitDeleteEventListeners();
+
+		public void setPostCommitDeleteEventListeners(PostDeleteEventListener[] postCommitDeleteEventListeners);
+
+		public PostInsertEventListener[] getPostCommitInsertEventListeners();
+
+		public void setPostCommitInsertEventListeners(PostInsertEventListener[] postCommitInsertEventListeners);
+
+		public PostUpdateEventListener[] getPostCommitUpdateEventListeners();
+
+		public void setPostCommitUpdateEventListeners(PostUpdateEventListener[] postCommitUpdateEventListeners);
+	}
+
+	@SuppressWarnings({ "unchecked" })
+	public static class ConfigurationDelegate implements EventListenerDelegate {
+		private final Configuration configuration;
+
+		public ConfigurationDelegate(Configuration configuration) {
+			this.configuration = configuration;
+		}
+
+		public void initializeListeners(Configuration configuration) {
+			// noop
+		}
+
+		public void destroyListeners() {
+			// noop
+		}
+
+		private EventListenerRegistry registry() {
+			return configuration.getEventListenerRegistry();
+		}
+
+		public LoadEventListener[] getLoadEventListeners() {
+			return (LoadEventListener[]) registry().getRegisteredEventListeners( LOAD ).getListenerArray();
+		}
+
+		public void setLoadEventListeners(LoadEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( LOAD ), listeners );
+		}
+
+		private void setListeners(RegisteredEventListeners registeredListeners, Object[] listeners) {
+			registeredListeners.clear();
+			for ( Object listener : listeners ) {
+				registeredListeners.appendListener( listener );
+			}
+		}
+
+		public ReplicateEventListener[] getReplicateEventListeners() {
+			return (ReplicateEventListener[]) registry().getRegisteredEventListeners( REPLICATE ).getListenerArray();
+		}
+
+		public void setReplicateEventListeners(ReplicateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( REPLICATE ), listeners );
+		}
+
+		public DeleteEventListener[] getDeleteEventListeners() {
+			return (DeleteEventListener[]) registry().getRegisteredEventListeners( DELETE ).getListenerArray();
+		}
+
+		public void setDeleteEventListeners(DeleteEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( DELETE ), listeners );
+		}
+
+		public AutoFlushEventListener[] getAutoFlushEventListeners() {
+			return (AutoFlushEventListener[]) registry().getRegisteredEventListeners( AUTO_FLUSH ).getListenerArray();
+		}
+
+		public void setAutoFlushEventListeners(AutoFlushEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( AUTO_FLUSH ), listeners );
+		}
+
+		public DirtyCheckEventListener[] getDirtyCheckEventListeners() {
+			return (DirtyCheckEventListener[]) registry().getRegisteredEventListeners( DIRTY_CHECK ).getListenerArray();
+		}
+
+		public void setDirtyCheckEventListeners(DirtyCheckEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( DIRTY_CHECK ), listeners );
+		}
+
+		public FlushEventListener[] getFlushEventListeners() {
+			return (FlushEventListener[]) registry().getRegisteredEventListeners( FLUSH ).getListenerArray();
+		}
+
+		public void setFlushEventListeners(FlushEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( FLUSH ), listeners );
+		}
+
+		public EvictEventListener[] getEvictEventListeners() {
+			return (EvictEventListener[]) registry().getRegisteredEventListeners( EVICT ).getListenerArray();
+		}
+
+		public void setEvictEventListeners(EvictEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( EVICT ), listeners );
+		}
+
+		public LockEventListener[] getLockEventListeners() {
+			return (LockEventListener[]) registry().getRegisteredEventListeners( LOCK ).getListenerArray();
+		}
+
+		public void setLockEventListeners(LockEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( LOCK ), listeners );
+		}
+
+		public RefreshEventListener[] getRefreshEventListeners() {
+			return (RefreshEventListener[]) registry().getRegisteredEventListeners( REFRESH ).getListenerArray();
+		}
+
+		public void setRefreshEventListeners(RefreshEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( REFRESH ), listeners );
+		}
+
+		public InitializeCollectionEventListener[] getInitializeCollectionEventListeners() {
+			return (InitializeCollectionEventListener[]) registry().getRegisteredEventListeners( INIT_COLLECTION ).getListenerArray();
+		}
+
+		public void setInitializeCollectionEventListeners(InitializeCollectionEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( INIT_COLLECTION ), listeners );
+		}
+
+		public FlushEntityEventListener[] getFlushEntityEventListeners() {
+			return (FlushEntityEventListener[]) registry().getRegisteredEventListeners( FLUSH_ENTITY ).getListenerArray();
+		}
+
+		public void setFlushEntityEventListeners(FlushEntityEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( FLUSH_ENTITY ), listeners );
+		}
+
+		public SaveOrUpdateEventListener[] getSaveOrUpdateEventListeners() {
+			return (SaveOrUpdateEventListener[]) registry().getRegisteredEventListeners( SAVE_UPDATE ).getListenerArray();
+		}
+
+		public void setSaveOrUpdateEventListeners(SaveOrUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( SAVE_UPDATE ), listeners );
+		}
+
+		public MergeEventListener[] getMergeEventListeners() {
+			return (MergeEventListener[]) registry().getRegisteredEventListeners( MERGE ).getListenerArray();
+		}
+
+		public void setMergeEventListeners(MergeEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( MERGE ), listeners );
+		}
+
+		public PersistEventListener[] getPersistEventListeners() {
+			return (PersistEventListener[]) registry().getRegisteredEventListeners( PERSIST ).getListenerArray();
+		}
+
+		public void setPersistEventListeners(PersistEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PERSIST ), listeners );
+		}
+
+		public PersistEventListener[] getPersistOnFlushEventListeners() {
+			return (PersistEventListener[]) registry().getRegisteredEventListeners( PERSIST_ONFLUSH ).getListenerArray();
+		}
+
+		public void setPersistOnFlushEventListeners(PersistEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PERSIST_ONFLUSH ), listeners );
+		}
+
+		public MergeEventListener[] getSaveOrUpdateCopyEventListeners() {
+			return (MergeEventListener[]) registry().getRegisteredEventListeners( SAVE_UPDATE_COPY ).getListenerArray();
+		}
+
+		public void setSaveOrUpdateCopyEventListeners(MergeEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( SAVE_UPDATE_COPY ), listeners );
+		}
+
+		public SaveOrUpdateEventListener[] getSaveEventListeners() {
+			return (SaveOrUpdateEventListener[]) registry().getRegisteredEventListeners( SAVE ).getListenerArray();
+		}
+
+		public void setSaveEventListeners(SaveOrUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( SAVE ), listeners );
+		}
+
+		public SaveOrUpdateEventListener[] getUpdateEventListeners() {
+			return (SaveOrUpdateEventListener[]) registry().getRegisteredEventListeners( UPDATE ).getListenerArray();
+		}
+
+		public void setUpdateEventListeners(SaveOrUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( UPDATE ), listeners );
+		}
+
+		public PostLoadEventListener[] getPostLoadEventListeners() {
+			return (PostLoadEventListener[]) registry().getRegisteredEventListeners( POST_LOAD ).getListenerArray();
+		}
+
+		public void setPostLoadEventListeners(PostLoadEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_LOAD ), listeners );
+		}
+
+		public PreLoadEventListener[] getPreLoadEventListeners() {
+			return (PreLoadEventListener[]) registry().getRegisteredEventListeners( PRE_LOAD ).getListenerArray();
+		}
+
+		public void setPreLoadEventListeners(PreLoadEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_LOAD ), listeners );
+		}
+
+		public PreCollectionRecreateEventListener[] getPreCollectionRecreateEventListeners() {
+			return (PreCollectionRecreateEventListener[]) registry().getRegisteredEventListeners( PRE_COLLECTION_RECREATE ).getListenerArray();
+		}
+
+		public void setPreCollectionRecreateEventListeners(PreCollectionRecreateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_COLLECTION_RECREATE ), listeners );
+		}
+
+		public PreCollectionRemoveEventListener[] getPreCollectionRemoveEventListeners() {
+			return (PreCollectionRemoveEventListener[]) registry().getRegisteredEventListeners( PRE_COLLECTION_REMOVE ).getListenerArray();
+		}
+
+		public void setPreCollectionRemoveEventListeners(PreCollectionRemoveEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_COLLECTION_REMOVE ), listeners );
+		}
+
+		public PreCollectionUpdateEventListener[] getPreCollectionUpdateEventListeners() {
+			return (PreCollectionUpdateEventListener[]) registry().getRegisteredEventListeners( PRE_COLLECTION_UPDATE ).getListenerArray();
+		}
+
+		public void setPreCollectionUpdateEventListeners(PreCollectionUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_COLLECTION_UPDATE ), listeners );
+		}
+
+		public PostDeleteEventListener[] getPostDeleteEventListeners() {
+			return (PostDeleteEventListener[]) registry().getRegisteredEventListeners( POST_DELETE ).getListenerArray();
+		}
+
+		public PostInsertEventListener[] getPostInsertEventListeners() {
+			return (PostInsertEventListener[]) registry().getRegisteredEventListeners( POST_INSERT ).getListenerArray();
+		}
+
+		public PostUpdateEventListener[] getPostUpdateEventListeners() {
+			return (PostUpdateEventListener[]) registry().getRegisteredEventListeners( POST_UPDATE ).getListenerArray();
+		}
+
+		public void setPostDeleteEventListeners(PostDeleteEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_DELETE ), listeners );
+		}
+
+		public void setPostInsertEventListeners(PostInsertEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_INSERT ), listeners );
+		}
+
+		public void setPostUpdateEventListeners(PostUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_UPDATE ), listeners );
+		}
+
+		public PostCollectionRecreateEventListener[] getPostCollectionRecreateEventListeners() {
+			return (PostCollectionRecreateEventListener[]) registry().getRegisteredEventListeners( POST_COLLECTION_RECREATE ).getListenerArray();
+		}
+
+		public void setPostCollectionRecreateEventListeners(PostCollectionRecreateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_COLLECTION_RECREATE ), listeners );
+		}
+
+		public PostCollectionRemoveEventListener[] getPostCollectionRemoveEventListeners() {
+			return (PostCollectionRemoveEventListener[]) registry().getRegisteredEventListeners( POST_COLLECTION_REMOVE ).getListenerArray();
+		}
+
+		public void setPostCollectionRemoveEventListeners(PostCollectionRemoveEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_COLLECTION_REMOVE ), listeners );
+		}
+
+		public PostCollectionUpdateEventListener[] getPostCollectionUpdateEventListeners() {
+			return (PostCollectionUpdateEventListener[]) registry().getRegisteredEventListeners( POST_COLLECTION_UPDATE ).getListenerArray();
+		}
+
+		public void setPostCollectionUpdateEventListeners(PostCollectionUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_COLLECTION_UPDATE ), listeners );
+		}
+
+		public PreDeleteEventListener[] getPreDeleteEventListeners() {
+			return (PreDeleteEventListener[]) registry().getRegisteredEventListeners( PRE_DELETE ).getListenerArray();
+		}
+
+		public void setPreDeleteEventListeners(PreDeleteEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_DELETE ), listeners );
+		}
+
+		public PreInsertEventListener[] getPreInsertEventListeners() {
+			return (PreInsertEventListener[]) registry().getRegisteredEventListeners( PRE_INSERT ).getListenerArray();
+		}
+
+		public void setPreInsertEventListeners(PreInsertEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_INSERT ), listeners );
+		}
+
+		public PreUpdateEventListener[] getPreUpdateEventListeners() {
+			return (PreUpdateEventListener[]) registry().getRegisteredEventListeners( PRE_UPDATE ).getListenerArray();
+		}
+
+		public void setPreUpdateEventListeners(PreUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( PRE_UPDATE ), listeners );
+		}
+
+		public PostDeleteEventListener[] getPostCommitDeleteEventListeners() {
+			return (PostDeleteEventListener[]) registry().getRegisteredEventListeners( POST_COMMIT_DELETE ).getListenerArray();
+		}
+
+		public void setPostCommitDeleteEventListeners(PostDeleteEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_COMMIT_DELETE ), listeners );
+		}
+
+		public PostInsertEventListener[] getPostCommitInsertEventListeners() {
+			return (PostInsertEventListener[]) registry().getRegisteredEventListeners( POST_COMMIT_INSERT).getListenerArray();
+		}
+
+		public void setPostCommitInsertEventListeners(PostInsertEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_COMMIT_INSERT ), listeners );
+		}
+
+		public PostUpdateEventListener[] getPostCommitUpdateEventListeners() {
+			return (PostUpdateEventListener[]) registry().getRegisteredEventListeners( POST_COMMIT_UPDATE).getListenerArray();
+		}
+
+		public void setPostCommitUpdateEventListeners(PostUpdateEventListener[] listeners) {
+			setListeners( registry().getRegisteredEventListeners( POST_COMMIT_UPDATE ), listeners );
+		}
+	}
+
+	public static class SessionFactoryDelegate extends Cloneable implements EventListenerDelegate {
+		private final LoadEventListener[] loadEventListeners;
+		private final SaveOrUpdateEventListener[] saveOrUpdateEventListeners;
+		private final MergeEventListener[] mergeEventListeners;
+		private final PersistEventListener[] persistEventListeners;
+		private final PersistEventListener[] persistOnFlushEventListeners;
+		private final ReplicateEventListener[] replicateEventListeners;
+		private final DeleteEventListener[] deleteEventListeners;
+		private final AutoFlushEventListener[] autoFlushEventListeners;
+		private final DirtyCheckEventListener[] dirtyCheckEventListeners;
+		private final FlushEventListener[] flushEventListeners;
+		private final EvictEventListener[] evictEventListeners;
+		private final LockEventListener[] lockEventListeners;
+		private final RefreshEventListener[] refreshEventListeners;
+		private final FlushEntityEventListener[] flushEntityEventListeners;
+		private final InitializeCollectionEventListener[] initializeCollectionEventListeners;
+		private final PostLoadEventListener[] postLoadEventListeners;
+		private final PreLoadEventListener[] preLoadEventListeners;
+		private final PreDeleteEventListener[] preDeleteEventListeners;
+		private final PreUpdateEventListener[] preUpdateEventListeners;
+		private final PreInsertEventListener[] preInsertEventListeners;
+		private final PostDeleteEventListener[] postDeleteEventListeners;
+		private final PostUpdateEventListener[] postUpdateEventListeners;
+		private final PostInsertEventListener[] postInsertEventListeners;
+		private final PostDeleteEventListener[] postCommitDeleteEventListeners;
+		private final PostUpdateEventListener[] postCommitUpdateEventListeners;
+		private final PostInsertEventListener[] postCommitInsertEventListeners;
+		private final PreCollectionRecreateEventListener[] preCollectionRecreateEventListeners;
+		private final PostCollectionRecreateEventListener[] postCollectionRecreateEventListeners;
+		private final PreCollectionRemoveEventListener[] preCollectionRemoveEventListeners;
+		private final PostCollectionRemoveEventListener[] postCollectionRemoveEventListeners;
+		private final PreCollectionUpdateEventListener[] preCollectionUpdateEventListeners;
+		private final PostCollectionUpdateEventListener[] postCollectionUpdateEventListeners;
+		private final SaveOrUpdateEventListener[] saveEventListeners;
+		private final SaveOrUpdateEventListener[] updateEventListeners;
+		private final MergeEventListener[] saveOrUpdateCopyEventListeners;
+
+		public SessionFactoryDelegate(
+				LoadEventListener[] loadEventListeners,
+				SaveOrUpdateEventListener[] saveOrUpdateEventListeners,
+				MergeEventListener[] mergeEventListeners,
+				PersistEventListener[] persistEventListeners,
+				PersistEventListener[] persistOnFlushEventListeners,
+				ReplicateEventListener[] replicateEventListeners,
+				DeleteEventListener[] deleteEventListeners,
+				AutoFlushEventListener[] autoFlushEventListeners,
+				DirtyCheckEventListener[] dirtyCheckEventListeners,
+				FlushEventListener[] flushEventListeners,
+				EvictEventListener[] evictEventListeners,
+				LockEventListener[] lockEventListeners,
+				RefreshEventListener[] refreshEventListeners,
+				FlushEntityEventListener[] flushEntityEventListeners,
+				InitializeCollectionEventListener[] initializeCollectionEventListeners,
+				PostLoadEventListener[] postLoadEventListeners,
+				PreLoadEventListener[] preLoadEventListeners,
+				PreDeleteEventListener[] preDeleteEventListeners,
+				PreUpdateEventListener[] preUpdateEventListeners,
+				PreInsertEventListener[] preInsertEventListeners,
+				PostDeleteEventListener[] postDeleteEventListeners,
+				PostUpdateEventListener[] postUpdateEventListeners,
+				PostInsertEventListener[] postInsertEventListeners,
+				PostDeleteEventListener[] postCommitDeleteEventListeners,
+				PostUpdateEventListener[] postCommitUpdateEventListeners,
+				PostInsertEventListener[] postCommitInsertEventListeners,
+				PreCollectionRecreateEventListener[] preCollectionRecreateEventListeners,
+				PostCollectionRecreateEventListener[] postCollectionRecreateEventListeners,
+				PreCollectionRemoveEventListener[] preCollectionRemoveEventListeners,
+				PostCollectionRemoveEventListener[] postCollectionRemoveEventListeners,
+				PreCollectionUpdateEventListener[] preCollectionUpdateEventListeners,
+				PostCollectionUpdateEventListener[] postCollectionUpdateEventListeners,
+				SaveOrUpdateEventListener[] saveEventListeners,
+				SaveOrUpdateEventListener[] updateEventListeners,
+				MergeEventListener[] saveOrUpdateCopyEventListeners) {
+			this.loadEventListeners = loadEventListeners;
+			this.saveOrUpdateEventListeners = saveOrUpdateEventListeners;
+			this.mergeEventListeners = mergeEventListeners;
+			this.persistEventListeners = persistEventListeners;
+			this.persistOnFlushEventListeners = persistOnFlushEventListeners;
+			this.replicateEventListeners = replicateEventListeners;
+			this.deleteEventListeners = deleteEventListeners;
+			this.autoFlushEventListeners = autoFlushEventListeners;
+			this.dirtyCheckEventListeners = dirtyCheckEventListeners;
+			this.flushEventListeners = flushEventListeners;
+			this.evictEventListeners = evictEventListeners;
+			this.lockEventListeners = lockEventListeners;
+			this.refreshEventListeners = refreshEventListeners;
+			this.flushEntityEventListeners = flushEntityEventListeners;
+			this.initializeCollectionEventListeners = initializeCollectionEventListeners;
+			this.postLoadEventListeners = postLoadEventListeners;
+			this.preLoadEventListeners = preLoadEventListeners;
+			this.preDeleteEventListeners = preDeleteEventListeners;
+			this.preUpdateEventListeners = preUpdateEventListeners;
+			this.preInsertEventListeners = preInsertEventListeners;
+			this.postDeleteEventListeners = postDeleteEventListeners;
+			this.postUpdateEventListeners = postUpdateEventListeners;
+			this.postInsertEventListeners = postInsertEventListeners;
+			this.postCommitDeleteEventListeners = postCommitDeleteEventListeners;
+			this.postCommitUpdateEventListeners = postCommitUpdateEventListeners;
+			this.postCommitInsertEventListeners = postCommitInsertEventListeners;
+			this.preCollectionRecreateEventListeners = preCollectionRecreateEventListeners;
+			this.postCollectionRecreateEventListeners = postCollectionRecreateEventListeners;
+			this.preCollectionRemoveEventListeners = preCollectionRemoveEventListeners;
+			this.postCollectionRemoveEventListeners = postCollectionRemoveEventListeners;
+			this.preCollectionUpdateEventListeners = preCollectionUpdateEventListeners;
+			this.postCollectionUpdateEventListeners = postCollectionUpdateEventListeners;
+			this.saveEventListeners = saveEventListeners;
+			this.updateEventListeners = updateEventListeners;
+			this.saveOrUpdateCopyEventListeners = saveOrUpdateCopyEventListeners;
+		}
+
+		private void processListeners(ListenerProcesser processer) {
+			Field[] fields = getClass().getDeclaredFields();
+			for ( int i = 0; i < fields.length; i++ ) {
+				final Object[] listeners;
+				try {
+					Object fieldValue = fields[i].get(this);
+					if ( fieldValue instanceof Object[] ) {
+						listeners = ( Object[] ) fieldValue;
+					}
+					else {
+						continue;
+					}
+				}
+				catch ( Throwable t ) {
+					throw new HibernateException( "could not init listeners", t );
+				}
+
+				int length = listeners.length;
+				for ( int index = 0 ; index < length ; index++ ) {
+					processer.processListener( listeners[index ] );
+				}
+			}
+		}
+
+		public void initializeListeners(final Configuration cfg) {
+			try {
+				processListeners(
+						new ListenerProcesser() {
+							public void processListener(Object listener) {
+								if ( listener instanceof Initializable ) {
+									( ( Initializable ) listener ).initialize( cfg );
+								}
+							}
+						}
+				);
+			}
+			catch ( Exception e ) {
+				throw new HibernateException("could not init listeners", e);
+			}
+		}
+
+		public void destroyListeners() {
+			try {
+				processListeners(
+						new ListenerProcesser() {
+							public void processListener(Object listener) {
+								if ( listener instanceof Destructible ) {
+									( ( Destructible ) listener ).cleanup();
+								}
+							}
+						}
+				);
+			}
+			catch ( Exception e ) {
+				throw new HibernateException("could not destruct listeners", e);
+			}
+		}
+
+		public final LoadEventListener[] getLoadEventListeners() {
+			return loadEventListeners;
+		}
+
+		public void setLoadEventListeners(LoadEventListener[] loadEventListener) {
+			throw immutableError();
+		}
+
+		private EventListenerRegsitrationException immutableError() {
+			return new EventListenerRegsitrationException( "Cannot alter listers after SessionFactory built" );
+		}
+
+		public ReplicateEventListener[] getReplicateEventListeners() {
+			return replicateEventListeners;
+		}
+
+		public void setReplicateEventListeners(ReplicateEventListener[] replicateEventListener) {
+			throw immutableError();
+		}
+
+		public DeleteEventListener[] getDeleteEventListeners() {
+			return deleteEventListeners;
+		}
+
+		public void setDeleteEventListeners(DeleteEventListener[] deleteEventListener) {
+			throw immutableError();
+		}
+
+		public AutoFlushEventListener[] getAutoFlushEventListeners() {
+			return autoFlushEventListeners;
+		}
+
+		public void setAutoFlushEventListeners(AutoFlushEventListener[] autoFlushEventListener) {
+			throw immutableError();
+		}
+
+		public DirtyCheckEventListener[] getDirtyCheckEventListeners() {
+			return dirtyCheckEventListeners;
+		}
+
+		public void setDirtyCheckEventListeners(DirtyCheckEventListener[] dirtyCheckEventListener) {
+			throw immutableError();
+		}
+
+		public FlushEventListener[] getFlushEventListeners() {
+			return flushEventListeners;
+		}
+
+		public void setFlushEventListeners(FlushEventListener[] flushEventListener) {
+			throw immutableError();
+		}
+
+		public EvictEventListener[] getEvictEventListeners() {
+			return evictEventListeners;
+		}
+
+		public void setEvictEventListeners(EvictEventListener[] evictEventListener) {
+			throw immutableError();
+		}
+
+		public LockEventListener[] getLockEventListeners() {
+			return lockEventListeners;
+		}
+
+		public void setLockEventListeners(LockEventListener[] lockEventListener) {
+			throw immutableError();
+		}
+
+		public RefreshEventListener[] getRefreshEventListeners() {
+			return refreshEventListeners;
+		}
+
+		public void setRefreshEventListeners(RefreshEventListener[] refreshEventListener) {
+			throw immutableError();
+		}
+
+		public InitializeCollectionEventListener[] getInitializeCollectionEventListeners() {
+			return initializeCollectionEventListeners;
+		}
+
+		public void setInitializeCollectionEventListeners(InitializeCollectionEventListener[] initializeCollectionEventListener) {
+			throw immutableError();
+		}
+
+		public FlushEntityEventListener[] getFlushEntityEventListeners() {
+			return flushEntityEventListeners;
+		}
+
+		public void setFlushEntityEventListeners(FlushEntityEventListener[] flushEntityEventListener) {
+			throw immutableError();
+		}
+
+		public SaveOrUpdateEventListener[] getSaveOrUpdateEventListeners() {
+			return saveOrUpdateEventListeners;
+		}
+
+		public void setSaveOrUpdateEventListeners(SaveOrUpdateEventListener[] saveOrUpdateEventListener) {
+			throw immutableError();
+		}
+
+		public MergeEventListener[] getMergeEventListeners() {
+			return mergeEventListeners;
+		}
+
+		public void setMergeEventListeners(MergeEventListener[] mergeEventListener) {
+			throw immutableError();
+		}
+
+		public PersistEventListener[] getPersistEventListeners() {
+			return persistEventListeners;
+		}
+
+		public void setPersistEventListeners(PersistEventListener[] createEventListener) {
+			throw immutableError();
+		}
+
+		public PersistEventListener[] getPersistOnFlushEventListeners() {
+			return persistOnFlushEventListeners;
+		}
+
+		public void setPersistOnFlushEventListeners(PersistEventListener[] createEventListener) {
+			throw immutableError();
+		}
+
+		public MergeEventListener[] getSaveOrUpdateCopyEventListeners() {
+			return saveOrUpdateCopyEventListeners;
+		}
+
+		public void setSaveOrUpdateCopyEventListeners(MergeEventListener[] saveOrUpdateCopyEventListener) {
+			throw immutableError();
+		}
+
+		public SaveOrUpdateEventListener[] getSaveEventListeners() {
+			return saveEventListeners;
+		}
+
+		public void setSaveEventListeners(SaveOrUpdateEventListener[] saveEventListener) {
+			throw immutableError();
+		}
+
+		public SaveOrUpdateEventListener[] getUpdateEventListeners() {
+			return updateEventListeners;
+		}
+
+		public void setUpdateEventListeners(SaveOrUpdateEventListener[] updateEventListener) {
+			throw immutableError();
+		}
+
+		public PostLoadEventListener[] getPostLoadEventListeners() {
+			return postLoadEventListeners;
+		}
+
+		public void setPostLoadEventListeners(PostLoadEventListener[] postLoadEventListener) {
+			throw immutableError();
+		}
+
+		public PreLoadEventListener[] getPreLoadEventListeners() {
+			return preLoadEventListeners;
+		}
+
+		public void setPreLoadEventListeners(PreLoadEventListener[] preLoadEventListener) {
+			throw immutableError();
+		}
+
+		public PreCollectionRecreateEventListener[] getPreCollectionRecreateEventListeners() {
+			return preCollectionRecreateEventListeners;
+		}
+
+		public void setPreCollectionRecreateEventListeners(PreCollectionRecreateEventListener[] preCollectionRecreateEventListener) {
+			throw immutableError();
+		}
+
+		public PreCollectionRemoveEventListener[] getPreCollectionRemoveEventListeners() {
+			return preCollectionRemoveEventListeners;
+		}
+
+		public void setPreCollectionRemoveEventListeners(PreCollectionRemoveEventListener[] preCollectionRemoveEventListener) {
+			throw immutableError();
+		}
+
+		public PreCollectionUpdateEventListener[] getPreCollectionUpdateEventListeners() {
+			return preCollectionUpdateEventListeners;
+		}
+
+		public void setPreCollectionUpdateEventListeners(PreCollectionUpdateEventListener[] preCollectionUpdateEventListeners) {
+			throw immutableError();
+		}
+
+		public PostDeleteEventListener[] getPostDeleteEventListeners() {
+			return postDeleteEventListeners;
+		}
+
+		public void setPostDeleteEventListeners(PostDeleteEventListener[] postDeleteEventListener) {
+			throw immutableError();
+		}
+
+		public PostInsertEventListener[] getPostInsertEventListeners() {
+			return postInsertEventListeners;
+		}
+
+		public void setPostUpdateEventListeners(PostUpdateEventListener[] postUpdateEventListener) {
+			throw immutableError();
+		}
+
+		public PostUpdateEventListener[] getPostUpdateEventListeners() {
+			return postUpdateEventListeners;
+		}
+
+		public void setPostInsertEventListeners(PostInsertEventListener[] postInsertEventListener) {
+			throw immutableError();
+		}
+
+		public PostCollectionRecreateEventListener[] getPostCollectionRecreateEventListeners() {
+			return postCollectionRecreateEventListeners;
+		}
+
+		public void setPostCollectionRecreateEventListeners(PostCollectionRecreateEventListener[] postCollectionRecreateEventListener) {
+			throw immutableError();
+		}
+
+		public PostCollectionRemoveEventListener[] getPostCollectionRemoveEventListeners() {
+			return postCollectionRemoveEventListeners;
+		}
+
+		public void setPostCollectionRemoveEventListeners(PostCollectionRemoveEventListener[] postCollectionRemoveEventListener) {
+			throw immutableError();
+		}
+
+		public PostCollectionUpdateEventListener[] getPostCollectionUpdateEventListeners() {
+			return postCollectionUpdateEventListeners;
+		}
+
+		public void setPostCollectionUpdateEventListeners(PostCollectionUpdateEventListener[] postCollectionUpdateEventListeners) {
+			throw immutableError();
+		}
+
+		public PreDeleteEventListener[] getPreDeleteEventListeners() {
+			return preDeleteEventListeners;
+		}
+
+		public void setPreDeleteEventListeners(PreDeleteEventListener[] preDeleteEventListener) {
+			throw immutableError();
+		}
+
+		public PreInsertEventListener[] getPreInsertEventListeners() {
+			return preInsertEventListeners;
+		}
+
+		public void setPreInsertEventListeners(PreInsertEventListener[] preInsertEventListener) {
+			throw immutableError();
+		}
+
+		public PreUpdateEventListener[] getPreUpdateEventListeners() {
+			return preUpdateEventListeners;
+		}
+
+		public void setPreUpdateEventListeners(PreUpdateEventListener[] preUpdateEventListener) {
+			throw immutableError();
+		}
+
+		public PostDeleteEventListener[] getPostCommitDeleteEventListeners() {
+			return postCommitDeleteEventListeners;
+		}
+
+		public void setPostCommitDeleteEventListeners(
+				PostDeleteEventListener[] postCommitDeleteEventListeners) {
+			throw immutableError();
+		}
+
+		public PostInsertEventListener[] getPostCommitInsertEventListeners() {
+			return postCommitInsertEventListeners;
+		}
+
+		public void setPostCommitInsertEventListeners(PostInsertEventListener[] postCommitInsertEventListeners) {
+			throw immutableError();
+		}
+
+		public PostUpdateEventListener[] getPostCommitUpdateEventListeners() {
+			return postCommitUpdateEventListeners;
+		}
+
+		public void setPostCommitUpdateEventListeners(PostUpdateEventListener[] postCommitUpdateEventListeners) {
+			throw immutableError();
+		}
+	}
 }

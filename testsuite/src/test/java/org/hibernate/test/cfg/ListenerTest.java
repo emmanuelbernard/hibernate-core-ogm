@@ -30,6 +30,7 @@ import org.hibernate.MappingException;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.event.DeleteEvent;
 import org.hibernate.event.DeleteEventListener;
+import org.hibernate.event.EventListenerRegsitrationException;
 import org.hibernate.event.def.DefaultDeleteEventListener;
 import org.hibernate.testing.junit.UnitTestCase;
 
@@ -82,9 +83,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "delete", new String[] { } );
-			fail( "should have thrown java.lang.ArrayStoreException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( ArrayStoreException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -101,9 +102,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "delete", new Object[] { } );
-			fail( "should have thrown java.lang.ArrayStoreException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( ArrayStoreException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -111,13 +112,9 @@ public class ListenerTest extends UnitTestCase {
 	public void testSetListenersEmptyClassObjectArray() {
 		Configuration cfg = new Configuration();
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
-		try {
-			cfg.setListeners( "delete", new Object[] { } );
-			fail( "should have thrown ClassCastException" );
-		}
-		catch ( ClassCastException ex ) {
-			// expected
-		}
+		assertEquals( 1, cfg.getEventListeners().getDeleteEventListeners().length );
+		cfg.setListeners( "delete", new Object[] { } );
+		assertEquals( 0, cfg.getEventListeners().getDeleteEventListeners().length );
 	}
 
 	public void testSetListenerEmptyClassArray() {
@@ -125,9 +122,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "delete", new DefaultDeleteEventListener[] { } );
-			fail( "should have thrown java.lang.ArrayStoreException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( ArrayStoreException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -144,9 +141,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "delete", "UnknownClassName" );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -156,9 +153,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListeners( "delete", new String[] { "UnknownClassName" } );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -168,9 +165,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "delete", InvalidListenerForTest.class.getName() );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -180,9 +177,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListeners( "delete", new String[] { InvalidListenerForTest.class.getName() } );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -208,14 +205,15 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener(
-					"delete", new String[] {
-					DeleteListenerForTest.class.getName(),
-					AnotherDeleteListenerForTest.class.getName()
-			}
+					"delete",
+					new String[] {
+							DeleteListenerForTest.class.getName(),
+							AnotherDeleteListenerForTest.class.getName()
+					}
 			);
-			fail( "should have thrown java.lang.ArrayStoreException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( ArrayStoreException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -224,10 +222,11 @@ public class ListenerTest extends UnitTestCase {
 		Configuration cfg = new Configuration();
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		cfg.setListeners(
-				"delete", new String[] {
-				DeleteListenerForTest.class.getName(),
-				AnotherDeleteListenerForTest.class.getName()
-		}
+				"delete",
+				new String[] {
+						DeleteListenerForTest.class.getName(),
+						AnotherDeleteListenerForTest.class.getName()
+				}
 		);
 		assertEquals( 2, cfg.getEventListeners().getDeleteEventListeners().length );
 		assertTrue( cfg.getEventListeners().getDeleteEventListeners()[0] instanceof DeleteListenerForTest );
@@ -260,9 +259,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "delete", new InvalidListenerForTest() );
-			fail( "should have thrown java.lang.ArrayStoreException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( ArrayStoreException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -272,9 +271,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListeners( "delete", new InvalidListenerForTest[] { new InvalidListenerForTest() } );
-			fail( "should have thrown java.lang.ClassCastException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( ClassCastException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -284,9 +283,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( null, new DeleteListenerForTest() );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -296,9 +295,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListeners( null, new DeleteEventListener[] { new DeleteListenerForTest() } );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -308,9 +307,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListener( "unknown-type", new DeleteListenerForTest() );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}
@@ -320,9 +319,9 @@ public class ListenerTest extends UnitTestCase {
 		assertNotNull( cfg.getEventListeners().getDeleteEventListeners() );
 		try {
 			cfg.setListeners( "unknown-type", new DeleteEventListener[] { new DeleteListenerForTest() } );
-			fail( "should have thrown MappingException" );
+			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( MappingException ex ) {
+		catch ( EventListenerRegsitrationException ex ) {
 			// expected
 		}
 	}

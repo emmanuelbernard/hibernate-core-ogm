@@ -27,6 +27,7 @@ import java.util.List;
 
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.hibernate.cfg.Configuration;
 import org.hibernate.collection.PersistentCollection;
 import org.hibernate.collection.PersistentSet;
 import org.hibernate.event.AbstractCollectionEvent;
@@ -38,7 +39,6 @@ import org.hibernate.test.event.collection.association.bidirectional.manytomany.
  * @author Gail Badner
  */
 public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
-
 	public AbstractCollectionEventTest(String string) {
 		super( string );
 	}
@@ -48,6 +48,28 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	public abstract ParentWithCollection createParent(String name);
 
 	public abstract Collection createCollection();
+
+	private static CollectionListeners listeners;
+
+	@Override
+	public void configure(Configuration cfg) {
+		super.configure( cfg );
+		if ( listeners == null ) {
+			listeners = new CollectionListeners( cfg );
+		}
+	}
+
+	@Override
+	protected void prepareTest() throws Exception {
+		super.prepareTest();
+		if ( listeners != null ) {
+			listeners.clear();
+		}
+	}
+
+	public CollectionListeners getListeners() {
+		return listeners;
+	}
 
 	protected void cleanupTest() {
 		ParentWithCollection dummyParent = createParent( "dummyParent" );
@@ -70,7 +92,7 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testSaveParentEmptyChildren() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
+		listeners.clear();
 		ParentWithCollection parent = createParentWithNoChildren( "parent" );
 		assertEquals( 0, parent.getChildren().size() );
 		int index = 0;
@@ -88,7 +110,7 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testSaveParentOneChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
+		listeners.clear();
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		int index = 0;
 		checkResult( listeners, listeners.getPreCollectionRecreateListener(), parent, index++ );
@@ -102,7 +124,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentNullToOneChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNullChildren( "parent" );
 		listeners.clear();
 		assertNull( parent.getChildren() );
@@ -127,7 +148,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentNoneToOneChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNoChildren( "parent" );
 		listeners.clear();
 		assertEquals( 0, parent.getChildren().size() );
@@ -151,7 +171,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentOneToTwoChildren() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		assertEquals( 1, parent.getChildren().size() );
 		listeners.clear();
@@ -175,7 +194,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentOneToTwoSameChildren() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		Child child = ( Child ) parent.getChildren().iterator().next();
 		assertEquals( 1, parent.getChildren().size() );
@@ -212,7 +230,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentNullToOneChildDiffCollection() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNullChildren( "parent" );
 		listeners.clear();
 		assertNull( parent.getChildren() );
@@ -240,7 +257,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentNoneToOneChildDiffCollection() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNoChildren( "parent" );
 		listeners.clear();
 		assertEquals( 0, parent.getChildren().size() );
@@ -268,7 +284,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentOneChildDiffCollectionSameChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		Child child = ( Child ) parent.getChildren().iterator().next();
 		listeners.clear();
@@ -308,7 +323,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentOneChildDiffCollectionDiffChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		Child oldChild = ( Child ) parent.getChildren().iterator().next();
 		listeners.clear();
@@ -348,7 +362,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentOneChildToNoneByRemove() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		assertEquals( 1, parent.getChildren().size() );
 		Child child = ( Child ) parent.getChildren().iterator().next();
@@ -382,7 +395,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentOneChildToNoneByClear() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		assertEquals( 1, parent.getChildren().size() );
 		Child child = ( Child ) parent.getChildren().iterator().next();
@@ -416,7 +428,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testUpdateParentTwoChildrenToOne() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		assertEquals( 1, parent.getChildren().size() );
 		Child oldChild = ( Child ) parent.getChildren().iterator().next();
@@ -457,7 +468,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testDeleteParentWithNullChildren() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNullChildren( "parent" );
 		listeners.clear();
 		Session s = openSession();
@@ -474,7 +484,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testDeleteParentWithNoChildren() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithNoChildren( "parent" );
 		listeners.clear();
 		Session s = openSession();
@@ -491,7 +500,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testDeleteParentAndChild() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		Child child = ( Child ) parent.getChildren().iterator().next();
 		listeners.clear();
@@ -523,7 +531,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testMoveChildToDifferentParent() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		ParentWithCollection otherParent = createParentWithOneChild( "otherParent", "otherChild" );
 		Child child = ( Child ) parent.getChildren().iterator().next();
@@ -561,7 +568,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testMoveAllChildrenToDifferentParent() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		ParentWithCollection otherParent = createParentWithOneChild( "otherParent", "otherChild" );
 		Child child = ( Child ) parent.getChildren().iterator().next();
@@ -599,7 +605,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testMoveCollectionToDifferentParent() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		ParentWithCollection otherParent = createParentWithOneChild( "otherParent", "otherChild" );
 		listeners.clear();
@@ -644,7 +649,6 @@ public abstract class AbstractCollectionEventTest extends FunctionalTestCase {
 	}
 
 	public void testMoveCollectionToDifferentParentFlushMoveToDifferentParent() {
-		CollectionListeners listeners = new CollectionListeners( getSessions() );
 		ParentWithCollection parent = createParentWithOneChild( "parent", "child" );
 		ParentWithCollection otherParent = createParentWithOneChild( "otherParent", "otherChild" );
 		ParentWithCollection otherOtherParent = createParentWithNoChildren( "otherParent" );
