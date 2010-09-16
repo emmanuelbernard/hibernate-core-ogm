@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2010, Red Hat Inc. or third-party contributors as
+ * Copyright (c) 2010, Red Hat, Inc. and/or its affiliates or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Inc.
+ * distributed under license by Red Hat, Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -30,12 +30,12 @@ import org.hibernate.HibernateException;
  *
  * @author Steve Ebersole
  */
-public class EventListenerRegsitrationException extends HibernateException {
-	public EventListenerRegsitrationException(String s) {
+public class EventListenerRegistrationException extends HibernateException {
+	public EventListenerRegistrationException(String s) {
 		super( s );
 	}
 
-	public EventListenerRegsitrationException(String string, Throwable root) {
+	public EventListenerRegistrationException(String string, Throwable root) {
 		super( string, root );
 	}
 }

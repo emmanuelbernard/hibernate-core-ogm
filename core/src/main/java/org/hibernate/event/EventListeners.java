@@ -996,8 +996,8 @@ public class EventListeners extends Cloneable implements Serializable {
 			throw immutableError();
 		}
 
-		private EventListenerRegsitrationException immutableError() {
-			return new EventListenerRegsitrationException( "Cannot alter listers after SessionFactory built" );
+		private EventListenerRegistrationException immutableError() {
+			return new EventListenerRegistrationException( "Cannot alter listers after SessionFactory built" );
 		}
 
 		public ReplicateEventListener[] getReplicateEventListeners() {

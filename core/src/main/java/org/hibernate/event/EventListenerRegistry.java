@@ -146,7 +146,7 @@ public class EventListenerRegistry implements Serializable {
 			return ReflectHelper.classForName( listenerClassName ).newInstance();
 		}
 		catch ( Exception e ) {
-			throw new EventListenerRegsitrationException (
+			throw new EventListenerRegistrationException(
 					"Unable to instantiate specified event listener class: " + listenerClassName,
 					e
 			);

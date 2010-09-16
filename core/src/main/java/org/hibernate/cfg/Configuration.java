@@ -94,39 +94,12 @@ import org.hibernate.engine.Mapping;
 import org.hibernate.engine.NamedQueryDefinition;
 import org.hibernate.engine.NamedSQLQueryDefinition;
 import org.hibernate.engine.ResultSetMappingDefinition;
-import org.hibernate.event.AutoFlushEventListener;
-import org.hibernate.event.DeleteEventListener;
-import org.hibernate.event.DirtyCheckEventListener;
+import org.hibernate.event.EventListenerRegistrationException;
 import org.hibernate.event.EventListenerRegistry;
-import org.hibernate.event.EventListenerRegsitrationException;
 import org.hibernate.event.EventListeners;
 import org.hibernate.event.EventType;
-import org.hibernate.event.EvictEventListener;
-import org.hibernate.event.FlushEntityEventListener;
-import org.hibernate.event.FlushEventListener;
-import org.hibernate.event.InitializeCollectionEventListener;
-import org.hibernate.event.LoadEventListener;
-import org.hibernate.event.LockEventListener;
-import org.hibernate.event.MergeEventListener;
-import org.hibernate.event.PersistEventListener;
-import org.hibernate.event.PostCollectionRecreateEventListener;
-import org.hibernate.event.PostCollectionRemoveEventListener;
-import org.hibernate.event.PostCollectionUpdateEventListener;
-import org.hibernate.event.PostDeleteEventListener;
-import org.hibernate.event.PostInsertEventListener;
-import org.hibernate.event.PostLoadEventListener;
-import org.hibernate.event.PostUpdateEventListener;
-import org.hibernate.event.PreCollectionRecreateEventListener;
-import org.hibernate.event.PreCollectionRemoveEventListener;
-import org.hibernate.event.PreCollectionUpdateEventListener;
-import org.hibernate.event.PreDeleteEventListener;
 import org.hibernate.event.PreInsertEventListener;
-import org.hibernate.event.PreLoadEventListener;
 import org.hibernate.event.PreUpdateEventListener;
-import org.hibernate.event.RefreshEventListener;
-import org.hibernate.event.RegisteredEventListeners;
-import org.hibernate.event.ReplicateEventListener;
-import org.hibernate.event.SaveOrUpdateEventListener;
 import org.hibernate.event.spi.EventListenerRegistrationService;
 import org.hibernate.id.IdentifierGenerator;
 import org.hibernate.id.IdentifierGeneratorAggregator;
@@ -1887,19 +1860,19 @@ public class Configuration implements Serializable {
 				service.registerEventListeners( this );
 			}
 			catch ( ClassNotFoundException e ) {
-				throw new EventListenerRegsitrationException(
+				throw new EventListenerRegistrationException(
 						"Unable to locate listener service class [" + implClassName + "]",
 						e
 				);
 			}
 			catch ( InstantiationException e ) {
-				throw new EventListenerRegsitrationException(
+				throw new EventListenerRegistrationException(
 						"Unable to instantiate listener service class [" + implClassName + "]",
 						e
 				);
 			}
 			catch ( IllegalAccessException e ) {
-				throw new EventListenerRegsitrationException(
+				throw new EventListenerRegistrationException(
 						"Unable to instantiate listener service class [" + implClassName + "]",
 						e
 				);

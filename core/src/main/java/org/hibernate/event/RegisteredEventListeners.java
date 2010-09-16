@@ -126,7 +126,7 @@ public class RegisteredEventListeners<T> {
 						if ( deDupMarker.isInstance( existingListener ) ) {
 							switch ( duplicationResolutionStrategy ) {
 								case ERROR: {
-									throw new EventListenerRegsitrationException(
+									throw new EventListenerRegistrationException(
 											"Duplicate event listener found for " + deDupMarker.getName()
 									);
 								}
@@ -157,7 +157,7 @@ public class RegisteredEventListeners<T> {
 
 	private void checkAgainstBaseInterface(T listener) {
 		if ( !eventType.baseListenerInterface().isInstance( listener ) ) {
-			throw new EventListenerRegsitrationException(
+			throw new EventListenerRegistrationException(
 					"Listener did not implement expected interface [" + eventType.baseListenerInterface().getName() + "]"
 			);
 		}

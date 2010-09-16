@@ -26,11 +26,10 @@ package org.hibernate.test.cfg;
 import java.util.Set;
 
 import org.hibernate.HibernateException;
-import org.hibernate.MappingException;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.event.DeleteEvent;
 import org.hibernate.event.DeleteEventListener;
-import org.hibernate.event.EventListenerRegsitrationException;
+import org.hibernate.event.EventListenerRegistrationException;
 import org.hibernate.event.def.DefaultDeleteEventListener;
 import org.hibernate.testing.junit.UnitTestCase;
 
@@ -85,7 +84,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "delete", new String[] { } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -104,7 +103,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "delete", new Object[] { } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -124,7 +123,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "delete", new DefaultDeleteEventListener[] { } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -143,7 +142,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "delete", "UnknownClassName" );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -155,7 +154,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListeners( "delete", new String[] { "UnknownClassName" } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -167,7 +166,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "delete", InvalidListenerForTest.class.getName() );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -179,7 +178,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListeners( "delete", new String[] { InvalidListenerForTest.class.getName() } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -213,7 +212,7 @@ public class ListenerTest extends UnitTestCase {
 			);
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -261,7 +260,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "delete", new InvalidListenerForTest() );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -273,7 +272,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListeners( "delete", new InvalidListenerForTest[] { new InvalidListenerForTest() } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -285,7 +284,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( null, new DeleteListenerForTest() );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -297,7 +296,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListeners( null, new DeleteEventListener[] { new DeleteListenerForTest() } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -309,7 +308,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListener( "unknown-type", new DeleteListenerForTest() );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
@@ -321,7 +320,7 @@ public class ListenerTest extends UnitTestCase {
 			cfg.setListeners( "unknown-type", new DeleteEventListener[] { new DeleteListenerForTest() } );
 			fail( "should have thrown EventListenerRegsitrationException" );
 		}
-		catch ( EventListenerRegsitrationException ex ) {
+		catch ( EventListenerRegistrationException ex ) {
 			// expected
 		}
 	}
