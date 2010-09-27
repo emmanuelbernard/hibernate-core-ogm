@@ -1395,7 +1395,13 @@ public final class AnnotationBinder {
 		final XAnnotatedElement element = propertyAnnotatedElement.getProperty();
 		if ( element.isAnnotationPresent( Id.class ) || element.isAnnotationPresent( EmbeddedId.class ) ) {
 			annElts.add( 0, propertyAnnotatedElement );
-
+			/**
+			 * The property must be put in hibernate.properties as it's a system wide property. Fixable?
+			 * TODO support true/false/default on the property instead of present / not present
+			 * TODO is @Column mandatory?
+			 * TODO add method support
+			 * TODO avoid custId hardcoded
+			 */
 			if ( System.getProperty( "hibernate.enable_specj_proprietary_syntax" ) != null ) {
 				if ( element.isAnnotationPresent( Id.class ) && element.isAnnotationPresent( Column.class ) ) {
 					String columnName = element.getAnnotation( Column.class ).name();
@@ -2621,9 +2627,10 @@ public final class AnnotationBinder {
 					columnName = prop.getAnnotation( Column.class ).name();
 				}
 
-				if ( prop.isAnnotationPresent( ManyToOne.class ) && prop.isAnnotationPresent( JoinColumn.class )
-						&& !prop.getAnnotation( JoinColumn.class ).name().isEmpty()
-						&& prop.getAnnotation( JoinColumn.class ).name().equals( columnName )
+				final JoinColumn joinColumn = prop.getAnnotation( JoinColumn.class );
+				if ( prop.isAnnotationPresent( ManyToOne.class ) && joinColumn != null
+						&& !joinColumn.name().isEmpty()
+						&& joinColumn.name().equals( columnName )
 						&& !prop.isAnnotationPresent( MapsId.class ) )
 
 				{
