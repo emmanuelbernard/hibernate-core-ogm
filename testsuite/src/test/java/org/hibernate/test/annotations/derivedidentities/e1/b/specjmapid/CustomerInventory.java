@@ -3,7 +3,6 @@ package org.hibernate.test.annotations.derivedidentities.e1.b.specjmapid;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Comparator;
-
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
@@ -13,7 +12,6 @@ import javax.persistence.Id;
 import javax.persistence.IdClass;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
-import javax.persistence.MapsId;
 import javax.persistence.NamedQueries;
 import javax.persistence.NamedQuery;
 import javax.persistence.Table;
@@ -44,9 +42,9 @@ public class CustomerInventory implements Serializable, Comparator<CustomerInven
 	@Id
 	@Column(name = "CI_CUSTOMERID", insertable = false, updatable = false)
 	private int custId;
-	
-	@ManyToOne(cascade=CascadeType.MERGE)
-	@JoinColumn(name="CI_CUSTOMERID")
+
+	@ManyToOne(cascade = CascadeType.MERGE)
+	@JoinColumn(name = "CI_CUSTOMERID")
 	private Customer customer;
 
 	@ManyToOne(cascade = CascadeType.MERGE)
@@ -92,9 +90,9 @@ public class CustomerInventory implements Serializable, Comparator<CustomerInven
 	public Customer getCustomer() {
 		return customer;
 	}
-	
+
 	public int getCustId() {
-	   return custId;
+		return custId;
 	}
 
 	public int getVersion() {

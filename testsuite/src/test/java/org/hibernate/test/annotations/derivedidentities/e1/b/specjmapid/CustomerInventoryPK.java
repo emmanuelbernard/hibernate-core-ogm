@@ -24,7 +24,7 @@ public class CustomerInventoryPK implements Serializable {
 			return false;
 		}
 		CustomerInventoryPK cip = ( CustomerInventoryPK ) other;
-		return (custId == cip.custId && (id == cip.id ||
+		return ( custId == cip.custId && ( id == cip.id ||
 				( id != null && id.equals( cip.id ) ) ) );
 	}
 

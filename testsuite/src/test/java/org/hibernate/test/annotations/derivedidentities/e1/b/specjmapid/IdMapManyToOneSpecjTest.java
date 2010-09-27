@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2010, Red Hat Inc. or third-party contributors as
+ * Copyright (c) 2010, Red Hat, Inc. and/or its affiliates or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Inc.
+ * distributed under license by Red Hat, Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -37,22 +37,23 @@ import org.hibernate.test.annotations.TestCase;
  */
 public class IdMapManyToOneSpecjTest extends TestCase {
 
-   public IdMapManyToOneSpecjTest()
-   {
-      System.setProperty("hibernate.enable_specj_proprietary_syntax", "true");
-   }
+	public IdMapManyToOneSpecjTest() {
+		System.setProperty( "hibernate.enable_specj_proprietary_syntax", "true" );
+	}
+
 	public void testComplexIdClass() {
-       
+
 		Session s = openSession();
 		Transaction tx = s.beginTransaction();
 
 		Customer c1 = new Customer(
-				"foo", "bar", "contact1", "100", new BigDecimal( 1000 ), new BigDecimal( 1000 ), new BigDecimal( 1000 ));
+				"foo", "bar", "contact1", "100", new BigDecimal( 1000 ), new BigDecimal( 1000 ), new BigDecimal( 1000 )
+		);
 
 		s.persist( c1 );
 		s.flush();
-        s.clear();
-        
+		s.clear();
+
 		Item boat = new Item();
 		boat.setId( "1" );
 		boat.setName( "cruiser" );
@@ -61,8 +62,8 @@ public class IdMapManyToOneSpecjTest extends TestCase {
 		boat.setCategory( 42 );
 
 		s.persist( boat );
-		
-		
+
+
 		Item house = new Item();
 		house.setId( "2" );
 		house.setName( "blada" );
@@ -70,16 +71,16 @@ public class IdMapManyToOneSpecjTest extends TestCase {
 		house.setDescription( "a house" );
 		house.setCategory( 74 );
 
-        s.persist( house );
-        s.flush();
-        s.clear();
+		s.persist( house );
+		s.flush();
+		s.clear();
 
 		c1.addInventory( boat, 10, new BigDecimal( 5000 ) );
-		
+
 		c1.addInventory( house, 100, new BigDecimal( 50000 ) );
-        s.merge( c1 );
-        s.flush();
-        s.clear();
+		s.merge( c1 );
+		s.flush();
+		s.clear();
 
 		Customer c12 = ( Customer ) s.createQuery( "select c from Customer c" ).uniqueResult();
 
@@ -88,26 +89,27 @@ public class IdMapManyToOneSpecjTest extends TestCase {
 
 		assertEquals( 2, inventory.size() );
 		assertEquals( 10, inventory.get( 0 ).getQuantity() );
-		
-		
-		Item house2 = new Item();
-        house2.setId( "3" );
-        house2.setName( "blada" );
-        house2.setPrice( new BigDecimal( 5000 ) );
-        house2.setDescription( "a house" );
-        house2.setCategory( 74 );
-        
-        s.persist( house2 );
-        s.flush();
-        s.clear();
 
-        c1.addInventory(house2, 200, new BigDecimal(500000));
-        s.flush();
-        s.clear();
-        
-        Customer c13 = (Customer) s.createQuery("select c from Customer c where c.id = "+c12.getId()).uniqueResult();
-        assertEquals( 3, c13.getInventories().size() );
-        
+
+		Item house2 = new Item();
+		house2.setId( "3" );
+		house2.setName( "blada" );
+		house2.setPrice( new BigDecimal( 5000 ) );
+		house2.setDescription( "a house" );
+		house2.setCategory( 74 );
+
+		s.persist( house2 );
+		s.flush();
+		s.clear();
+
+		c1.addInventory( house2, 200, new BigDecimal( 500000 ) );
+		s.flush();
+		s.clear();
+
+		Customer c13 = ( Customer ) s.createQuery( "select c from Customer c where c.id = " + c12.getId() )
+				.uniqueResult();
+		assertEquals( 3, c13.getInventories().size() );
+
 		tx.rollback();
 		s.close();
 	}
