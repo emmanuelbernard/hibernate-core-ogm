@@ -102,7 +102,9 @@ public class IdMapManyToOneSpecjTest extends TestCase {
 		s.flush();
 		s.clear();
 
-		c1.addInventory( house2, 200, new BigDecimal( 500000 ) );
+		c12.addInventory( house2, 200, new BigDecimal( 500000 ) );
+		s.merge( c12 );
+
 		s.flush();
 		s.clear();
 
