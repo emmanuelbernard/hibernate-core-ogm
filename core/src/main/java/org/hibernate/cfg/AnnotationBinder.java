@@ -1395,6 +1395,24 @@ public final class AnnotationBinder {
 		final XAnnotatedElement element = propertyAnnotatedElement.getProperty();
 		if ( element.isAnnotationPresent( Id.class ) || element.isAnnotationPresent( EmbeddedId.class ) ) {
 			annElts.add( 0, propertyAnnotatedElement );
+			
+			if(System.getProperty("hibernate.enable_specj_proprietary_syntax") != null)
+			{
+			   if(element.isAnnotationPresent( Id.class) && element.isAnnotationPresent(Column.class))
+			   {
+			      String columnName = element.getAnnotation(Column.class).name();
+			      for(XProperty prop : declaringClass.getDeclaredProperties(AccessType.FIELD.getType()))
+			      {
+			         if(prop.isAnnotationPresent(JoinColumn.class) 
+			               && prop.getAnnotation(JoinColumn.class).name().equals(columnName)
+			               && !prop.isAnnotationPresent(MapsId.class))
+			         {
+			            mappings.addPropertyAnnotatedWithMapsIdSpecj(entity, propertyAnnotatedElement, "custId");
+			         }
+			      }   
+			   }
+			}
+			
 			if ( element.isAnnotationPresent( ManyToOne.class ) || element.isAnnotationPresent( OneToOne.class ) ) {
 				mappings.addToOneAndIdProperty( entity, propertyAnnotatedElement );
 			}
@@ -2596,6 +2614,28 @@ public final class AnnotationBinder {
 				column.setInsertable( false );
 				column.setUpdatable( false );
 			}
+		}
+		
+		//Make sure that JPA1 key-many-to-one columns are read only too
+		if(System.getProperty("hibernate.enable_specj_proprietary_syntax") != null)
+		{
+		   String columnName = "";
+		   for(XProperty prop : inferredData.getDeclaringClass().getDeclaredProperties(AccessType.FIELD.getType()))
+           {
+		      if(prop.isAnnotationPresent(Id.class) && prop.isAnnotationPresent(Column.class))
+		         columnName = prop.getAnnotation(Column.class).name();
+		      
+		      if(prop.isAnnotationPresent(ManyToOne.class) && prop.isAnnotationPresent(JoinColumn.class)
+		            && !prop.getAnnotation(JoinColumn.class).name().isEmpty()
+		            && prop.getAnnotation(JoinColumn.class).name().equals(columnName)
+		            && !prop.isAnnotationPresent(MapsId.class))
+           
+		      for ( Ejb3JoinColumn column : columns ) {
+		         column.setInsertable( false );
+		         column.setUpdatable( false );
+		      }
+		   }
+
 		}
 		value.setTypeName( inferredData.getClassOrElementName() );
 		final String propertyName = inferredData.getPropertyName();
