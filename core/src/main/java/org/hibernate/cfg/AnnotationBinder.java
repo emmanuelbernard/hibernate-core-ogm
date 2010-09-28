@@ -1409,7 +1409,14 @@ public final class AnnotationBinder {
 						if ( prop.isAnnotationPresent( JoinColumn.class )
 								&& prop.getAnnotation( JoinColumn.class ).name().equals( columnName )
 								&& !prop.isAnnotationPresent( MapsId.class ) ) {
-							mappings.addPropertyAnnotatedWithMapsIdSpecj( entity, propertyAnnotatedElement, "custId" );
+							//create a PropertyData fpr the specJ property holding the mapping
+							PropertyData specJPropertyData = new PropertyInferredData(
+									declaringClass,  //same dec
+									prop, // the actual @XToOne property
+									propertyAccessor, //TODO we should get the right accessor but the same as id would do
+									mappings.getReflectionManager()
+							);
+							mappings.addPropertyAnnotatedWithMapsIdSpecj( entity, specJPropertyData, "custId" );
 						}
 					}
 				}
