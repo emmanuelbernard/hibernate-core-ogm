@@ -2634,7 +2634,7 @@ public final class AnnotationBinder {
 					columnName = prop.getAnnotation( Column.class ).name();
 				}
 
-				final JoinColumn joinColumn = prop.getAnnotation( JoinColumn.class );
+				final JoinColumn joinColumn = property.getAnnotation( JoinColumn.class );
 				if ( prop.isAnnotationPresent( ManyToOne.class ) && joinColumn != null
 						&& !joinColumn.name().isEmpty()
 						&& joinColumn.name().equals( columnName )
