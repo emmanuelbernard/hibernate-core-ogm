@@ -682,8 +682,7 @@ public class BinderHelper {
 		}
 		if ( propertyHolder.isInIdClass() ) {
 		   PropertyData pd = mappings.getPropertyAnnotatedWithIdAndToOne( persistentXClass, propertyName );
-		   if(pd == null)
-		   {
+		   if(pd == null) {
 		      String propertyPath = isId ? "" : propertyName;
 	            return mappings.getPropertyAnnotatedWithMapsId( persistentXClass, propertyPath );
 		   }

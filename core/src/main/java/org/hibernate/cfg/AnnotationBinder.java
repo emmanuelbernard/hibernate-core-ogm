@@ -2638,9 +2638,7 @@ public final class AnnotationBinder {
 				if ( prop.isAnnotationPresent( ManyToOne.class ) && joinColumn != null
 						&& !joinColumn.name().isEmpty()
 						&& joinColumn.name().equals( columnName )
-						&& !prop.isAnnotationPresent( MapsId.class ) )
-
-				{
+						&& !prop.isAnnotationPresent( MapsId.class ) ) {
 				   hasSpecjManyToOne = true;
 					for ( Ejb3JoinColumn column : columns ) {
 						column.setInsertable( false );

@@ -26,9 +26,6 @@ package org.hibernate.test.annotations.derivedidentities.e1.b.specjmapid;
 import java.math.BigDecimal;
 import java.util.List;
 
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.Persistence;
-
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.test.annotations.TestCase;
@@ -84,14 +81,11 @@ public class IdMapManyToOneSpecjTest extends TestCase {
 		c1.addInventory( house, 100, new BigDecimal( 50000 ) );
 		s.merge( c1 );
 		tx.commit();
-//		s.flush();
-//		s.clear();
 		
 
 		tx = s.beginTransaction();
 		Customer c12 = ( Customer ) s.createQuery( "select c from Customer c" ).uniqueResult();
 
-//		c12.getBalance();
 		List<CustomerInventory> inventory = c12.getInventories();
 
 		assertEquals( 2, inventory.size() );
