@@ -1400,7 +1400,6 @@ public final class AnnotationBinder {
 			 * TODO support true/false/default on the property instead of present / not present
 			 * TODO is @Column mandatory?
 			 * TODO add method support
-			 * TODO avoid custId hardcoded
 			 */
 			if ( System.getProperty( "hibernate.enable_specj_proprietary_syntax" ) != null ) {
 				if ( element.isAnnotationPresent( Id.class ) && element.isAnnotationPresent( Column.class ) ) {
@@ -1416,7 +1415,7 @@ public final class AnnotationBinder {
 									propertyAccessor, //TODO we should get the right accessor but the same as id would do
 									mappings.getReflectionManager()
 							);
-							mappings.addPropertyAnnotatedWithMapsIdSpecj( entity, specJPropertyData, "custId" );
+							mappings.addPropertyAnnotatedWithMapsIdSpecj( entity, specJPropertyData, element.toString() );
 						}
 					}
 				}
@@ -2625,7 +2624,8 @@ public final class AnnotationBinder {
 			}
 		}
 
-		//Make sure that JPA1 key-many-to-one columns are read only too
+		//Make sure that JPA1 key-many-to-one columns are read only tooj
+		boolean hasSpecjManyToOne=false;
 		if ( System.getProperty( "hibernate.enable_specj_proprietary_syntax" ) != null ) {
 			String columnName = "";
 			for ( XProperty prop : inferredData.getDeclaringClass()
@@ -2641,6 +2641,7 @@ public final class AnnotationBinder {
 						&& !prop.isAnnotationPresent( MapsId.class ) )
 
 				{
+				   hasSpecjManyToOne = true;
 					for ( Ejb3JoinColumn column : columns ) {
 						column.setInsertable( false );
 						column.setUpdatable( false );
@@ -2684,6 +2685,10 @@ public final class AnnotationBinder {
 		if ( isIdentifierMapper ) {
 			propertyBinder.setInsertable( false );
 			propertyBinder.setUpdatable( false );
+		}
+		else if( hasSpecjManyToOne) {
+		   propertyBinder.setInsertable( false );
+           propertyBinder.setUpdatable( false );
 		}
 		else {
 			propertyBinder.setInsertable( columns[0].isInsertable() );
