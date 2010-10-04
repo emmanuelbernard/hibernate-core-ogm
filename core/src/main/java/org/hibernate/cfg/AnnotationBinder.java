@@ -2635,10 +2635,10 @@ public final class AnnotationBinder {
 				}
 
 				final JoinColumn joinColumn = property.getAnnotation( JoinColumn.class );
-				if ( prop.isAnnotationPresent( ManyToOne.class ) && joinColumn != null
+				if ( property.isAnnotationPresent( ManyToOne.class ) && joinColumn != null
 						&& !joinColumn.name().isEmpty()
 						&& joinColumn.name().equals( columnName )
-						&& !prop.isAnnotationPresent( MapsId.class ) ) {
+						&& !property.isAnnotationPresent( MapsId.class ) ) {
 				   hasSpecjManyToOne = true;
 					for ( Ejb3JoinColumn column : columns ) {
 						column.setInsertable( false );
