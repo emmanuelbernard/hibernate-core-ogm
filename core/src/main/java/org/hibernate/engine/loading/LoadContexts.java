@@ -24,7 +24,6 @@
  */
 package org.hibernate.engine.loading;
 
-import java.sql.ResultSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.Iterator;
@@ -107,7 +106,7 @@ public class LoadContexts {
 	 * @param resultSet The result set for which it is ok to release
 	 * associated resources.
 	 */
-	public void cleanup(ResultSet resultSet) {
+	public void cleanup(Object resultSet) {
 		if ( collectionLoadContexts != null ) {
 			CollectionLoadContext collectionLoadContext = ( CollectionLoadContext ) collectionLoadContexts.remove( resultSet );
 			collectionLoadContext.cleanup();
@@ -178,7 +177,7 @@ public class LoadContexts {
 	 * @param resultSet The result set for which to retrieve the context.
 	 * @return The processing context.
 	 */
-	public CollectionLoadContext getCollectionLoadContext(ResultSet resultSet) {
+	public CollectionLoadContext getCollectionLoadContext(Object resultSet) {
 		CollectionLoadContext context = null;
 		if ( collectionLoadContexts == null ) {
 			collectionLoadContexts = IdentityMap.instantiate( 8 );
@@ -313,7 +312,7 @@ public class LoadContexts {
 	// Entity load contexts ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// 	* currently, not yet used...
 
-	public EntityLoadContext getEntityLoadContext(ResultSet resultSet) {
+	public EntityLoadContext getEntityLoadContext(Object resultSet) {
 		EntityLoadContext context = null;
 		if ( entityLoadContexts == null ) {
 			entityLoadContexts = IdentityMap.instantiate( 8 );

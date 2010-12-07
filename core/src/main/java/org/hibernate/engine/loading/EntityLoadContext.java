@@ -24,7 +24,6 @@
  */
 package org.hibernate.engine.loading;
 
-import java.sql.ResultSet;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -40,10 +39,10 @@ public class EntityLoadContext {
 	private static final Logger log = LoggerFactory.getLogger( EntityLoadContext.class );
 
 	private final LoadContexts loadContexts;
-	private final ResultSet resultSet;
+	private final Object resultSet;
 	private final List hydratingEntities = new ArrayList( 20 ); // todo : need map? the prob is a proper key, right?
 
-	public EntityLoadContext(LoadContexts loadContexts, ResultSet resultSet) {
+	public EntityLoadContext(LoadContexts loadContexts, Object resultSet) {
 		this.loadContexts = loadContexts;
 		this.resultSet = resultSet;
 	}

@@ -25,7 +25,6 @@
 package org.hibernate.engine.loading;
 
 import java.io.Serializable;
-import java.sql.ResultSet;
 
 import org.hibernate.collection.PersistentCollection;
 import org.hibernate.persister.collection.CollectionPersister;
@@ -37,13 +36,13 @@ import org.hibernate.pretty.MessageHelper;
  * @author Steve Ebersole
  */
 public class LoadingCollectionEntry {
-	private final ResultSet resultSet;
+	private final Object resultSet;
 	private final CollectionPersister persister;
 	private final Serializable key;
 	private final PersistentCollection collection;
 
 	public LoadingCollectionEntry(
-			ResultSet resultSet,
+			Object resultSet,
 			CollectionPersister persister,
 			Serializable key,
 			PersistentCollection collection) {
@@ -53,7 +52,7 @@ public class LoadingCollectionEntry {
 		this.collection = collection;
 	}
 
-	public ResultSet getResultSet() {
+	public Object getResultSet() {
 		return resultSet;
 	}
 

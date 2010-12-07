@@ -24,7 +24,6 @@
  */
 package org.hibernate.engine.loading;
 
-import java.sql.ResultSet;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Iterator;
@@ -63,7 +62,7 @@ public class CollectionLoadContext {
 	private static final Logger log = LoggerFactory.getLogger( CollectionLoadContext.class );
 
 	private final LoadContexts loadContexts;
-	private final ResultSet resultSet;
+	private final Object resultSet;
 	private Set localLoadingCollectionKeys = new HashSet();
 
 	/**
@@ -72,12 +71,12 @@ public class CollectionLoadContext {
 	 * @param loadContexts Callback to other collection load contexts.
 	 * @param resultSet The result set this is "wrapping".
 	 */
-	public CollectionLoadContext(LoadContexts loadContexts, ResultSet resultSet) {
+	public CollectionLoadContext(LoadContexts loadContexts, Object resultSet) {
 		this.loadContexts = loadContexts;
 		this.resultSet = resultSet;
 	}
 
-	public ResultSet getResultSet() {
+	public Object getResultSet() {
 		return resultSet;
 	}
 
