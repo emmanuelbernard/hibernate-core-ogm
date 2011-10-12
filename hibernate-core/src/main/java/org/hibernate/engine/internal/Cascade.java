@@ -146,7 +146,7 @@ public final class Cascade {
 			throws HibernateException {
 
 		if ( persister.hasCascades() || action.requiresNoCascadeChecking() ) { // performance opt
-            LOG.trace("Processing cascade " + action + " for: " + persister.getEntityName());
+            LOG.tracev( "Processing cascade {0} for: {1}", action, persister.getEntityName() );
 
 			Type[] types = persister.getPropertyTypes();
 			CascadeStyle[] cascadeStyles = persister.getPropertyCascadeStyles();
@@ -181,7 +181,7 @@ public final class Cascade {
 				}
 			}
 
-            LOG.trace("Done processing cascade " + action + " for: " + persister.getEntityName());
+            LOG.tracev( "Done processing cascade {0} for: {1}", action, persister.getEntityName() );
 		}
 	}
 
