@@ -536,7 +536,7 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			final boolean disableVersionIncrement,
 			boolean lazyPropertiesAreUnfetched) {
 
-		EntityEntry e = new DefaultEntityEntry(
+		final EntityEntry e = new DefaultEntityEntryFactory().createEntityEntry(
 				status,
 				loadedState,
 				rowId,
