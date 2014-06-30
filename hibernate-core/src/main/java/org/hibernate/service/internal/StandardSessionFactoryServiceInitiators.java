@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.hibernate.engine.internal.EntityEntryFactoryInitiator;
 import org.hibernate.engine.spi.CacheInitiator;
 import org.hibernate.event.service.internal.EventListenerServiceInitiator;
 import org.hibernate.service.spi.SessionFactoryServiceInitiator;
@@ -47,6 +48,7 @@ public class StandardSessionFactoryServiceInitiators {
 		serviceInitiators.add( EventListenerServiceInitiator.INSTANCE );
 		serviceInitiators.add( StatisticsInitiator.INSTANCE );
 		serviceInitiators.add( CacheInitiator.INSTANCE );
+		serviceInitiators.add( EntityEntryFactoryInitiator.INSTANCE );
 
 		return Collections.unmodifiableList( serviceInitiators );
 	}
