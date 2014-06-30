@@ -29,38 +29,46 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-
-import org.apache.commons.collections.map.AbstractReferenceMap;
-import org.apache.commons.collections.map.ReferenceMap;
-import org.jboss.logging.Logger;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentMap;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.Hibernate;
 import org.hibernate.HibernateException;
-import org.hibernate.collection.spi.PersistentCollection;
-import org.hibernate.engine.loading.internal.LoadContexts;
-import org.hibernate.engine.spi.AssociationKey;
-import org.hibernate.engine.spi.BatchFetchQueue;
-import org.hibernate.engine.spi.CollectionEntry;
-import org.hibernate.engine.spi.CollectionKey;
-import org.hibernate.engine.spi.EntityEntry;
-import org.hibernate.engine.spi.EntityKey;
-import org.hibernate.engine.spi.EntityUniqueKey;
-import org.hibernate.engine.spi.PersistenceContext;
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.engine.spi.Status;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
 import org.hibernate.NonUniqueObjectException;
 import org.hibernate.PersistentObjectException;
 import org.hibernate.TransientObjectException;
-import org.hibernate.internal.util.MarkerObject;
+import org.hibernate.action.spi.AfterTransactionCompletionProcess;
+import org.hibernate.cache.spi.NaturalIdCacheKey;
+import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
+import org.hibernate.cache.spi.access.SoftLock;
+import org.hibernate.collection.spi.PersistentCollection;
+import org.hibernate.engine.loading.internal.LoadContexts;
+import org.hibernate.engine.spi.AssociationKey;
+import org.hibernate.engine.spi.BatchFetchQueue;
+import org.hibernate.engine.spi.CachedNaturalIdValueSource;
+import org.hibernate.engine.spi.CollectionEntry;
+import org.hibernate.engine.spi.CollectionKey;
+import org.hibernate.engine.spi.EntityEntry;
+import org.hibernate.engine.spi.EntityEntryFactory;
+import org.hibernate.engine.spi.EntityKey;
+import org.hibernate.engine.spi.EntityUniqueKey;
+import org.hibernate.engine.spi.PersistenceContext;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.Status;
+import org.hibernate.event.spi.EventSource;
+import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.internal.util.collections.ConcurrentReferenceHashMap;
 import org.hibernate.internal.util.collections.IdentityMap;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.EntityPersister;
@@ -68,65 +76,65 @@ import org.hibernate.pretty.MessageHelper;
 import org.hibernate.proxy.HibernateProxy;
 import org.hibernate.proxy.LazyInitializer;
 import org.hibernate.tuple.ElementWrapper;
+import org.hibernate.type.CollectionType;
 
-import static org.jboss.logging.Logger.Level.WARN;
+import org.jboss.logging.Logger;
 
 /**
- * A <tt>PersistenceContext</tt> represents the state of persistent "stuff" which
- * Hibernate is tracking.  This includes persistent entities, collections,
- * as well as proxies generated.
- * </p>
- * There is meant to be a one-to-one correspondence between a SessionImpl and
- * a PersistentContext.  The SessionImpl uses the PersistentContext to track
- * the current state of its context.  Event-listeners then use the
- * PersistentContext to drive their processing.
+ * A <strong>stateful</strong> implementation of the {@link PersistenceContext} contract meaning that we maintain this
+ * state throughout the life of the persistence context.
+ * <p/>
+ * IMPL NOTE: There is meant to be a one-to-one correspondence between a {@link org.hibernate.internal.SessionImpl}
+ * and a PersistentContext.  Event listeners and other Session collaborators then use the PersistentContext to drive
+ * their processing.
  *
  * @author Steve Ebersole
  */
 public class StatefulPersistenceContext implements PersistenceContext {
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			StatefulPersistenceContext.class.getName()
+	);
 
-	public static final Object NO_ROW = new MarkerObject( "NO_ROW" );
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class,
-                                                                       StatefulPersistenceContext.class.getName());
+	private static final boolean TRACE_ENABLED = LOG.isTraceEnabled();
 	private static final int INIT_COLL_SIZE = 8;
 
 	private SessionImplementor session;
 
 	// Loaded entity instances, by EntityKey
-	private Map entitiesByKey;
+	private Map<EntityKey, Object> entitiesByKey;
 
 	// Loaded entity instances, by EntityUniqueKey
-	private Map entitiesByUniqueKey;
+	private Map<EntityUniqueKey, Object> entitiesByUniqueKey;
 
-	// Identity map of EntityEntry instances, by the entity instance
-	private Map entityEntries;
+	private EntityEntryContext entityEntryContext;
+//	private Map<Object,EntityEntry> entityEntries;
 
 	// Entity proxies, by EntityKey
-	private Map proxiesByKey;
+	private ConcurrentMap<EntityKey, Object> proxiesByKey;
 
 	// Snapshots of current database state for entities
 	// that have *not* been loaded
-	private Map entitySnapshotsByKey;
+	private Map<EntityKey, Object> entitySnapshotsByKey;
 
 	// Identity map of array holder ArrayHolder instances, by the array instance
-	private Map arrayHolders;
+	private Map<Object, PersistentCollection> arrayHolders;
 
 	// Identity map of CollectionEntry instances, by the collection wrapper
-	private Map collectionEntries;
+	private IdentityMap<PersistentCollection, CollectionEntry> collectionEntries;
 
 	// Collection wrappers, by the CollectionKey
-	private Map collectionsByKey; //key=CollectionKey, value=PersistentCollection
+	private Map<CollectionKey, PersistentCollection> collectionsByKey;
 
 	// Set of EntityKeys of deleted objects
-	private HashSet nullifiableEntityKeys;
+	private HashSet<EntityKey> nullifiableEntityKeys;
 
 	// properties that we have tried to load, and not found in the database
-	private HashSet nullAssociations;
+	private HashSet<AssociationKey> nullAssociations;
 
 	// A list of collection wrappers that were instantiating during result set
 	// processing, that we will need to initialize at the end of the query
-	private List nonlazyCollections;
+	private List<PersistentCollection> nonlazyCollections;
 
 	// A container for collections we load up when the owning entity is not
 	// yet loaded ... for now, this is purely transient!
@@ -134,18 +142,17 @@ public class StatefulPersistenceContext implements PersistenceContext {
 
 	// Parent entities cache by their child for cascading
 	// May be empty or not contains all relation
-	private Map parentsByChild;
+	private Map<Object,Object> parentsByChild;
 
-	private int cascading = 0;
-	private int loadCounter = 0;
-	private boolean flushing = false;
+	private int cascading;
+	private int loadCounter;
+	private boolean flushing;
 
-	private boolean defaultReadOnly = false;
-	private boolean hasNonReadOnlyEntities = false;
+	private boolean defaultReadOnly;
+	private boolean hasNonReadOnlyEntities;
 
 	private LoadContexts loadContexts;
 	private BatchFetchQueue batchFetchQueue;
-
 
 
 	/**
@@ -156,35 +163,41 @@ public class StatefulPersistenceContext implements PersistenceContext {
 	public StatefulPersistenceContext(SessionImplementor session) {
 		this.session = session;
 
-		entitiesByKey = new HashMap( INIT_COLL_SIZE );
-		entitiesByUniqueKey = new HashMap( INIT_COLL_SIZE );
-		proxiesByKey = new ReferenceMap( AbstractReferenceMap.HARD, AbstractReferenceMap.WEAK );
-		entitySnapshotsByKey = new HashMap( INIT_COLL_SIZE );
+		entitiesByKey = new HashMap<EntityKey, Object>( INIT_COLL_SIZE );
+		entitiesByUniqueKey = new HashMap<EntityUniqueKey, Object>( INIT_COLL_SIZE );
+		//noinspection unchecked
+		proxiesByKey = new ConcurrentReferenceHashMap<EntityKey, Object>( INIT_COLL_SIZE, .75f, 1, ConcurrentReferenceHashMap.ReferenceType.STRONG, ConcurrentReferenceHashMap.ReferenceType.WEAK, null );
+		entitySnapshotsByKey = new HashMap<EntityKey, Object>( INIT_COLL_SIZE );
 
-		entityEntries = IdentityMap.instantiateSequenced( INIT_COLL_SIZE );
+		entityEntryContext = new EntityEntryContext();
+//		entityEntries = IdentityMap.instantiateSequenced( INIT_COLL_SIZE );
 		collectionEntries = IdentityMap.instantiateSequenced( INIT_COLL_SIZE );
-		collectionsByKey = new HashMap( INIT_COLL_SIZE );
-		arrayHolders = IdentityMap.instantiate( INIT_COLL_SIZE );
-		parentsByChild = IdentityMap.instantiateSequenced( INIT_COLL_SIZE );
+		parentsByChild = new IdentityHashMap<Object,Object>( INIT_COLL_SIZE );
 
-		nullifiableEntityKeys = new HashSet();
+		collectionsByKey = new HashMap<CollectionKey, PersistentCollection>( INIT_COLL_SIZE );
+		arrayHolders = new IdentityHashMap<Object, PersistentCollection>( INIT_COLL_SIZE );
+
+		nullifiableEntityKeys = new HashSet<EntityKey>();
 
 		initTransientState();
 	}
 
 	private void initTransientState() {
-		nullAssociations = new HashSet( INIT_COLL_SIZE );
-		nonlazyCollections = new ArrayList( INIT_COLL_SIZE );
+		nullAssociations = new HashSet<AssociationKey>( INIT_COLL_SIZE );
+		nonlazyCollections = new ArrayList<PersistentCollection>( INIT_COLL_SIZE );
 	}
 
+	@Override
 	public boolean isStateless() {
 		return false;
 	}
 
+	@Override
 	public SessionImplementor getSession() {
 		return session;
 	}
 
+	@Override
 	public LoadContexts getLoadContexts() {
 		if ( loadContexts == null ) {
 			loadContexts = new LoadContexts( this );
@@ -192,26 +205,20 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return loadContexts;
 	}
 
+	@Override
 	public void addUnownedCollection(CollectionKey key, PersistentCollection collection) {
 		if (unownedCollections==null) {
-			unownedCollections = new HashMap<CollectionKey,PersistentCollection>(8);
+			unownedCollections = new HashMap<CollectionKey,PersistentCollection>(INIT_COLL_SIZE);
 		}
 		unownedCollections.put( key, collection );
 	}
 
+	@Override
 	public PersistentCollection useUnownedCollection(CollectionKey key) {
-		if ( unownedCollections == null ) {
-			return null;
-		}
-		else {
-			return unownedCollections.remove(key);
-		}
+		return ( unownedCollections == null ) ? null : unownedCollections.remove( key );
 	}
 
-	/**
-	 * Get the <tt>BatchFetchQueue</tt>, instantiating one if
-	 * necessary.
-	 */
+	@Override
 	public BatchFetchQueue getBatchFetchQueue() {
 		if (batchFetchQueue==null) {
 			batchFetchQueue = new BatchFetchQueue(this);
@@ -219,19 +226,23 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return batchFetchQueue;
 	}
 
+	@Override
 	public void clear() {
 		for ( Object o : proxiesByKey.values() ) {
-			final LazyInitializer li = ((HibernateProxy) o).getHibernateLazyInitializer();
-			li.unsetSession();
+			if ( o == null ) {
+				//entry may be GCd
+				continue;
+			}
+			((HibernateProxy) o).getHibernateLazyInitializer().unsetSession();
 		}
-		Map.Entry[] collectionEntryArray = IdentityMap.concurrentEntries( collectionEntries );
-		for ( Map.Entry aCollectionEntryArray : collectionEntryArray ) {
-			((PersistentCollection) aCollectionEntryArray.getKey()).unsetSession( getSession() );
+		for ( Map.Entry<PersistentCollection, CollectionEntry> aCollectionEntryArray : IdentityMap.concurrentEntries( collectionEntries ) ) {
+			aCollectionEntryArray.getKey().unsetSession( getSession() );
 		}
 		arrayHolders.clear();
 		entitiesByKey.clear();
 		entitiesByUniqueKey.clear();
-		entityEntries.clear();
+		entityEntryContext.clear();
+//		entityEntries.clear();
 		parentsByChild.clear();
 		entitySnapshotsByKey.clear();
 		collectionsByKey.clear();
@@ -249,29 +260,28 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		if ( loadContexts != null ) {
 			loadContexts.cleanup();
 		}
+		naturalIdXrefDelegate.clear();
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public boolean isDefaultReadOnly() {
 		return defaultReadOnly;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public void setDefaultReadOnly(boolean defaultReadOnly) {
 		this.defaultReadOnly = defaultReadOnly;
 	}
 
+	@Override
 	public boolean hasNonReadOnlyEntities() {
 		return hasNonReadOnlyEntities;
 	}
 
+	@Override
 	public void setEntryStatus(EntityEntry entry, Status status) {
-		entry.setStatus(status);
-		setHasNonReadOnlyEnties(status);
+		entry.setStatus( status );
+		setHasNonReadOnlyEnties( status );
 	}
 
 	private void setHasNonReadOnlyEnties(Status status) {
@@ -280,177 +290,164 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		}
 	}
 
+	@Override
 	public void afterTransactionCompletion() {
 		cleanUpInsertedKeysAfterTransaction();
-		// Downgrade locks
-		for ( Object o : entityEntries.values() ) {
-			((EntityEntry) o).setLockMode( LockMode.NONE );
-		}
+		entityEntryContext.downgradeLocks();
+//		// Downgrade locks
+//		for ( EntityEntry o : entityEntries.values() ) {
+//			o.setLockMode( LockMode.NONE );
+//		}
 	}
 
 	/**
 	 * Get the current state of the entity as known to the underlying
 	 * database, or null if there is no corresponding row
+	 * <p/>
+	 * {@inheritDoc}
 	 */
-	public Object[] getDatabaseSnapshot(Serializable id, EntityPersister persister)
-	throws HibernateException {
+	@Override
+	public Object[] getDatabaseSnapshot(Serializable id, EntityPersister persister) throws HibernateException {
 		final EntityKey key = session.generateEntityKey( id, persister );
-		Object cached = entitySnapshotsByKey.get(key);
-		if (cached!=null) {
-			return cached==NO_ROW ? null : (Object[]) cached;
+		final Object cached = entitySnapshotsByKey.get( key );
+		if ( cached != null ) {
+			return cached == NO_ROW ? null : (Object[]) cached;
 		}
 		else {
-			Object[] snapshot = persister.getDatabaseSnapshot( id, session );
-			entitySnapshotsByKey.put( key, snapshot==null ? NO_ROW : snapshot );
+			final Object[] snapshot = persister.getDatabaseSnapshot( id, session );
+			entitySnapshotsByKey.put( key, snapshot == null ? NO_ROW : snapshot );
 			return snapshot;
 		}
 	}
 
-	public Object[] getNaturalIdSnapshot(Serializable id, EntityPersister persister)
-	throws HibernateException {
+	@Override
+	public Object[] getNaturalIdSnapshot(Serializable id, EntityPersister persister) throws HibernateException {
 		if ( !persister.hasNaturalIdentifier() ) {
 			return null;
 		}
 
-		// if the natural-id is marked as non-mutable, it is not retrieved during a
-		// normal database-snapshot operation...
-		int[] props = persister.getNaturalIdentifierProperties();
-		boolean[] updateable = persister.getPropertyUpdateability();
-		boolean allNatualIdPropsAreUpdateable = true;
-		for ( int i = 0; i < props.length; i++ ) {
-			if ( !updateable[ props[i] ] ) {
-				allNatualIdPropsAreUpdateable = false;
-				break;
-			}
+		persister = locateProperPersister( persister );
+
+		// let's first see if it is part of the natural id cache...
+		final Object[] cachedValue = naturalIdHelper.findCachedNaturalId( persister, id );
+		if ( cachedValue != null ) {
+			return cachedValue;
 		}
 
-		if ( allNatualIdPropsAreUpdateable ) {
-			// do this when all the properties are updateable since there is
-			// a certain likelihood that the information will already be
-			// snapshot-cached.
-			Object[] entitySnapshot = getDatabaseSnapshot( id, persister );
-			if ( entitySnapshot == NO_ROW ) {
-				return null;
-			}
-			Object[] naturalIdSnapshot = new Object[ props.length ];
-			for ( int i = 0; i < props.length; i++ ) {
-				naturalIdSnapshot[i] = entitySnapshot[ props[i] ];
-			}
-			return naturalIdSnapshot;
+		// check to see if the natural id is mutable/immutable
+		if ( persister.getEntityMetamodel().hasImmutableNaturalId() ) {
+			// an immutable natural-id is not retrieved during a normal database-snapshot operation...
+			final Object[] dbValue = persister.getNaturalIdentifierSnapshot( id, session );
+			naturalIdHelper.cacheNaturalIdCrossReferenceFromLoad(
+					persister,
+					id,
+					dbValue
+			);
+			return dbValue;
 		}
 		else {
-			return persister.getNaturalIdentifierSnapshot( id, session );
+			// for a mutable natural there is a likelihood that the the information will already be
+			// snapshot-cached.
+			final int[] props = persister.getNaturalIdentifierProperties();
+			final Object[] entitySnapshot = getDatabaseSnapshot( id, persister );
+			if ( entitySnapshot == NO_ROW || entitySnapshot == null ) {
+				return null;
+			}
+
+			final Object[] naturalIdSnapshotSubSet = new Object[ props.length ];
+			for ( int i = 0; i < props.length; i++ ) {
+				naturalIdSnapshotSubSet[i] = entitySnapshot[ props[i] ];
+			}
+			naturalIdHelper.cacheNaturalIdCrossReferenceFromLoad(
+					persister,
+					id,
+					naturalIdSnapshotSubSet
+			);
+			return naturalIdSnapshotSubSet;
 		}
 	}
 
-	/**
-	 * Retrieve the cached database snapshot for the requested entity key.
-	 * <p/>
-	 * This differs from {@link #getDatabaseSnapshot} is two important respects:<ol>
-	 * <li>no snapshot is obtained from the database if not already cached</li>
-	 * <li>an entry of {@link #NO_ROW} here is interpretet as an exception</li>
-	 * </ol>
-	 * @param key The entity key for which to retrieve the cached snapshot
-	 * @return The cached snapshot
-	 * @throws IllegalStateException if the cached snapshot was == {@link #NO_ROW}.
-	 */
+	private EntityPersister locateProperPersister(EntityPersister persister) {
+		return session.getFactory().getEntityPersister( persister.getRootEntityName() );
+	}
+
+	@Override
 	public Object[] getCachedDatabaseSnapshot(EntityKey key) {
-		Object snapshot = entitySnapshotsByKey.get( key );
+		final Object snapshot = entitySnapshotsByKey.get( key );
 		if ( snapshot == NO_ROW ) {
-			throw new IllegalStateException( "persistence context reported no row snapshot for " + MessageHelper.infoString( key.getEntityName(), key.getIdentifier() ) );
+			throw new IllegalStateException(
+					"persistence context reported no row snapshot for "
+							+ MessageHelper.infoString( key.getEntityName(), key.getIdentifier() )
+			);
 		}
-		return ( Object[] ) snapshot;
+		return (Object[]) snapshot;
 	}
 
-	/*public void removeDatabaseSnapshot(EntityKey key) {
-		entitySnapshotsByKey.remove(key);
-	}*/
-
+	@Override
 	public void addEntity(EntityKey key, Object entity) {
-		entitiesByKey.put(key, entity);
-		getBatchFetchQueue().removeBatchLoadableEntityKey(key);
+		entitiesByKey.put( key, entity );
+		getBatchFetchQueue().removeBatchLoadableEntityKey( key );
 	}
 
-	/**
-	 * Get the entity instance associated with the given
-	 * <tt>EntityKey</tt>
-	 */
+	@Override
 	public Object getEntity(EntityKey key) {
-		return entitiesByKey.get(key);
+		return entitiesByKey.get( key );
 	}
 
+	@Override
 	public boolean containsEntity(EntityKey key) {
-		return entitiesByKey.containsKey(key);
+		return entitiesByKey.containsKey( key );
 	}
 
-	/**
-	 * Remove an entity from the session cache, also clear
-	 * up other state associated with the entity, all except
-	 * for the <tt>EntityEntry</tt>
-	 */
+	@Override
 	public Object removeEntity(EntityKey key) {
-		Object entity = entitiesByKey.remove(key);
-		Iterator iter = entitiesByUniqueKey.values().iterator();
-		while ( iter.hasNext() ) {
-			if ( iter.next()==entity ) iter.remove();
+		final Object entity = entitiesByKey.remove( key );
+		final Iterator itr = entitiesByUniqueKey.values().iterator();
+		while ( itr.hasNext() ) {
+			if ( itr.next() == entity ) {
+				itr.remove();
+			}
 		}
 		// Clear all parent cache
 		parentsByChild.clear();
-		entitySnapshotsByKey.remove(key);
-		nullifiableEntityKeys.remove(key);
-		getBatchFetchQueue().removeBatchLoadableEntityKey(key);
-		getBatchFetchQueue().removeSubselect(key);
+		entitySnapshotsByKey.remove( key );
+		nullifiableEntityKeys.remove( key );
+		getBatchFetchQueue().removeBatchLoadableEntityKey( key );
+		getBatchFetchQueue().removeSubselect( key );
 		return entity;
 	}
 
-	/**
-	 * Get an entity cached by unique key
-	 */
+	@Override
 	public Object getEntity(EntityUniqueKey euk) {
-		return entitiesByUniqueKey.get(euk);
+		return entitiesByUniqueKey.get( euk );
 	}
 
-	/**
-	 * Add an entity to the cache by unique key
-	 */
+	@Override
 	public void addEntity(EntityUniqueKey euk, Object entity) {
-		entitiesByUniqueKey.put(euk, entity);
+		entitiesByUniqueKey.put( euk, entity );
 	}
 
-	/**
-	 * Retreive the EntityEntry representation of the given entity.
-	 *
-	 * @param entity The entity for which to locate the EntityEntry.
-	 * @return The EntityEntry for the given entity.
-	 */
+	@Override
 	public EntityEntry getEntry(Object entity) {
-		return (EntityEntry) entityEntries.get(entity);
+		return entityEntryContext.getEntityEntry( entity );
 	}
 
-	/**
-	 * Remove an entity entry from the session cache
-	 */
+	@Override
 	public EntityEntry removeEntry(Object entity) {
-		return (EntityEntry) entityEntries.remove(entity);
+		return entityEntryContext.removeEntityEntry( entity );
 	}
 
-	/**
-	 * Is there an EntityEntry for this instance?
-	 */
+	@Override
 	public boolean isEntryFor(Object entity) {
-		return entityEntries.containsKey(entity);
+		return entityEntryContext.hasEntityEntry( entity );
 	}
 
-	/**
-	 * Get the collection entry for a persistent collection
-	 */
+	@Override
 	public CollectionEntry getCollectionEntry(PersistentCollection coll) {
-		return (CollectionEntry) collectionEntries.get(coll);
+		return collectionEntries.get( coll );
 	}
 
-	/**
-	 * Adds an entity to the internal caches.
-	 */
+	@Override
 	public EntityEntry addEntity(
 			final Object entity,
 			final Status status,
@@ -461,11 +458,8 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			final boolean existsInDatabase,
 			final EntityPersister persister,
 			final boolean disableVersionIncrement,
-			boolean lazyPropertiesAreUnfetched
-	) {
-
+			boolean lazyPropertiesAreUnfetched) {
 		addEntity( entityKey, entity );
-
 		return addEntry(
 				entity,
 				status,
@@ -478,14 +472,10 @@ public class StatefulPersistenceContext implements PersistenceContext {
 				persister,
 				disableVersionIncrement,
 				lazyPropertiesAreUnfetched
-			);
+		);
 	}
 
-
-	/**
-	 * Generates an appropriate EntityEntry instance and adds it
-	 * to the event source's internal caches.
-	 */
+	@Override
 	public EntityEntry addEntry(
 			final Object entity,
 			final Status status,
@@ -499,7 +489,8 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			final boolean disableVersionIncrement,
 			boolean lazyPropertiesAreUnfetched) {
 
-		EntityEntry e = new EntityEntry(
+		EntityEntryFactory entityEntryFactory = session.getFactory().getServiceRegistry().getService( EntityEntryFactory.class );
+		final EntityEntry e = entityEntryFactory.createEntityEntry(
 				status,
 				loadedState,
 				rowId,
@@ -508,41 +499,38 @@ public class StatefulPersistenceContext implements PersistenceContext {
 				lockMode,
 				existsInDatabase,
 				persister,
-				persister.getEntityMode(),
-				session.getTenantIdentifier(),
 				disableVersionIncrement,
-				lazyPropertiesAreUnfetched
+				lazyPropertiesAreUnfetched,
+				this
 		);
-		entityEntries.put(entity, e);
 
-		setHasNonReadOnlyEnties(status);
+		entityEntryContext.addEntityEntry( entity, e );
+//		entityEntries.put(entity, e);
+
+		setHasNonReadOnlyEnties( status );
 		return e;
 	}
 
+	@Override
 	public boolean containsCollection(PersistentCollection collection) {
-		return collectionEntries.containsKey(collection);
+		return collectionEntries.containsKey( collection );
 	}
 
+	@Override
 	public boolean containsProxy(Object entity) {
 		return proxiesByKey.containsValue( entity );
 	}
 
-	/**
-	 * Takes the given object and, if it represents a proxy, reassociates it with this event source.
-	 *
-	 * @param value The possible proxy to be reassociated.
-	 * @return Whether the passed value represented an actual proxy which got initialized.
-	 * @throws MappingException
-	 */
+	@Override
 	public boolean reassociateIfUninitializedProxy(Object value) throws MappingException {
 		if ( value instanceof ElementWrapper ) {
 			value = ( (ElementWrapper) value ).getElement();
 		}
 
-		if ( !Hibernate.isInitialized(value) ) {
-			HibernateProxy proxy = (HibernateProxy) value;
-			LazyInitializer li = proxy.getHibernateLazyInitializer();
-			reassociateProxy(li, proxy);
+		if ( !Hibernate.isInitialized( value ) ) {
+			final HibernateProxy proxy = (HibernateProxy) value;
+			final LazyInitializer li = proxy.getHibernateLazyInitializer();
+			reassociateProxy( li, proxy );
 			return true;
 		}
 		else {
@@ -550,21 +538,18 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		}
 	}
 
-	/**
-	 * If a deleted entity instance is re-saved, and it has a proxy, we need to
-	 * reset the identifier of the proxy
-	 */
+	@Override
 	public void reassociateProxy(Object value, Serializable id) throws MappingException {
 		if ( value instanceof ElementWrapper ) {
 			value = ( (ElementWrapper) value ).getElement();
 		}
 
 		if ( value instanceof HibernateProxy ) {
-            LOG.debugf("Setting proxy identifier: %s", id);
-			HibernateProxy proxy = (HibernateProxy) value;
-			LazyInitializer li = proxy.getHibernateLazyInitializer();
-			li.setIdentifier(id);
-			reassociateProxy(li, proxy);
+			LOG.debugf( "Setting proxy identifier: %s", id );
+			final HibernateProxy proxy = (HibernateProxy) value;
+			final LazyInitializer li = proxy.getHibernateLazyInitializer();
+			li.setIdentifier( id );
+			reassociateProxy( li, proxy );
 		}
 	}
 
@@ -579,70 +564,54 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			final EntityPersister persister = session.getFactory().getEntityPersister( li.getEntityName() );
 			final EntityKey key = session.generateEntityKey( li.getIdentifier(), persister );
 		  	// any earlier proxy takes precedence
-			if ( !proxiesByKey.containsKey( key ) ) {
-				proxiesByKey.put( key, proxy );
-			}
+			proxiesByKey.putIfAbsent( key, proxy );
 			proxy.getHibernateLazyInitializer().setSession( session );
 		}
 	}
 
-	/**
-	 * Get the entity instance underlying the given proxy, throwing
-	 * an exception if the proxy is uninitialized. If the given object
-	 * is not a proxy, simply return the argument.
-	 */
+	@Override
 	public Object unproxy(Object maybeProxy) throws HibernateException {
 		if ( maybeProxy instanceof ElementWrapper ) {
 			maybeProxy = ( (ElementWrapper) maybeProxy ).getElement();
 		}
 
 		if ( maybeProxy instanceof HibernateProxy ) {
-			HibernateProxy proxy = (HibernateProxy) maybeProxy;
-			LazyInitializer li = proxy.getHibernateLazyInitializer();
+			final HibernateProxy proxy = (HibernateProxy) maybeProxy;
+			final LazyInitializer li = proxy.getHibernateLazyInitializer();
 			if ( li.isUninitialized() ) {
 				throw new PersistentObjectException(
-						"object was an uninitialized proxy for " +
-						li.getEntityName()
+						"object was an uninitialized proxy for " + li.getEntityName()
 				);
 			}
-			return li.getImplementation(); //unwrap the object
+			//unwrap the object and return
+			return li.getImplementation();
 		}
 		else {
 			return maybeProxy;
 		}
 	}
 
-	/**
-	 * Possibly unproxy the given reference and reassociate it with the current session.
-	 *
-	 * @param maybeProxy The reference to be unproxied if it currently represents a proxy.
-	 * @return The unproxied instance.
-	 * @throws HibernateException
-	 */
+	@Override
 	public Object unproxyAndReassociate(Object maybeProxy) throws HibernateException {
 		if ( maybeProxy instanceof ElementWrapper ) {
 			maybeProxy = ( (ElementWrapper) maybeProxy ).getElement();
 		}
 
 		if ( maybeProxy instanceof HibernateProxy ) {
-			HibernateProxy proxy = (HibernateProxy) maybeProxy;
-			LazyInitializer li = proxy.getHibernateLazyInitializer();
-			reassociateProxy(li, proxy);
-			return li.getImplementation(); //initialize + unwrap the object
+			final HibernateProxy proxy = (HibernateProxy) maybeProxy;
+			final LazyInitializer li = proxy.getHibernateLazyInitializer();
+			reassociateProxy( li, proxy );
+			//initialize + unwrap the object and return it
+			return li.getImplementation();
 		}
 		else {
 			return maybeProxy;
 		}
 	}
 
-	/**
-	 * Attempts to check whether the given key represents an entity already loaded within the
-	 * current session.
-	 * @param object The entity reference against which to perform the uniqueness check.
-	 * @throws HibernateException
-	 */
+	@Override
 	public void checkUniqueness(EntityKey key, Object object) throws HibernateException {
-		Object entity = getEntity(key);
+		final Object entity = getEntity( key );
 		if ( entity == object ) {
 			throw new AssertionFailure( "object already associated, but no entry was found" );
 		}
@@ -651,125 +620,152 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		}
 	}
 
-	/**
-	 * If the existing proxy is insufficiently "narrow" (derived), instantiate a new proxy
-	 * and overwrite the registration of the old one. This breaks == and occurs only for
-	 * "class" proxies rather than "interface" proxies. Also init the proxy to point to
-	 * the given target implementation if necessary.
-	 *
-	 * @param proxy The proxy instance to be narrowed.
-	 * @param persister The persister for the proxied entity.
-	 * @param key The internal cache key for the proxied entity.
-	 * @param object (optional) the actual proxied entity instance.
-	 * @return An appropriately narrowed instance.
-	 * @throws HibernateException
-	 */
+	@Override
+	@SuppressWarnings("unchecked")
 	public Object narrowProxy(Object proxy, EntityPersister persister, EntityKey key, Object object)
 			throws HibernateException {
 
 		final Class concreteProxyClass = persister.getConcreteProxyClass();
-		boolean alreadyNarrow = concreteProxyClass.isAssignableFrom( proxy.getClass() );
+		final boolean alreadyNarrow = concreteProxyClass.isInstance( proxy );
 
 		if ( !alreadyNarrow ) {
-            if ( LOG.isEnabled(WARN) ) {
-				LOG.narrowingProxy( concreteProxyClass );
+			LOG.narrowingProxy( concreteProxyClass );
+
+			// If an impl is passed, there is really no point in creating a proxy.
+			// It would just be extra processing.  Just return the impl
+			if ( object != null ) {
+				proxiesByKey.remove( key );
+				return object;
 			}
 
-			if ( object != null ) {
-				proxiesByKey.remove(key);
-				return object; //return the proxied object
-			}
-			else {
-				proxy = persister.createProxy( key.getIdentifier(), session );
-				Object proxyOrig = proxiesByKey.put(key, proxy); //overwrite old proxy
-				if ( proxyOrig != null ) {
-					if ( ! ( proxyOrig instanceof HibernateProxy ) ) {
-						throw new AssertionFailure(
-								"proxy not of type HibernateProxy; it is " + proxyOrig.getClass()
-						);
-					}
-					// set the read-only/modifiable mode in the new proxy to what it was in the original proxy
-					boolean readOnlyOrig = ( ( HibernateProxy ) proxyOrig ).getHibernateLazyInitializer().isReadOnly();
-					( ( HibernateProxy ) proxy ).getHibernateLazyInitializer().setReadOnly( readOnlyOrig );
+			// Similarly, if the original HibernateProxy is initialized, there
+			// is again no point in creating a proxy.  Just return the impl
+			final HibernateProxy originalHibernateProxy = (HibernateProxy) proxy;
+			if ( !originalHibernateProxy.getHibernateLazyInitializer().isUninitialized() ) {
+				final Object impl = originalHibernateProxy.getHibernateLazyInitializer().getImplementation();
+				// can we return it?
+				if ( concreteProxyClass.isInstance( impl ) ) {
+					proxiesByKey.remove( key );
+					return impl;
 				}
-				return proxy;
 			}
+
+
+			// Otherwise, create the narrowed proxy
+			final HibernateProxy narrowedProxy = (HibernateProxy) persister.createProxy( key.getIdentifier(), session );
+
+			// set the read-only/modifiable mode in the new proxy to what it was in the original proxy
+			final boolean readOnlyOrig = originalHibernateProxy.getHibernateLazyInitializer().isReadOnly();
+			narrowedProxy.getHibernateLazyInitializer().setReadOnly( readOnlyOrig );
+
+			return narrowedProxy;
 		}
 		else {
 
 			if ( object != null ) {
-				LazyInitializer li = ( (HibernateProxy) proxy ).getHibernateLazyInitializer();
-				li.setImplementation(object);
+				final LazyInitializer li = ( (HibernateProxy) proxy ).getHibernateLazyInitializer();
+				li.setImplementation( object );
 			}
-
 			return proxy;
-
 		}
-
 	}
 
-	/**
-	 * Return the existing proxy associated with the given <tt>EntityKey</tt>, or the
-	 * third argument (the entity associated with the key) if no proxy exists. Init
-	 * the proxy to the target implementation, if necessary.
-	 */
-	public Object proxyFor(EntityPersister persister, EntityKey key, Object impl)
-	throws HibernateException {
-		if ( !persister.hasProxy() ) return impl;
-		Object proxy = proxiesByKey.get(key);
-		if ( proxy != null ) {
-			return narrowProxy(proxy, persister, key, impl);
-		}
-		else {
+	@Override
+	public Object proxyFor(EntityPersister persister, EntityKey key, Object impl) throws HibernateException {
+		if ( !persister.hasProxy() ) {
 			return impl;
 		}
+		final Object proxy = proxiesByKey.get( key );
+		return ( proxy != null ) ? narrowProxy( proxy, persister, key, impl ) : impl;
 	}
 
-	/**
-	 * Return the existing proxy associated with the given <tt>EntityKey</tt>, or the
-	 * argument (the entity associated with the key) if no proxy exists.
-	 * (slower than the form above)
-	 */
+	@Override
 	public Object proxyFor(Object impl) throws HibernateException {
-		EntityEntry e = getEntry(impl);
+		final EntityEntry e = getEntry( impl );
 		return proxyFor( e.getPersister(), e.getEntityKey(), impl );
 	}
 
-	/**
-	 * Get the entity that owns this persistent collection
-	 */
+	@Override
 	public Object getCollectionOwner(Serializable key, CollectionPersister collectionPersister) throws MappingException {
+		// todo : we really just need to add a split in the notions of:
+		//		1) collection key
+		//		2) collection owner key
+		// these 2 are not always the same.  Same is true in the case of ToOne associations with property-ref...
+		final EntityPersister ownerPersister = collectionPersister.getOwnerEntityPersister();
+		if ( ownerPersister.getIdentifierType().getReturnedClass().isInstance( key ) ) {
+			return getEntity( session.generateEntityKey( key, collectionPersister.getOwnerEntityPersister() ) );
+		}
+
+		// we have a property-ref type mapping for the collection key.  But that could show up a few ways here...
+		//
+		//		1) The incoming key could be the entity itself...
+		if ( ownerPersister.isInstance( key ) ) {
+			final Serializable owenerId = ownerPersister.getIdentifier( key, session );
+			if ( owenerId == null ) {
+				return null;
+			}
+			return getEntity( session.generateEntityKey( owenerId, ownerPersister ) );
+		}
+
+		final CollectionType collectionType = collectionPersister.getCollectionType();
+
+		//		2) The incoming key is most likely the collection key which we need to resolve to the owner key
+		//			find the corresponding owner instance
+		//			a) try by EntityUniqueKey
+		if ( collectionType.getLHSPropertyName() != null ) {
+			final Object owner = getEntity(
+					new EntityUniqueKey(
+							ownerPersister.getEntityName(),
+							collectionType.getLHSPropertyName(),
+							key,
+							collectionPersister.getKeyType(),
+							ownerPersister.getEntityMode(),
+							session.getFactory()
+					)
+			);
+			if ( owner != null ) {
+				return owner;
+			}
+
+			//		b) try by EntityKey, which means we need to resolve owner-key -> collection-key
+			//			IMPL NOTE : yes if we get here this impl is very non-performant, but PersistenceContext
+			//					was never designed to handle this case; adding that capability for real means splitting
+			//					the notions of:
+			//						1) collection key
+			//						2) collection owner key
+			// 					these 2 are not always the same (same is true in the case of ToOne associations with
+			// 					property-ref).  That would require changes to (at least) CollectionEntry and quite
+			//					probably changes to how the sql for collection initializers are generated
+			//
+			//			We could also possibly see if the referenced property is a natural id since we already have caching
+			//			in place of natural id snapshots.  BUt really its better to just do it the right way ^^ if we start
+			// 			going that route
+			final Serializable ownerId = ownerPersister.getIdByUniqueKey( key, collectionType.getLHSPropertyName(), session );
+			return getEntity( session.generateEntityKey( ownerId, ownerPersister ) );
+		}
+
+		// as a last resort this is what the old code did...
 		return getEntity( session.generateEntityKey( key, collectionPersister.getOwnerEntityPersister() ) );
 	}
 
-	/**
-	 * Get the entity that owned this persistent collection when it was loaded
-	 *
-	 * @param collection The persistent collection
-	 * @return the owner, if its entity ID is available from the collection's loaded key
-	 * and the owner entity is in the persistence context; otherwise, returns null
-	 */
+	@Override
 	public Object getLoadedCollectionOwnerOrNull(PersistentCollection collection) {
-		CollectionEntry ce = getCollectionEntry( collection );
+		final CollectionEntry ce = getCollectionEntry( collection );
 		if ( ce.getLoadedPersister() == null ) {
-			return null; // early exit...
+			return null;
 		}
+
 		Object loadedOwner = null;
 		// TODO: an alternative is to check if the owner has changed; if it hasn't then
 		// return collection.getOwner()
-		Serializable entityId = getLoadedCollectionOwnerIdOrNull( ce );
+		final Serializable entityId = getLoadedCollectionOwnerIdOrNull( ce );
 		if ( entityId != null ) {
 			loadedOwner = getCollectionOwner( entityId, ce.getLoadedPersister() );
 		}
 		return loadedOwner;
 	}
 
-	/**
-	 * Get the ID for the entity that owned this persistent collection when it was loaded
-	 *
-	 * @param collection The persistent collection
-	 * @return the owner ID if available from the collection's loaded key; otherwise, returns null
-	 */
+	@Override
 	public Serializable getLoadedCollectionOwnerIdOrNull(PersistentCollection collection) {
 		return getLoadedCollectionOwnerIdOrNull( getCollectionEntry( collection ) );
 	}
@@ -789,30 +785,28 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return ce.getLoadedPersister().getCollectionType().getIdOfOwnerOrNull( ce.getLoadedKey(), session );
 	}
 
-	/**
-	 * add a collection we just loaded up (still needs initializing)
-	 */
+	@Override
 	public void addUninitializedCollection(CollectionPersister persister, PersistentCollection collection, Serializable id) {
-		CollectionEntry ce = new CollectionEntry(collection, persister, id, flushing);
-		addCollection(collection, ce, id);
+		final CollectionEntry ce = new CollectionEntry( collection, persister, id, flushing );
+		addCollection( collection, ce, id );
+		if ( persister.getBatchSize() > 1 ) {
+			getBatchFetchQueue().addBatchLoadableCollection( collection, ce );
+		}
 	}
 
-	/**
-	 * add a detached uninitialized collection
-	 */
+	@Override
 	public void addUninitializedDetachedCollection(CollectionPersister persister, PersistentCollection collection) {
-		CollectionEntry ce = new CollectionEntry( persister, collection.getKey() );
+		final CollectionEntry ce = new CollectionEntry( persister, collection.getKey() );
 		addCollection( collection, ce, collection.getKey() );
+		if ( persister.getBatchSize() > 1 ) {
+			getBatchFetchQueue().addBatchLoadableCollection( collection, ce );
+		}
 	}
 
-	/**
-	 * Add a new collection (ie. a newly created one, just instantiated by the
-	 * application, with no database state or snapshot)
-	 * @param collection The collection to be associated with the persistence context
-	 */
+	@Override
 	public void addNewCollection(CollectionPersister persister, PersistentCollection collection)
-	throws HibernateException {
-		addCollection(collection, persister);
+			throws HibernateException {
+		addCollection( collection, persister );
 	}
 
 	/**
@@ -824,11 +818,11 @@ public class StatefulPersistenceContext implements PersistenceContext {
 	 */
 	private void addCollection(PersistentCollection coll, CollectionEntry entry, Serializable key) {
 		collectionEntries.put( coll, entry );
-		CollectionKey collectionKey = new CollectionKey( entry.getLoadedPersister(), key );
-		PersistentCollection old = ( PersistentCollection ) collectionsByKey.put( collectionKey, coll );
+		final CollectionKey collectionKey = new CollectionKey( entry.getLoadedPersister(), key );
+		final PersistentCollection old = collectionsByKey.put( collectionKey, coll );
 		if ( old != null ) {
 			if ( old == coll ) {
-				throw new AssertionFailure("bug adding collection twice");
+				throw new AssertionFailure( "bug adding collection twice" );
 			}
 			// or should it actually throw an exception?
 			old.unsetSession( session );
@@ -845,67 +839,57 @@ public class StatefulPersistenceContext implements PersistenceContext {
 	 * @param persister The collection persister
 	 */
 	private void addCollection(PersistentCollection collection, CollectionPersister persister) {
-		CollectionEntry ce = new CollectionEntry( persister, collection );
+		final CollectionEntry ce = new CollectionEntry( persister, collection );
 		collectionEntries.put( collection, ce );
 	}
 
-	/**
-	 * add an (initialized) collection that was created by another session and passed
-	 * into update() (ie. one with a snapshot and existing state on the database)
-	 */
+	@Override
 	public void addInitializedDetachedCollection(CollectionPersister collectionPersister, PersistentCollection collection)
-	throws HibernateException {
+			throws HibernateException {
 		if ( collection.isUnreferenced() ) {
 			//treat it just like a new collection
 			addCollection( collection, collectionPersister );
 		}
 		else {
-			CollectionEntry ce = new CollectionEntry( collection, session.getFactory() );
+			final CollectionEntry ce = new CollectionEntry( collection, session.getFactory() );
 			addCollection( collection, ce, collection.getKey() );
 		}
 	}
 
-	/**
-	 * add a collection we just pulled out of the cache (does not need initializing)
-	 */
+	@Override
 	public CollectionEntry addInitializedCollection(CollectionPersister persister, PersistentCollection collection, Serializable id)
-	throws HibernateException {
-		CollectionEntry ce = new CollectionEntry(collection, persister, id, flushing);
-		ce.postInitialize(collection);
-		addCollection(collection, ce, id);
+			throws HibernateException {
+		final CollectionEntry ce = new CollectionEntry( collection, persister, id, flushing );
+		ce.postInitialize( collection );
+		addCollection( collection, ce, id );
 		return ce;
 	}
 
-	/**
-	 * Get the collection instance associated with the <tt>CollectionKey</tt>
-	 */
+	@Override
 	public PersistentCollection getCollection(CollectionKey collectionKey) {
-		return (PersistentCollection) collectionsByKey.get(collectionKey);
+		return collectionsByKey.get( collectionKey );
 	}
 
-	/**
-	 * Register a collection for non-lazy loading at the end of the
-	 * two-phase load
-	 */
+	@Override
 	public void addNonLazyCollection(PersistentCollection collection) {
-		nonlazyCollections.add(collection);
+		nonlazyCollections.add( collection );
 	}
 
-	/**
-	 * Force initialization of all non-lazy collections encountered during
-	 * the current two-phase load (actually, this is a no-op, unless this
-	 * is the "outermost" load)
-	 */
+	@Override
 	public void initializeNonLazyCollections() throws HibernateException {
 		if ( loadCounter == 0 ) {
-            LOG.debugf("Initializing non-lazy collections");
+			if ( TRACE_ENABLED ) {
+				LOG.trace( "Initializing non-lazy collections" );
+			}
+
 			//do this work only at the very highest level of the load
-			loadCounter++; //don't let this method be called recursively
+			//don't let this method be called recursively
+			loadCounter++;
 			try {
 				int size;
 				while ( ( size = nonlazyCollections.size() ) > 0 ) {
 					//note that each iteration of the loop may add new elements
-					( (PersistentCollection) nonlazyCollections.remove( size - 1 ) ).forceInitialization();
+					nonlazyCollections.remove( size - 1 ).forceInitialization();
 				}
 			}
 			finally {
@@ -915,40 +899,28 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		}
 	}
 
-
-	/**
-	 * Get the <tt>PersistentCollection</tt> object for an array
-	 */
+	@Override
 	public PersistentCollection getCollectionHolder(Object array) {
-		return (PersistentCollection) arrayHolders.get(array);
+		return arrayHolders.get( array );
 	}
 
-	/**
-	 * Register a <tt>PersistentCollection</tt> object for an array.
-	 * Associates a holder with an array - MUST be called after loading
-	 * array, since the array instance is not created until endLoad().
-	 */
+	@Override
 	public void addCollectionHolder(PersistentCollection holder) {
 		//TODO:refactor + make this method private
 		arrayHolders.put( holder.getValue(), holder );
 	}
 
+	@Override
 	public PersistentCollection removeCollectionHolder(Object array) {
-		return (PersistentCollection) arrayHolders.remove(array);
+		return arrayHolders.remove( array );
 	}
 
-	/**
-	 * Get the snapshot of the pre-flush collection state
-	 */
+	@Override
 	public Serializable getSnapshot(PersistentCollection coll) {
-		return getCollectionEntry(coll).getSnapshot();
+		return getCollectionEntry( coll ).getSnapshot();
 	}
 
-	/**
-	 * Get the collection entry for a collection passed to filter,
-	 * which might be a collection wrapper, an array, or an unwrapped
-	 * collection. Return null if there is no entry.
-	 */
+	@Override
 	public CollectionEntry getCollectionEntryOrNull(Object collection) {
 		PersistentCollection coll;
 		if ( collection instanceof PersistentCollection ) {
@@ -956,14 +928,14 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			//if (collection==null) throw new TransientObjectException("Collection was not yet persistent");
 		}
 		else {
-			coll = getCollectionHolder(collection);
+			coll = getCollectionHolder( collection );
 			if ( coll == null ) {
 				//it might be an unwrapped collection reference!
 				//try to find a wrapper (slowish)
-				Iterator wrappers = IdentityMap.keyIterator(collectionEntries);
+				final Iterator<PersistentCollection> wrappers = collectionEntries.keyIterator();
 				while ( wrappers.hasNext() ) {
-					PersistentCollection pc = (PersistentCollection) wrappers.next();
-					if ( pc.isWrapper(collection) ) {
+					final PersistentCollection pc = wrappers.next();
+					if ( pc.isWrapper( collection ) ) {
 						coll = pc;
 						break;
 					}
@@ -971,32 +943,20 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			}
 		}
 
-		return (coll == null) ? null : getCollectionEntry(coll);
+		return (coll == null) ? null : getCollectionEntry( coll );
 	}
 
-	/**
-	 * Get an existing proxy by key
-	 */
+	@Override
 	public Object getProxy(EntityKey key) {
-		return proxiesByKey.get(key);
+		return proxiesByKey.get( key );
 	}
 
-	/**
-	 * Add a proxy to the session cache
-	 */
+	@Override
 	public void addProxy(EntityKey key, Object proxy) {
-		proxiesByKey.put(key, proxy);
+		proxiesByKey.put( key, proxy );
 	}
 
-	/**
-	 * Remove a proxy from the session cache.
-	 * <p/>
-	 * Additionally, ensure that any load optimization references
-	 * such as batch or subselect loading get cleaned up as well.
-	 *
-	 * @param key The key of the entity proxy to be removed
-	 * @return The proxy reference.
-	 */
+	@Override
 	public Object removeProxy(EntityKey key) {
 		if ( batchFetchQueue != null ) {
 			batchFetchQueue.removeBatchLoadableEntityKey( key );
@@ -1005,35 +965,12 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return proxiesByKey.remove( key );
 	}
 
-	/**
-	 * Record the fact that an entity does not exist in the database
-	 *
-	 * @param key the primary key of the entity
-	 */
-	/*public void addNonExistantEntityKey(EntityKey key) {
-		nonExistantEntityKeys.add(key);
-	}*/
-
-	/**
-	 * Record the fact that an entity does not exist in the database
-	 *
-	 * @param key a unique key of the entity
-	 */
-	/*public void addNonExistantEntityUniqueKey(EntityUniqueKey key) {
-		nonExistentEntityUniqueKeys.add(key);
-	}*/
-
-	/*public void removeNonExist(EntityKey key) {
-		nonExistantEntityKeys.remove(key);
-	}*/
-
-	/**
-	 * Retrieve the set of EntityKeys representing nullifiable references
-	 */
+	@Override
 	public HashSet getNullifiableEntityKeys() {
 		return nullifiableEntityKeys;
 	}
 
+	@Override
 	public Map getEntitiesByKey() {
 		return entitiesByKey;
 	}
@@ -1042,57 +979,59 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return proxiesByKey;
 	}
 
-	public Map getEntityEntries() {
-		return entityEntries;
+	@Override
+	public int getNumberOfManagedEntities() {
+		return entityEntryContext.getNumberOfManagedEntities();
 	}
 
+	@Override
+	public Map getEntityEntries() {
+		return null;
+	}
+
+	@Override
 	public Map getCollectionEntries() {
 		return collectionEntries;
 	}
 
+	@Override
 	public Map getCollectionsByKey() {
 		return collectionsByKey;
 	}
 
-	/**
-	 * Do we already know that the entity does not exist in the
-	 * database?
-	 */
-	/*public boolean isNonExistant(EntityKey key) {
-		return nonExistantEntityKeys.contains(key);
-	}*/
-
-	/**
-	 * Do we already know that the entity does not exist in the
-	 * database?
-	 */
-	/*public boolean isNonExistant(EntityUniqueKey key) {
-		return nonExistentEntityUniqueKeys.contains(key);
-	}*/
-
+	@Override
 	public int getCascadeLevel() {
 		return cascading;
 	}
 
+	@Override
 	public int incrementCascadeLevel() {
 		return ++cascading;
 	}
 
+	@Override
 	public int decrementCascadeLevel() {
 		return --cascading;
 	}
 
+	@Override
 	public boolean isFlushing() {
 		return flushing;
 	}
 
+	@Override
 	public void setFlushing(boolean flushing) {
+		final boolean afterFlush = this.flushing && ! flushing;
 		this.flushing = flushing;
+		if ( afterFlush ) {
+			getNaturalIdHelper().cleanupFromSynchronizations();
+		}
 	}
 
 	/**
-	 * Call this before begining a two-phase load
+	 * Call this before beginning a two-phase load
 	 */
+	@Override
 	public void beforeLoad() {
 		loadCounter++;
 	}
@@ -1100,75 +1039,52 @@ public class StatefulPersistenceContext implements PersistenceContext {
 	/**
 	 * Call this after finishing a two-phase load
 	 */
+	@Override
 	public void afterLoad() {
 		loadCounter--;
 	}
 
+	@Override
 	public boolean isLoadFinished() {
 		return loadCounter == 0;
 	}
-	/**
-	 * Returns a string representation of the object.
-	 *
-	 * @return a string representation of the object.
-	 */
+
 	@Override
-    public String toString() {
-		return new StringBuffer()
-				.append("PersistenceContext[entityKeys=")
-				.append(entitiesByKey.keySet())
-				.append(",collectionKeys=")
-				.append(collectionsByKey.keySet())
-				.append("]")
-				.toString();
+	public String toString() {
+		return "PersistenceContext[entityKeys=" + entitiesByKey.keySet()
+				+ ",collectionKeys=" + collectionsByKey.keySet() + "]";
 	}
 
-	/**
-	 * Search <tt>this</tt> persistence context for an associated entity instance which is considered the "owner" of
-	 * the given <tt>childEntity</tt>, and return that owner's id value.  This is performed in the scenario of a
-	 * uni-directional, non-inverse one-to-many collection (which means that the collection elements do not maintain
-	 * a direct reference to the owner).
-	 * <p/>
-	 * As such, the processing here is basically to loop over every entity currently associated with this persistence
-	 * context and for those of the correct entity (sub) type to extract its collection role property value and see
-	 * if the child is contained within that collection.  If so, we have found the owner; if not, we go on.
-	 * <p/>
-	 * Also need to account for <tt>mergeMap</tt> which acts as a local copy cache managed for the duration of a merge
-	 * operation.  It represents a map of the detached entity instances pointing to the corresponding managed instance.
-	 *
-	 * @param entityName The entity name for the entity type which would own the child
-	 * @param propertyName The name of the property on the owning entity type which would name this child association.
-	 * @param childEntity The child entity instance for which to locate the owner instance id.
-	 * @param mergeMap A map of non-persistent instances from an on-going merge operation (possibly null).
-	 *
-	 * @return The id of the entityName instance which is said to own the child; null if an appropriate owner not
-	 * located.
-	 */
+	@Override
+	public Entry<Object,EntityEntry>[] reentrantSafeEntityEntries() {
+		return entityEntryContext.reentrantSafeEntityEntries();
+	}
+
+	@Override
 	public Serializable getOwnerId(String entityName, String propertyName, Object childEntity, Map mergeMap) {
 		final String collectionRole = entityName + '.' + propertyName;
 		final EntityPersister persister = session.getFactory().getEntityPersister( entityName );
 		final CollectionPersister collectionPersister = session.getFactory().getCollectionPersister( collectionRole );
 
 	    // try cache lookup first
-		Object parent = parentsByChild.get( childEntity );
+		final Object parent = parentsByChild.get( childEntity );
 		if ( parent != null ) {
-			final EntityEntry entityEntry = ( EntityEntry ) entityEntries.get( parent );
+			final EntityEntry entityEntry = entityEntryContext.getEntityEntry( parent );
 			//there maybe more than one parent, filter by type
-			if ( 	persister.isSubclassEntityName(entityEntry.getEntityName() )
+			if ( persister.isSubclassEntityName( entityEntry.getEntityName() )
 					&& isFoundInParent( propertyName, childEntity, persister, collectionPersister, parent ) ) {
 				return getEntry( parent ).getId();
 			}
 			else {
-				parentsByChild.remove( childEntity ); // remove wrong entry
+				// remove wrong entry
+				parentsByChild.remove( childEntity );
 			}
 		}
 
 		//not found in case, proceed
 		// iterate all the entities currently associated with the persistence context.
-		Iterator entities = IdentityMap.entries(entityEntries).iterator();
-		while ( entities.hasNext() ) {
-			final Map.Entry me = ( Map.Entry ) entities.next();
-			final EntityEntry entityEntry = ( EntityEntry ) me.getValue();
+		for ( Entry<Object,EntityEntry> me : reentrantSafeEntityEntries() ) {
+			final EntityEntry entityEntry = me.getValue();
 			// does this entity entry pertain to the entity persister in which we are interested (owner)?
 			if ( persister.isSubclassEntityName( entityEntry.getEntityName() ) ) {
 				final Object entityEntryInstance = me.getKey();
@@ -1184,8 +1100,8 @@ public class StatefulPersistenceContext implements PersistenceContext {
 
 				if ( !found && mergeMap != null ) {
 					//check if the detached object being merged is the parent
-					Object unmergedInstance = mergeMap.get( entityEntryInstance );
-					Object unmergedChild = mergeMap.get( childEntity );
+					final Object unmergedInstance = mergeMap.get( entityEntryInstance );
+					final Object unmergedChild = mergeMap.get( childEntity );
 					if ( unmergedInstance != null && unmergedChild != null ) {
 						found = isFoundInParent(
 								propertyName,
@@ -1193,6 +1109,10 @@ public class StatefulPersistenceContext implements PersistenceContext {
 								persister,
 								collectionPersister,
 								unmergedInstance
+						);
+						LOG.debugf(
+								"Detached object being merged (corresponding with a managed entity) has a collection that [%s] the detached child.",
+								( found ? "contains" : "does not contain" )
 						);
 					}
 				}
@@ -1208,11 +1128,10 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		// 		NOTE: decided to put this here rather than in the above loop as I was nervous about the performance
 		//		of the loop-in-loop especially considering this is far more likely the 'edge case'
 		if ( mergeMap != null ) {
-			Iterator mergeMapItr = mergeMap.entrySet().iterator();
-			while ( mergeMapItr.hasNext() ) {
-				final Map.Entry mergeMapEntry = ( Map.Entry ) mergeMapItr.next();
+			for ( Object o : mergeMap.entrySet() ) {
+				final Entry mergeMapEntry = (Entry) o;
 				if ( mergeMapEntry.getKey() instanceof HibernateProxy ) {
-					final HibernateProxy proxy = ( HibernateProxy ) mergeMapEntry.getKey();
+					final HibernateProxy proxy = (HibernateProxy) mergeMapEntry.getKey();
 					if ( persister.isSubclassEntityName( proxy.getHibernateLazyInitializer().getEntityName() ) ) {
 						boolean found = isFoundInParent(
 								propertyName,
@@ -1221,6 +1140,10 @@ public class StatefulPersistenceContext implements PersistenceContext {
 								collectionPersister,
 								mergeMap.get( proxy )
 						);
+						LOG.debugf(
+								"Detached proxy being merged has a collection that [%s] the managed child.",
+								(found ? "contains" : "does not contain")
+						);
 						if ( !found ) {
 							found = isFoundInParent(
 									propertyName,
@@ -1228,6 +1151,10 @@ public class StatefulPersistenceContext implements PersistenceContext {
 									persister,
 									collectionPersister,
 									mergeMap.get( proxy )
+							);
+							LOG.debugf(
+									"Detached proxy being merged has a collection that [%s] the detached child being merged..",
+									(found ? "contains" : "does not contain")
 							);
 						}
 						if ( found ) {
@@ -1247,66 +1174,68 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			EntityPersister persister,
 			CollectionPersister collectionPersister,
 			Object potentialParent) {
-		Object collection = persister.getPropertyValue( potentialParent, property );
+		final Object collection = persister.getPropertyValue( potentialParent, property );
 		return collection != null
 				&& Hibernate.isInitialized( collection )
 				&& collectionPersister.getCollectionType().contains( collection, childEntity, session );
 	}
 
-	/**
-	 * Search the persistence context for an index of the child object,
-	 * given a collection role
-	 */
+	@Override
 	public Object getIndexInOwner(String entity, String property, Object childEntity, Map mergeMap) {
-
-		EntityPersister persister = session.getFactory()
-				.getEntityPersister(entity);
-		CollectionPersister cp = session.getFactory()
-				.getCollectionPersister(entity + '.' + property);
+		final EntityPersister persister = session.getFactory().getEntityPersister( entity );
+		final CollectionPersister cp = session.getFactory().getCollectionPersister( entity + '.' + property );
 
 	    // try cache lookup first
-	    Object parent = parentsByChild.get(childEntity);
-		if (parent != null) {
-			final EntityEntry entityEntry = (EntityEntry) entityEntries.get(parent);
+		final Object parent = parentsByChild.get( childEntity );
+		if ( parent != null ) {
+			final EntityEntry entityEntry = entityEntryContext.getEntityEntry( parent );
 			//there maybe more than one parent, filter by type
 			if ( persister.isSubclassEntityName( entityEntry.getEntityName() ) ) {
-				Object index = getIndexInParent(property, childEntity, persister, cp, parent);
+				Object index = getIndexInParent( property, childEntity, persister, cp, parent );
 
 				if (index==null && mergeMap!=null) {
-					Object unmergedInstance = mergeMap.get(parent);
-					Object unmergedChild = mergeMap.get(childEntity);
-					if ( unmergedInstance!=null && unmergedChild!=null ) {
-						index = getIndexInParent(property, unmergedChild, persister, cp, unmergedInstance);
+					final Object unMergedInstance = mergeMap.get( parent );
+					final Object unMergedChild = mergeMap.get( childEntity );
+					if ( unMergedInstance != null && unMergedChild != null ) {
+						index = getIndexInParent( property, unMergedChild, persister, cp, unMergedInstance );
+						LOG.debugf(
+								"A detached object being merged (corresponding to a parent in parentsByChild) has an indexed collection that [%s] the detached child being merged. ",
+								( index != null ? "contains" : "does not contain" )
+						);
 					}
 				}
-				if (index!=null) {
+				if ( index != null ) {
 					return index;
 				}
 			}
 			else {
-				parentsByChild.remove(childEntity); // remove wrong entry
+				// remove wrong entry
+				parentsByChild.remove( childEntity );
 			}
 		}
 
 		//Not found in cache, proceed
-		Iterator entities = IdentityMap.entries(entityEntries).iterator();
-		while ( entities.hasNext() ) {
-			Map.Entry me = (Map.Entry) entities.next();
-			EntityEntry ee = (EntityEntry) me.getValue();
+		for ( Entry<Object, EntityEntry> me : reentrantSafeEntityEntries() ) {
+			final EntityEntry ee = me.getValue();
 			if ( persister.isSubclassEntityName( ee.getEntityName() ) ) {
-				Object instance = me.getKey();
+				final Object instance = me.getKey();
 
-				Object index = getIndexInParent(property, childEntity, persister, cp, instance);
-
-				if (index==null && mergeMap!=null) {
-					Object unmergedInstance = mergeMap.get(instance);
-					Object unmergedChild = mergeMap.get(childEntity);
-					if ( unmergedInstance!=null && unmergedChild!=null ) {
-						index = getIndexInParent(property, unmergedChild, persister, cp, unmergedInstance);
+				Object index = getIndexInParent( property, childEntity, persister, cp, instance );
+				if ( index==null && mergeMap!=null ) {
+					final Object unMergedInstance = mergeMap.get( instance );
+					final Object unMergedChild = mergeMap.get( childEntity );
+					if ( unMergedInstance != null && unMergedChild!=null ) {
+						index = getIndexInParent( property, unMergedChild, persister, cp, unMergedInstance );
+						LOG.debugf(
+								"A detached object being merged (corresponding to a managed entity) has an indexed collection that [%s] the detached child being merged. ",
+								(index != null ? "contains" : "does not contain" )
+						);
 					}
 				}
 
-				if (index!=null) return index;
+				if ( index != null ) {
+					return index;
+				}
 			}
 		}
 		return null;
@@ -1317,46 +1246,41 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			Object childEntity,
 			EntityPersister persister,
 			CollectionPersister collectionPersister,
-			Object potentialParent
-	){
-		Object collection = persister.getPropertyValue( potentialParent, property );
-		if ( collection!=null && Hibernate.isInitialized(collection) ) {
-			return collectionPersister.getCollectionType().indexOf(collection, childEntity);
+			Object potentialParent){
+		final Object collection = persister.getPropertyValue( potentialParent, property );
+		if ( collection != null && Hibernate.isInitialized( collection ) ) {
+			return collectionPersister.getCollectionType().indexOf( collection, childEntity );
 		}
 		else {
 			return null;
 		}
 	}
 
-	/**
-	 * Record the fact that the association belonging to the keyed
-	 * entity is null.
-	 */
+	@Override
 	public void addNullProperty(EntityKey ownerKey, String propertyName) {
-		nullAssociations.add( new AssociationKey(ownerKey, propertyName) );
+		nullAssociations.add( new AssociationKey( ownerKey, propertyName ) );
 	}
 
-	/**
-	 * Is the association property belonging to the keyed entity null?
-	 */
+	@Override
 	public boolean isPropertyNull(EntityKey ownerKey, String propertyName) {
-		return nullAssociations.contains( new AssociationKey(ownerKey, propertyName) );
+		return nullAssociations.contains( new AssociationKey( ownerKey, propertyName ) );
 	}
 
 	private void clearNullProperties() {
 		nullAssociations.clear();
 	}
 
+	@Override
 	public boolean isReadOnly(Object entityOrProxy) {
 		if ( entityOrProxy == null ) {
 			throw new AssertionFailure( "object must be non-null." );
 		}
 		boolean isReadOnly;
 		if ( entityOrProxy instanceof HibernateProxy ) {
-			isReadOnly = ( ( HibernateProxy ) entityOrProxy ).getHibernateLazyInitializer().isReadOnly();
+			isReadOnly = ( (HibernateProxy) entityOrProxy ).getHibernateLazyInitializer().isReadOnly();
 		}
 		else {
-			EntityEntry ee =  getEntry( entityOrProxy );
+			final EntityEntry ee =  getEntry( entityOrProxy );
 			if ( ee == null ) {
 				throw new TransientObjectException("Instance was not associated with this persistence context" );
 			}
@@ -1365,6 +1289,7 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return isReadOnly;
 	}
 
+	@Override
 	public void setReadOnly(Object object, boolean readOnly) {
 		if ( object == null ) {
 			throw new AssertionFailure( "object must be non-null." );
@@ -1373,7 +1298,7 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			return;
 		}
 		if ( object instanceof HibernateProxy ) {
-			HibernateProxy proxy = ( HibernateProxy ) object;
+			final HibernateProxy proxy = (HibernateProxy) object;
 			setProxyReadOnly( proxy, readOnly );
 			if ( Hibernate.isInitialized( proxy ) ) {
 				setEntityReadOnly(
@@ -1386,9 +1311,9 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			setEntityReadOnly( object, readOnly );
 			// PersistenceContext.proxyFor( entity ) returns entity if there is no proxy for that entity
 			// so need to check the return value to be sure it is really a proxy
-			Object maybeProxy = getSession().getPersistenceContext().proxyFor( object );
+			final Object maybeProxy = getSession().getPersistenceContext().proxyFor( object );
 			if ( maybeProxy instanceof HibernateProxy ) {
-				setProxyReadOnly( ( HibernateProxy ) maybeProxy, readOnly );
+				setProxyReadOnly( (HibernateProxy) maybeProxy, readOnly );
 			}
 		}
 	}
@@ -1402,33 +1327,34 @@ public class StatefulPersistenceContext implements PersistenceContext {
 	}
 
 	private void setEntityReadOnly(Object entity, boolean readOnly) {
-		EntityEntry entry = getEntry(entity);
-		if (entry == null) {
-			throw new TransientObjectException("Instance was not associated with this persistence context" );
+		final EntityEntry entry = getEntry( entity );
+		if ( entry == null ) {
+			throw new TransientObjectException( "Instance was not associated with this persistence context" );
 		}
-		entry.setReadOnly(readOnly, entity );
+		entry.setReadOnly( readOnly, entity );
 		hasNonReadOnlyEntities = hasNonReadOnlyEntities || ! readOnly;
 	}
 
+	@Override
 	public void replaceDelayedEntityIdentityInsertKeys(EntityKey oldKey, Serializable generatedId) {
-		Object entity = entitiesByKey.remove( oldKey );
-		EntityEntry oldEntry = ( EntityEntry ) entityEntries.remove( entity );
+		final Object entity = entitiesByKey.remove( oldKey );
+		final EntityEntry oldEntry = entityEntryContext.removeEntityEntry( entity );
 		parentsByChild.clear();
 
 		final EntityKey newKey = session.generateEntityKey( generatedId, oldEntry.getPersister() );
 		addEntity( newKey, entity );
 		addEntry(
 				entity,
-		        oldEntry.getStatus(),
-		        oldEntry.getLoadedState(),
-		        oldEntry.getRowId(),
-		        generatedId,
-		        oldEntry.getVersion(),
-		        oldEntry.getLockMode(),
-		        oldEntry.isExistsInDatabase(),
-		        oldEntry.getPersister(),
-		        oldEntry.isBeingReplicated(),
-		        oldEntry.isLoadedWithLazyPropertiesUnfetched()
+				oldEntry.getStatus(),
+				oldEntry.getLoadedState(),
+				oldEntry.getRowId(),
+				generatedId,
+				oldEntry.getVersion(),
+				oldEntry.getLockMode(),
+				oldEntry.isExistsInDatabase(),
+				oldEntry.getPersister(),
+				oldEntry.isBeingReplicated(),
+				oldEntry.isLoadedWithLazyPropertiesUnfetched()
 		);
 	}
 
@@ -1440,97 +1366,108 @@ public class StatefulPersistenceContext implements PersistenceContext {
 	 * @throws IOException serialization errors.
 	 */
 	public void serialize(ObjectOutputStream oos) throws IOException {
-        LOG.trace("Serializing persistent-context");
+		final boolean tracing = LOG.isTraceEnabled();
+		if ( tracing ) {
+			LOG.trace( "Serializing persistence-context" );
+		}
 
 		oos.writeBoolean( defaultReadOnly );
 		oos.writeBoolean( hasNonReadOnlyEntities );
 
 		oos.writeInt( entitiesByKey.size() );
-        LOG.trace("Starting serialization of [" + entitiesByKey.size() + "] entitiesByKey entries");
-		Iterator itr = entitiesByKey.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			( ( EntityKey ) entry.getKey() ).serialize( oos );
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + entitiesByKey.size() + "] entitiesByKey entries" );
+		}
+		for ( Map.Entry<EntityKey,Object> entry : entitiesByKey.entrySet() ) {
+			entry.getKey().serialize( oos );
 			oos.writeObject( entry.getValue() );
 		}
 
 		oos.writeInt( entitiesByUniqueKey.size() );
-        LOG.trace("Starting serialization of [" + entitiesByUniqueKey.size() + "] entitiesByUniqueKey entries");
-		itr = entitiesByUniqueKey.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			( ( EntityUniqueKey ) entry.getKey() ).serialize( oos );
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + entitiesByUniqueKey.size() + "] entitiesByUniqueKey entries" );
+		}
+		for ( Map.Entry<EntityUniqueKey,Object> entry : entitiesByUniqueKey.entrySet() ) {
+			entry.getKey().serialize( oos );
 			oos.writeObject( entry.getValue() );
 		}
 
 		oos.writeInt( proxiesByKey.size() );
-        LOG.trace("Starting serialization of [" + proxiesByKey.size() + "] proxiesByKey entries");
-		itr = proxiesByKey.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			( (EntityKey) entry.getKey() ).serialize( oos );
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + proxiesByKey.size() + "] proxiesByKey entries" );
+		}
+		for ( Map.Entry<EntityKey,Object> entry : proxiesByKey.entrySet() ) {
+			entry.getKey().serialize( oos );
 			oos.writeObject( entry.getValue() );
 		}
 
 		oos.writeInt( entitySnapshotsByKey.size() );
-        LOG.trace("Starting serialization of [" + entitySnapshotsByKey.size() + "] entitySnapshotsByKey entries");
-		itr = entitySnapshotsByKey.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			( ( EntityKey ) entry.getKey() ).serialize( oos );
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + entitySnapshotsByKey.size() + "] entitySnapshotsByKey entries" );
+		}
+		for ( Map.Entry<EntityKey,Object> entry : entitySnapshotsByKey.entrySet() ) {
+			entry.getKey().serialize( oos );
 			oos.writeObject( entry.getValue() );
 		}
 
-		oos.writeInt( entityEntries.size() );
-        LOG.trace("Starting serialization of [" + entityEntries.size() + "] entityEntries entries");
-		itr = entityEntries.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			oos.writeObject( entry.getKey() );
-			( ( EntityEntry ) entry.getValue() ).serialize( oos );
-		}
+		entityEntryContext.serialize( oos );
 
 		oos.writeInt( collectionsByKey.size() );
-        LOG.trace("Starting serialization of [" + collectionsByKey.size() + "] collectionsByKey entries");
-		itr = collectionsByKey.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			( ( CollectionKey ) entry.getKey() ).serialize( oos );
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + collectionsByKey.size() + "] collectionsByKey entries" );
+		}
+		for ( Map.Entry<CollectionKey,PersistentCollection> entry : collectionsByKey.entrySet() ) {
+			entry.getKey().serialize( oos );
 			oos.writeObject( entry.getValue() );
 		}
 
 		oos.writeInt( collectionEntries.size() );
-        LOG.trace("Starting serialization of [" + collectionEntries.size() + "] collectionEntries entries");
-		itr = collectionEntries.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + collectionEntries.size() + "] collectionEntries entries" );
+		}
+		for ( Map.Entry<PersistentCollection,CollectionEntry> entry : collectionEntries.entrySet() ) {
 			oos.writeObject( entry.getKey() );
-			( ( CollectionEntry ) entry.getValue() ).serialize( oos );
+			entry.getValue().serialize( oos );
 		}
 
 		oos.writeInt( arrayHolders.size() );
-        LOG.trace("Starting serialization of [" + arrayHolders.size() + "] arrayHolders entries");
-		itr = arrayHolders.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + arrayHolders.size() + "] arrayHolders entries" );
+		}
+		for ( Map.Entry<Object,PersistentCollection> entry : arrayHolders.entrySet() ) {
 			oos.writeObject( entry.getKey() );
 			oos.writeObject( entry.getValue() );
 		}
 
 		oos.writeInt( nullifiableEntityKeys.size() );
-        LOG.trace("Starting serialization of [" + nullifiableEntityKeys.size() + "] nullifiableEntityKey entries");
-		itr = nullifiableEntityKeys.iterator();
-		while ( itr.hasNext() ) {
-			EntityKey entry = ( EntityKey ) itr.next();
+		if ( tracing ) {
+			LOG.trace( "Starting serialization of [" + nullifiableEntityKeys.size() + "] nullifiableEntityKey entries" );
+		}
+		for ( EntityKey entry : nullifiableEntityKeys ) {
 			entry.serialize( oos );
 		}
 	}
 
+	/**
+	 * Used by the owning session to explicitly control deserialization of the persistence context.
+	 *
+	 * @param ois The stream from which the persistence context should be read
+	 * @param session The owning session
+	 *
+	 * @return The deserialized StatefulPersistenceContext
+	 *
+	 * @throws IOException deserialization errors.
+	 * @throws ClassNotFoundException deserialization errors.
+	 */
 	public static StatefulPersistenceContext deserialize(
 			ObjectInputStream ois,
-	        SessionImplementor session) throws IOException, ClassNotFoundException {
-        LOG.trace("Serializing persistent-context");
-		StatefulPersistenceContext rtn = new StatefulPersistenceContext( session );
+			SessionImplementor session) throws IOException, ClassNotFoundException {
+		final boolean tracing = LOG.isTraceEnabled();
+		if ( tracing ) {
+			LOG.trace( "Serializing persistent-context" );
+		}
+		final StatefulPersistenceContext rtn = new StatefulPersistenceContext( session );
+		SessionFactoryImplementor sfi = session.getFactory();
 
 		// during deserialization, we need to reconnect all proxies and
 		// collections to this session, as well as the EntityEntry and
@@ -1543,77 +1480,99 @@ public class StatefulPersistenceContext implements PersistenceContext {
 			rtn.hasNonReadOnlyEntities = ois.readBoolean();
 
 			int count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] entitiesByKey entries");
-			rtn.entitiesByKey = new HashMap( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] entitiesByKey entries" );
+			}
+			rtn.entitiesByKey = new HashMap<EntityKey,Object>( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
 			for ( int i = 0; i < count; i++ ) {
-				rtn.entitiesByKey.put( EntityKey.deserialize( ois, session ), ois.readObject() );
+				rtn.entitiesByKey.put( EntityKey.deserialize( ois, sfi ), ois.readObject() );
 			}
 
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] entitiesByUniqueKey entries");
-			rtn.entitiesByUniqueKey = new HashMap( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] entitiesByUniqueKey entries" );
+			}
+			rtn.entitiesByUniqueKey = new HashMap<EntityUniqueKey,Object>( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
 			for ( int i = 0; i < count; i++ ) {
 				rtn.entitiesByUniqueKey.put( EntityUniqueKey.deserialize( ois, session ), ois.readObject() );
 			}
 
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] proxiesByKey entries");
-			rtn.proxiesByKey = new ReferenceMap( AbstractReferenceMap.HARD, AbstractReferenceMap.WEAK, count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count, .75f );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] proxiesByKey entries" );
+			}
+			//noinspection unchecked
+			rtn.proxiesByKey = new ConcurrentReferenceHashMap<EntityKey, Object>(
+					count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count,
+					.75f,
+					1,
+					ConcurrentReferenceHashMap.ReferenceType.STRONG,
+					ConcurrentReferenceHashMap.ReferenceType.WEAK,
+					null
+			);
 			for ( int i = 0; i < count; i++ ) {
-				EntityKey ek = EntityKey.deserialize( ois, session );
-				Object proxy = ois.readObject();
+				final EntityKey ek = EntityKey.deserialize( ois, sfi );
+				final Object proxy = ois.readObject();
 				if ( proxy instanceof HibernateProxy ) {
-					( ( HibernateProxy ) proxy ).getHibernateLazyInitializer().setSession( session );
+					( (HibernateProxy) proxy ).getHibernateLazyInitializer().setSession( session );
 					rtn.proxiesByKey.put( ek, proxy );
-                } else LOG.trace("Encountered prunded proxy");
-				// otherwise, the proxy was pruned during the serialization process
+				}
+				else {
+					// otherwise, the proxy was pruned during the serialization process
+					if ( tracing ) {
+						LOG.trace( "Encountered pruned proxy" );
+					}
+				}
 			}
 
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] entitySnapshotsByKey entries");
-			rtn.entitySnapshotsByKey = new HashMap( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] entitySnapshotsByKey entries" );
+			}
+			rtn.entitySnapshotsByKey = new HashMap<EntityKey,Object>( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
 			for ( int i = 0; i < count; i++ ) {
-				rtn.entitySnapshotsByKey.put( EntityKey.deserialize( ois, session ), ois.readObject() );
+				rtn.entitySnapshotsByKey.put( EntityKey.deserialize( ois, sfi ), ois.readObject() );
 			}
 
+			rtn.entityEntryContext = EntityEntryContext.deserialize( ois, rtn );
+
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] entityEntries entries");
-			rtn.entityEntries = IdentityMap.instantiateSequenced( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] collectionsByKey entries" );
+			}
+			rtn.collectionsByKey = new HashMap<CollectionKey,PersistentCollection>( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
 			for ( int i = 0; i < count; i++ ) {
-				Object entity = ois.readObject();
-				EntityEntry entry = EntityEntry.deserialize( ois, session );
-				rtn.entityEntries.put( entity, entry );
+				rtn.collectionsByKey.put( CollectionKey.deserialize( ois, session ), (PersistentCollection) ois.readObject() );
 			}
 
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] collectionsByKey entries");
-			rtn.collectionsByKey = new HashMap( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
-			for ( int i = 0; i < count; i++ ) {
-				rtn.collectionsByKey.put( CollectionKey.deserialize( ois, session ), ois.readObject() );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] collectionEntries entries" );
 			}
-
-			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] collectionEntries entries");
 			rtn.collectionEntries = IdentityMap.instantiateSequenced( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
 			for ( int i = 0; i < count; i++ ) {
-				final PersistentCollection pc = ( PersistentCollection ) ois.readObject();
+				final PersistentCollection pc = (PersistentCollection) ois.readObject();
 				final CollectionEntry ce = CollectionEntry.deserialize( ois, session );
 				pc.setCurrentSession( session );
 				rtn.collectionEntries.put( pc, ce );
 			}
 
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] arrayHolders entries");
-			rtn.arrayHolders = IdentityMap.instantiate( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] arrayHolders entries" );
+			}
+			rtn.arrayHolders = new IdentityHashMap<Object, PersistentCollection>( count < INIT_COLL_SIZE ? INIT_COLL_SIZE : count );
 			for ( int i = 0; i < count; i++ ) {
-				rtn.arrayHolders.put( ois.readObject(), ois.readObject() );
+				rtn.arrayHolders.put( ois.readObject(), (PersistentCollection) ois.readObject() );
 			}
 
 			count = ois.readInt();
-            LOG.trace("Starting deserialization of [" + count + "] nullifiableEntityKey entries");
-			rtn.nullifiableEntityKeys = new HashSet();
+			if ( tracing ) {
+				LOG.trace( "Starting deserialization of [" + count + "] nullifiableEntityKey entries" );
+			}
+			rtn.nullifiableEntityKeys = new HashSet<EntityKey>();
 			for ( int i = 0; i < count; i++ ) {
-				rtn.nullifiableEntityKeys.add( EntityKey.deserialize( ois, session ) );
+				rtn.nullifiableEntityKeys.add( EntityKey.deserialize( ois, sfi ) );
 			}
 
 		}
@@ -1624,28 +1583,24 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		return rtn;
 	}
 
-	/**
-	 * @see org.hibernate.engine.spi.PersistenceContext#addChildParent(java.lang.Object, java.lang.Object)
-	 */
+	@Override
 	public void addChildParent(Object child, Object parent) {
-		parentsByChild.put(child, parent);
+		parentsByChild.put( child, parent );
 	}
 
-	/**
-	 * @see org.hibernate.engine.spi.PersistenceContext#removeChildParent(java.lang.Object)
-	 */
+	@Override
 	public void removeChildParent(Object child) {
-	   parentsByChild.remove(child);
+		parentsByChild.remove( child );
 	}
 
+
+	// INSERTED KEYS HANDLING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	private HashMap<String,List<Serializable>> insertedKeysMap;
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public void registerInsertedKey(EntityPersister persister, Serializable id) {
-		// we only are about regsitering these if the persister defines caching
+		// we only are worried about registering these if the persister defines caching
 		if ( persister.hasCache() ) {
 			if ( insertedKeysMap == null ) {
 				insertedKeysMap = new HashMap<String, List<Serializable>>();
@@ -1660,14 +1615,12 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		}
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public boolean wasInsertedDuringTransaction(EntityPersister persister, Serializable id) {
 		// again, we only really care if the entity is cached
 		if ( persister.hasCache() ) {
 			if ( insertedKeysMap != null ) {
-				List<Serializable> insertedEntityIds = insertedKeysMap.get( persister.getRootEntityName() );
+				final List<Serializable> insertedEntityIds = insertedKeysMap.get( persister.getRootEntityName() );
 				if ( insertedEntityIds != null ) {
 					return insertedEntityIds.contains( id );
 				}
@@ -1680,5 +1633,342 @@ public class StatefulPersistenceContext implements PersistenceContext {
 		if ( insertedKeysMap != null ) {
 			insertedKeysMap.clear();
 		}
+	}
+
+
+
+	// NATURAL ID RESOLUTION HANDLING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	private final NaturalIdXrefDelegate naturalIdXrefDelegate = new NaturalIdXrefDelegate( this );
+
+	private final NaturalIdHelper naturalIdHelper = new NaturalIdHelper() {
+		@Override
+		public void cacheNaturalIdCrossReferenceFromLoad(
+				EntityPersister persister,
+				Serializable id,
+				Object[] naturalIdValues) {
+			if ( !persister.hasNaturalIdentifier() ) {
+				// nothing to do
+				return;
+			}
+
+			persister = locateProperPersister( persister );
+
+			// 'justAddedLocally' is meant to handle the case where we would get double stats jounaling
+			//	from a single load event.  The first put journal would come from the natural id resolution;
+			// the second comes from the entity loading.  In this condition, we want to avoid the multiple
+			// 'put' stats incrementing.
+			final boolean justAddedLocally = naturalIdXrefDelegate.cacheNaturalIdCrossReference( persister, id, naturalIdValues );
+
+			if ( justAddedLocally && persister.hasNaturalIdCache() ) {
+				managedSharedCacheEntries( persister, id, naturalIdValues, null, CachedNaturalIdValueSource.LOAD );
+			}
+		}
+
+		@Override
+		public void manageLocalNaturalIdCrossReference(
+				EntityPersister persister,
+				Serializable id,
+				Object[] state,
+				Object[] previousState,
+				CachedNaturalIdValueSource source) {
+			if ( !persister.hasNaturalIdentifier() ) {
+				// nothing to do
+				return;
+			}
+
+			persister = locateProperPersister( persister );
+			final Object[] naturalIdValues = extractNaturalIdValues( state, persister );
+
+			// cache
+			naturalIdXrefDelegate.cacheNaturalIdCrossReference( persister, id, naturalIdValues );
+		}
+
+		@Override
+		public void manageSharedNaturalIdCrossReference(
+				EntityPersister persister,
+				final Serializable id,
+				Object[] state,
+				Object[] previousState,
+				CachedNaturalIdValueSource source) {
+			if ( !persister.hasNaturalIdentifier() ) {
+				// nothing to do
+				return;
+			}
+
+			if ( !persister.hasNaturalIdCache() ) {
+				// nothing to do
+				return;
+			}
+
+			persister = locateProperPersister( persister );
+			final Object[] naturalIdValues = extractNaturalIdValues( state, persister );
+			final Object[] previousNaturalIdValues = previousState == null ? null : extractNaturalIdValues( previousState, persister );
+
+			managedSharedCacheEntries( persister, id, naturalIdValues, previousNaturalIdValues, source );
+		}
+
+		private void managedSharedCacheEntries(
+				EntityPersister persister,
+				final Serializable id,
+				Object[] naturalIdValues,
+				Object[] previousNaturalIdValues,
+				CachedNaturalIdValueSource source) {
+			final NaturalIdRegionAccessStrategy naturalIdCacheAccessStrategy = persister.getNaturalIdCacheAccessStrategy();
+			final NaturalIdCacheKey naturalIdCacheKey = new NaturalIdCacheKey( naturalIdValues, persister, session );
+
+			final SessionFactoryImplementor factory = session.getFactory();
+
+			switch ( source ) {
+				case LOAD: {
+					if ( CacheHelper.fromSharedCache( session, naturalIdCacheKey, naturalIdCacheAccessStrategy ) != null ) {
+						// prevent identical re-cachings
+						return;
+					}
+					final boolean put = naturalIdCacheAccessStrategy.putFromLoad(
+							naturalIdCacheKey,
+							id,
+							session.getTimestamp(),
+							null
+					);
+
+					if ( put && factory.getStatistics().isStatisticsEnabled() ) {
+						factory.getStatisticsImplementor().naturalIdCachePut(
+								naturalIdCacheAccessStrategy.getRegion()
+										.getName()
+						);
+					}
+
+					break;
+				}
+				case INSERT: {
+					final boolean put = naturalIdCacheAccessStrategy.insert( naturalIdCacheKey, id );
+					if ( put && factory.getStatistics().isStatisticsEnabled() ) {
+						factory.getStatisticsImplementor()
+								.naturalIdCachePut( naturalIdCacheAccessStrategy.getRegion().getName() );
+					}
+
+					( (EventSource) session ).getActionQueue().registerProcess(
+							new AfterTransactionCompletionProcess() {
+								@Override
+								public void doAfterTransactionCompletion(boolean success, SessionImplementor session) {
+									if (success) {
+										final boolean put = naturalIdCacheAccessStrategy.afterInsert( naturalIdCacheKey, id );
+
+										if ( put && factory.getStatistics().isStatisticsEnabled() ) {
+											factory.getStatisticsImplementor()
+												.naturalIdCachePut( naturalIdCacheAccessStrategy.getRegion().getName() );
+										}
+									}
+									else {
+										naturalIdCacheAccessStrategy.evict( naturalIdCacheKey );
+									}
+								}
+							}
+					);
+
+					break;
+				}
+				case UPDATE: {
+					final NaturalIdCacheKey previousCacheKey = new NaturalIdCacheKey( previousNaturalIdValues, persister, session );
+					if ( naturalIdCacheKey.equals( previousCacheKey ) ) {
+						// prevent identical re-caching, solves HHH-7309
+						return;
+					}
+					final SoftLock removalLock = naturalIdCacheAccessStrategy.lockItem( previousCacheKey, null );
+					naturalIdCacheAccessStrategy.remove( previousCacheKey );
+
+					final SoftLock lock = naturalIdCacheAccessStrategy.lockItem( naturalIdCacheKey, null );
+					final boolean put = naturalIdCacheAccessStrategy.update( naturalIdCacheKey, id );
+					if ( put && factory.getStatistics().isStatisticsEnabled() ) {
+						factory.getStatisticsImplementor()
+								.naturalIdCachePut( naturalIdCacheAccessStrategy.getRegion().getName() );
+					}
+
+					( (EventSource) session ).getActionQueue().registerProcess(
+							new AfterTransactionCompletionProcess() {
+								@Override
+								public void doAfterTransactionCompletion(boolean success, SessionImplementor session) {
+									naturalIdCacheAccessStrategy.unlockItem( previousCacheKey, removalLock );
+									if (success) {
+										final boolean put = naturalIdCacheAccessStrategy.afterUpdate(
+												naturalIdCacheKey,
+												id,
+												lock
+										);
+
+										if ( put && factory.getStatistics().isStatisticsEnabled() ) {
+											factory.getStatisticsImplementor()
+												.naturalIdCachePut( naturalIdCacheAccessStrategy.getRegion().getName() );
+										}
+									}
+									else {
+										naturalIdCacheAccessStrategy.unlockItem( naturalIdCacheKey, lock );
+									}
+								}
+							}
+					);
+
+					break;
+				}
+				default: {
+					LOG.debug( "Unexpected CachedNaturalIdValueSource [" + source + "]" );
+				}
+			}
+		}
+
+		@Override
+		public Object[] removeLocalNaturalIdCrossReference(EntityPersister persister, Serializable id, Object[] state) {
+			if ( !persister.hasNaturalIdentifier() ) {
+				// nothing to do
+				return null;
+			}
+
+			persister = locateProperPersister( persister );
+			final Object[] naturalIdValues = getNaturalIdValues( state, persister );
+
+			final Object[] localNaturalIdValues = naturalIdXrefDelegate.removeNaturalIdCrossReference( 
+					persister, 
+					id, 
+					naturalIdValues 
+			);
+
+			return localNaturalIdValues != null ? localNaturalIdValues : naturalIdValues;
+		}
+
+		@Override
+		public void removeSharedNaturalIdCrossReference(EntityPersister persister, Serializable id, Object[] naturalIdValues) {
+			if ( !persister.hasNaturalIdentifier() ) {
+				// nothing to do
+				return;
+			}
+
+			if ( ! persister.hasNaturalIdCache() ) {
+				// nothing to do
+				return;
+			}
+
+			// todo : couple of things wrong here:
+			//		1) should be using access strategy, not plain evict..
+			//		2) should prefer session-cached values if any (requires interaction from removeLocalNaturalIdCrossReference
+
+			persister = locateProperPersister( persister );
+			final NaturalIdRegionAccessStrategy naturalIdCacheAccessStrategy = persister.getNaturalIdCacheAccessStrategy();
+			final NaturalIdCacheKey naturalIdCacheKey = new NaturalIdCacheKey( naturalIdValues, persister, session );
+			naturalIdCacheAccessStrategy.evict( naturalIdCacheKey );
+
+//			if ( sessionCachedNaturalIdValues != null
+//					&& !Arrays.equals( sessionCachedNaturalIdValues, deletedNaturalIdValues ) ) {
+//				final NaturalIdCacheKey sessionNaturalIdCacheKey = new NaturalIdCacheKey( sessionCachedNaturalIdValues, persister, session );
+//				naturalIdCacheAccessStrategy.evict( sessionNaturalIdCacheKey );
+//			}
+		}
+
+		@Override
+		public Object[] findCachedNaturalId(EntityPersister persister, Serializable pk) {
+			return naturalIdXrefDelegate.findCachedNaturalId( locateProperPersister( persister ), pk );
+		}
+
+		@Override
+		public Serializable findCachedNaturalIdResolution(EntityPersister persister, Object[] naturalIdValues) {
+			return naturalIdXrefDelegate.findCachedNaturalIdResolution( locateProperPersister( persister ), naturalIdValues );
+		}
+
+		@Override
+		public Object[] extractNaturalIdValues(Object[] state, EntityPersister persister) {
+			final int[] naturalIdPropertyIndexes = persister.getNaturalIdentifierProperties();
+			if ( state.length == naturalIdPropertyIndexes.length ) {
+				return state;
+			}
+
+			final Object[] naturalIdValues = new Object[naturalIdPropertyIndexes.length];
+			for ( int i = 0; i < naturalIdPropertyIndexes.length; i++ ) {
+				naturalIdValues[i] = state[naturalIdPropertyIndexes[i]];
+			}
+			return naturalIdValues;
+		}
+
+		@Override
+		public Object[] extractNaturalIdValues(Object entity, EntityPersister persister) {
+			if ( entity == null ) {
+				throw new AssertionFailure( "Entity from which to extract natural id value(s) cannot be null" );
+			}
+			if ( persister == null ) {
+				throw new AssertionFailure( "Persister to use in extracting natural id value(s) cannot be null" );
+			}
+
+			final int[] naturalIdentifierProperties = persister.getNaturalIdentifierProperties();
+			final Object[] naturalIdValues = new Object[naturalIdentifierProperties.length];
+
+			for ( int i = 0; i < naturalIdentifierProperties.length; i++ ) {
+				naturalIdValues[i] = persister.getPropertyValue( entity, naturalIdentifierProperties[i] );
+			}
+
+			return naturalIdValues;
+		}
+
+		@Override
+		public Collection<Serializable> getCachedPkResolutions(EntityPersister entityPersister) {
+			return naturalIdXrefDelegate.getCachedPkResolutions( entityPersister );
+		}
+
+		@Override
+		public void handleSynchronization(EntityPersister persister, Serializable pk, Object entity) {
+			if ( !persister.hasNaturalIdentifier() ) {
+				// nothing to do
+				return;
+			}
+
+			persister = locateProperPersister( persister );
+
+			final Object[] naturalIdValuesFromCurrentObjectState = extractNaturalIdValues( entity, persister );
+			final boolean changed = ! naturalIdXrefDelegate.sameAsCached(
+					persister,
+					pk,
+					naturalIdValuesFromCurrentObjectState
+			);
+
+			if ( changed ) {
+				final Object[] cachedNaturalIdValues = naturalIdXrefDelegate.findCachedNaturalId( persister, pk );
+				naturalIdXrefDelegate.cacheNaturalIdCrossReference( persister, pk, naturalIdValuesFromCurrentObjectState );
+				naturalIdXrefDelegate.stashInvalidNaturalIdReference( persister, cachedNaturalIdValues );
+
+				removeSharedNaturalIdCrossReference(
+						persister,
+						pk,
+						cachedNaturalIdValues
+				);
+			}
+		}
+
+		@Override
+		public void cleanupFromSynchronizations() {
+			naturalIdXrefDelegate.unStashInvalidNaturalIdReferences();
+		}
+
+		@Override
+		public void handleEviction(Object object, EntityPersister persister, Serializable identifier) {
+			naturalIdXrefDelegate.removeNaturalIdCrossReference(
+					persister,
+					identifier,
+					findCachedNaturalId( persister, identifier )
+			);
+		}
+	};
+
+	@Override
+	public NaturalIdHelper getNaturalIdHelper() {
+		return naturalIdHelper;
+	}
+
+	private Object[] getNaturalIdValues(Object[] state, EntityPersister persister) {
+		final int[] naturalIdPropertyIndexes = persister.getNaturalIdentifierProperties();
+		final Object[] naturalIdValues = new Object[naturalIdPropertyIndexes.length];
+
+		for ( int i = 0; i < naturalIdPropertyIndexes.length; i++ ) {
+			naturalIdValues[i] = state[naturalIdPropertyIndexes[i]];
+		}
+
+		return naturalIdValues;
 	}
 }

@@ -22,20 +22,25 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.annotations;
-import static java.lang.annotation.ElementType.PACKAGE;
-import static java.lang.annotation.ElementType.TYPE;
-import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
+import static java.lang.annotation.ElementType.PACKAGE;
+import static java.lang.annotation.ElementType.TYPE;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
 /**
- * Array of generic generator definitions
+ * Array of generic generator definitions.
  *
  * @author Paul Cowan
  */
 @Target({PACKAGE, TYPE})
 @Retention(RUNTIME)
 public @interface GenericGenerators {
+	/**
+	 * The aggregated generators.
+	 */
 	GenericGenerator[] value();
 }
 

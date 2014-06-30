@@ -23,6 +23,7 @@
  */
 package org.hibernate.testing.junit4;
 
+import org.hibernate.testing.FailureExpectedUtil;
 import org.junit.runners.model.Statement;
 
 /**
@@ -39,7 +40,15 @@ public class BeforeClassCallbackHandler extends Statement {
 
 	@Override
 	public void evaluate() throws Throwable {
-		runner.getTestClassMetadata().performBeforeClassCallbacks( runner.getTestInstance() );
-		wrappedStatement.evaluate();
+		try {
+			runner.getTestClassMetadata().performBeforeClassCallbacks( runner.getTestInstance() );
+			wrappedStatement.evaluate();
+		}
+		catch ( Throwable error ) {
+			runner.setBeforeClassMethodFailed();
+			if (FailureExpectedUtil.hasFailureExpectedMarker( runner.getTestClass().getJavaClass().getAnnotations() )) {
+				throw error;
+			}
+		}
 	}
 }

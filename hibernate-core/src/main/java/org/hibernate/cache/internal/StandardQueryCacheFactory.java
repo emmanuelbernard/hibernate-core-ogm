@@ -38,10 +38,10 @@ import org.hibernate.cfg.Settings;
 public class StandardQueryCacheFactory implements QueryCacheFactory {
 	@Override
 	public QueryCache getQueryCache(
-	        final String regionName,
-	        final UpdateTimestampsCache updateTimestampsCache,
-	        final Settings settings,
-	        final Properties props) throws HibernateException {
+			final String regionName,
+			final UpdateTimestampsCache updateTimestampsCache,
+			final Settings settings,
+			final Properties props) throws HibernateException {
 		return new StandardQueryCache(settings, props, updateTimestampsCache, regionName);
 	}
 }

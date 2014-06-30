@@ -22,11 +22,11 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.dialect.lock;
+
 import java.io.Serializable;
+
 import org.hibernate.HibernateException;
-import org.hibernate.JDBCException;
 import org.hibernate.LockMode;
-import org.hibernate.StaleObjectStateException;
 import org.hibernate.action.internal.EntityIncrementVersionProcess;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.SessionImplementor;
@@ -60,22 +60,14 @@ public class OptimisticForceIncrementLockingStrategy implements LockingStrategy 
 		}
 	}
 
-	/**
-	 * @see LockingStrategy#lock
-	 */
-	public void lock(
-			Serializable id,
-			Object version,
-			Object object,
-			int timeout, SessionImplementor session) throws StaleObjectStateException, JDBCException {
+	@Override
+	public void lock(Serializable id, Object version, Object object, int timeout, SessionImplementor session) {
 		if ( !lockable.isVersioned() ) {
 			throw new HibernateException( "[" + lockMode + "] not supported for non-versioned entities [" + lockable.getEntityName() + "]" );
 		}
-		EntityEntry entry = session.getPersistenceContext().getEntry( object );
-		EntityIncrementVersionProcess incrementVersion = new EntityIncrementVersionProcess( object, entry );
-		EventSource source = (EventSource) session;
-		// Register the EntityIncrementVersionProcess action to run just prior to transaction commit. 
-		source.getActionQueue().registerProcess( incrementVersion );
+		final EntityEntry entry = session.getPersistenceContext().getEntry( object );
+		// Register the EntityIncrementVersionProcess action to run just prior to transaction commit.
+		( (EventSource) session ).getActionQueue().registerProcess( new EntityIncrementVersionProcess( object, entry ) );
 	}
 
 	protected LockMode getLockMode() {

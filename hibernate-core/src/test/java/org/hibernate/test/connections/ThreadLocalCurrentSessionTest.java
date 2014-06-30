@@ -23,15 +23,17 @@
  */
 package org.hibernate.test.connections;
 
+import org.junit.Test;
+
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
 import org.hibernate.context.internal.ThreadLocalSessionContext;
+import org.hibernate.dialect.H2Dialect;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.transaction.spi.LocalStatus;
-
-import org.junit.Test;
+import org.hibernate.testing.RequiresDialect;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -41,6 +43,7 @@ import static org.junit.Assert.fail;
 /**
  * @author Steve Ebersole
  */
+@RequiresDialect(H2Dialect.class)
 public class ThreadLocalCurrentSessionTest extends ConnectionManagementTestCase {
 	@Override
 	public void configure(Configuration cfg) {
@@ -120,12 +123,12 @@ public class ThreadLocalCurrentSessionTest extends ConnectionManagementTestCase 
 		}
 
 		public static boolean isSessionBound(Session session) {
-			return sessionMap() != null && sessionMap().containsKey( me.factory )
-					&& sessionMap().get( me.factory ) == session;
+			return sessionMap() != null && sessionMap().containsKey( me.factory() )
+					&& sessionMap().get( me.factory() ) == session;
 		}
 
 		public static boolean hasBind() {
-			return sessionMap() != null && sessionMap().containsKey( me.factory );
+			return sessionMap() != null && sessionMap().containsKey( me.factory() );
 		}
 	}
 }

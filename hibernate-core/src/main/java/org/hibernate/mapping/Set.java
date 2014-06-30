@@ -23,6 +23,7 @@
  */
 package org.hibernate.mapping;
 import java.util.Iterator;
+
 import org.hibernate.MappingException;
 import org.hibernate.cfg.Mappings;
 import org.hibernate.engine.spi.Mapping;
@@ -60,17 +61,17 @@ public class Set extends Collection {
 		if ( isSorted() ) {
 			return getMappings().getTypeResolver()
 					.getTypeFactory()
-					.sortedSet( getRole(), getReferencedPropertyName(), isEmbedded(), getComparator() );
+					.sortedSet( getRole(), getReferencedPropertyName(), getComparator() );
 		}
 		else if ( hasOrder() ) {
 			return getMappings().getTypeResolver()
 					.getTypeFactory()
-					.orderedSet( getRole(), getReferencedPropertyName(), isEmbedded() );
+					.orderedSet( getRole(), getReferencedPropertyName() );
 		}
 		else {
 			return getMappings().getTypeResolver()
 					.getTypeFactory()
-					.set( getRole(), getReferencedPropertyName(), isEmbedded() );
+					.set( getRole(), getReferencedPropertyName() );
 		}
 	}
 

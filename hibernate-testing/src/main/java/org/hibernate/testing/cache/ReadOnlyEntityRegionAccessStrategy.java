@@ -23,11 +23,11 @@
  */
 package org.hibernate.testing.cache;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.cache.CacheException;
 import org.hibernate.cache.spi.access.SoftLock;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author Strong Liu
@@ -40,11 +40,9 @@ class ReadOnlyEntityRegionAccessStrategy extends BaseEntityRegionAccessStrategy 
 	ReadOnlyEntityRegionAccessStrategy(EntityRegionImpl region) {
 		super( region );
 	}
-
-	@Override
-	public void remove(Object key) throws CacheException {
-	}
-
+	/**
+	 * This cache is asynchronous hence a no-op
+	 */
 	@Override
 	public boolean insert(Object key, Object value, Object version) throws CacheException {
 		return false; //wait until tx complete, see afterInsert().
@@ -56,18 +54,16 @@ class ReadOnlyEntityRegionAccessStrategy extends BaseEntityRegionAccessStrategy 
 		return true;
 	}
 
-
 	@Override
 	public void unlockItem(Object key, SoftLock lock) throws CacheException {
-		LOG.invalidEditOfReadOnlyItem( key );
+		evict( key );
 	}
 
-	@Override
-	public SoftLock lockItem(Object key, Object version) throws CacheException {
-		LOG.invalidEditOfReadOnlyItem( key );
-		throw new UnsupportedOperationException( "Can't write to a readonly object" );
-	}
-
+	/**
+	 * Throws UnsupportedOperationException since this cache is read-only
+	 *
+	 * @throws UnsupportedOperationException always
+	 */
 	@Override
 	public boolean update(Object key, Object value, Object currentVersion, Object previousVersion)
 			throws CacheException {
@@ -75,6 +71,11 @@ class ReadOnlyEntityRegionAccessStrategy extends BaseEntityRegionAccessStrategy 
 		throw new UnsupportedOperationException( "Can't write to a readonly object" );
 	}
 
+	/**
+	 * Throws UnsupportedOperationException since this cache is read-only
+	 *
+	 * @throws UnsupportedOperationException always
+	 */
 	@Override
 	public boolean afterUpdate(Object key, Object value, Object currentVersion, Object previousVersion, SoftLock lock)
 			throws CacheException {

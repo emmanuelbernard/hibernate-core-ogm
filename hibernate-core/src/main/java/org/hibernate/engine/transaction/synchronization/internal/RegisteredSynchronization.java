@@ -25,8 +25,8 @@ package org.hibernate.engine.transaction.synchronization.internal;
 
 import javax.transaction.Synchronization;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.engine.transaction.synchronization.spi.SynchronizationCallbackCoordinator;
+import org.hibernate.internal.CoreLogging;
 
 import org.jboss.logging.Logger;
 
@@ -36,9 +36,7 @@ import org.jboss.logging.Logger;
  * @author Steve Ebersole
  */
 public class RegisteredSynchronization implements Synchronization {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class,
-                                                                       RegisteredSynchronization.class.getName());
+	private static final Logger log = CoreLogging.logger( RegisteredSynchronization.class.getName() );
 
 	private final SynchronizationCallbackCoordinator synchronizationCallbackCoordinator;
 
@@ -46,19 +44,15 @@ public class RegisteredSynchronization implements Synchronization {
 		this.synchronizationCallbackCoordinator = synchronizationCallbackCoordinator;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public void beforeCompletion() {
-        LOG.trace("JTA sync : beforeCompletion()");
+		log.trace( "JTA sync : beforeCompletion()" );
 		synchronizationCallbackCoordinator.beforeCompletion();
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public void afterCompletion(int status) {
-        LOG.tracef("JTA sync : afterCompletion(%s)", status);
+		log.tracef( "JTA sync : afterCompletion(%s)", status );
 		synchronizationCallbackCoordinator.afterCompletion( status );
 	}
 }

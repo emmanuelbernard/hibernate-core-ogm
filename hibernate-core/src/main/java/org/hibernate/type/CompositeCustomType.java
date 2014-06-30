@@ -30,21 +30,22 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Map;
 
-import org.dom4j.Element;
-import org.dom4j.Node;
-
 import org.hibernate.EntityMode;
 import org.hibernate.FetchMode;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.CascadeStyle;
+import org.hibernate.engine.spi.CascadeStyles;
 import org.hibernate.engine.spi.Mapping;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.util.collections.ArrayHelper;
-import org.hibernate.metamodel.relational.Size;
+import org.hibernate.metamodel.spi.relational.Size;
 import org.hibernate.usertype.CompositeUserType;
 import org.hibernate.usertype.LoggableUserType;
+
+import org.dom4j.Element;
+import org.dom4j.Node;
 
 /**
  * Adapts {@link CompositeUserType} to the {@link Type} interface
@@ -121,7 +122,7 @@ public class CompositeCustomType extends AbstractType implements CompositeType, 
 	}
 
 	public CascadeStyle getCascadeStyle(int i) {
-		return CascadeStyle.NONE;
+		return CascadeStyles.NONE;
 	}
 
 	public FetchMode getFetchMode(int i) {

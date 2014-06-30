@@ -23,6 +23,12 @@
  */
 package org.hibernate.dialect;
 
+import org.hibernate.dialect.function.StandardSQLFunction;
+import org.hibernate.dialect.pagination.AbstractLimitHandler;
+import org.hibernate.dialect.pagination.LimitHandler;
+import org.hibernate.dialect.pagination.LimitHelper;
+import org.hibernate.engine.spi.RowSelection;
+import org.hibernate.type.StandardBasicTypes;
 
 /**
  * An SQL dialect for Firebird.
@@ -30,24 +36,43 @@ package org.hibernate.dialect;
  * @author Reha CENANI
  */
 public class FirebirdDialect extends InterbaseDialect {
-
+	
+	public FirebirdDialect() {
+		super();
+		registerFunction( "replace", new StandardSQLFunction( "replace", StandardBasicTypes.STRING ) );
+	}
+	
+	@Override
 	public String getDropSequenceString(String sequenceName) {
 		return "drop generator " + sequenceName;
 	}
 
-	public String getLimitString(String sql, boolean hasOffset) {
-		return new StringBuilder( sql.length() + 20 )
+	@Override
+    public LimitHandler buildLimitHandler(String sql, RowSelection selection) {
+        return new AbstractLimitHandler(sql, selection) {
+        	@Override
+        	public String getProcessedSql() {
+        		boolean hasOffset = LimitHelper.hasFirstRow(selection);
+        		return new StringBuilder( sql.length() + 20 )
 				.append( sql )
 				.insert( 6, hasOffset ? " first ? skip ?" : " first ?" )
 				.toString();
-	}
+        	}
 
-	public boolean bindLimitParametersFirst() {
-		return true;
-	}
+        	@Override
+        	public boolean supportsLimit() {
+        		return true;
+        	}
 
-	public boolean bindLimitParametersInReverseOrder() {
-		return true;
-	}
+        	@Override
+        	public boolean bindLimitParametersFirst() {
+        		return true;
+        	}
 
+        	@Override
+        	public boolean bindLimitParametersInReverseOrder() {
+        		return true;
+        	}
+        };
+    }
 }

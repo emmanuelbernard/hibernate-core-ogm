@@ -1,8 +1,22 @@
-apply plugin: 'java'
-
 dependencies {
-    compile( project( ':hibernate-core' ) )
-    compile( [group: 'net.sf.ehcache', name: 'ehcache-core', version: '2.4.3', ext: 'jar'] )
-    testCompile( project(':hibernate-testing') )
-    testCompile( libraries.h2 )
+    compile project( ':hibernate-core' )
+    compile( libraries.ehcache )
+
+    testCompile project( ':hibernate-testing' )
+}
+
+def pomName() {
+    return 'Hibernate/Ehcache Integration'
+}
+
+def pomDescription() {
+    return 'Integration for Ehcache into Hibernate as a second-level caching service'
+}
+
+def osgiDescription() {
+	return pomDescription()
+}
+
+test {
+    forkEvery 1
 }

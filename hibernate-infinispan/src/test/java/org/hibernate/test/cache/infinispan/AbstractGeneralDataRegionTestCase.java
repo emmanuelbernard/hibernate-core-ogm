@@ -25,18 +25,17 @@ package org.hibernate.test.cache.infinispan;
 
 import java.util.Set;
 
+import org.infinispan.AdvancedCache;
 import org.infinispan.transaction.tm.BatchModeTransactionManager;
 import org.jboss.logging.Logger;
+import org.junit.Test;
 
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.cache.infinispan.InfinispanRegionFactory;
 import org.hibernate.cache.spi.GeneralDataRegion;
 import org.hibernate.cache.spi.QueryResultsRegion;
 import org.hibernate.cache.spi.Region;
-import org.hibernate.cache.infinispan.InfinispanRegionFactory;
-import org.hibernate.cache.infinispan.util.CacheAdapter;
 import org.hibernate.cfg.Configuration;
-import org.hibernate.service.ServiceRegistryBuilder;
-
-import org.junit.Test;
 
 import org.hibernate.test.cache.infinispan.util.CacheTestUtil;
 
@@ -79,12 +78,11 @@ public abstract class AbstractGeneralDataRegionTestCase extends AbstractRegionIm
 	private void evictOrRemoveTest() throws Exception {
 		Configuration cfg = createConfiguration();
 		InfinispanRegionFactory regionFactory = CacheTestUtil.startRegionFactory(
-				new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+				new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 				cfg,
 				getCacheTestSupport()
 		);
-		CacheAdapter localCache = getInfinispanCache( regionFactory );
-		boolean invalidation = localCache.isClusteredInvalidation();
+		boolean invalidation = false;
 
 		// Sleep a bit to avoid concurrent FLUSH problem
 		avoidConcurrentFlush();
@@ -96,7 +94,7 @@ public abstract class AbstractGeneralDataRegionTestCase extends AbstractRegionIm
 
 		cfg = createConfiguration();
 		regionFactory = CacheTestUtil.startRegionFactory(
-				new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+				new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 				cfg,
 				getCacheTestSupport()
 		);
@@ -111,23 +109,31 @@ public abstract class AbstractGeneralDataRegionTestCase extends AbstractRegionIm
 		assertNull( "local is clean", localRegion.get( KEY ) );
 		assertNull( "remote is clean", remoteRegion.get( KEY ) );
 
-		localRegion.put( KEY, VALUE1 );
-		assertEquals( VALUE1, localRegion.get( KEY ) );
+      regionPut(localRegion);
+      assertEquals( VALUE1, localRegion.get( KEY ) );
 
 		// allow async propagation
 		sleep( 250 );
 		Object expected = invalidation ? null : VALUE1;
 		assertEquals( expected, remoteRegion.get( KEY ) );
 
-		localRegion.evict( KEY );
+      regionEvict(localRegion);
 
-		// allow async propagation
+      // allow async propagation
 		sleep( 250 );
 		assertEquals( null, localRegion.get( KEY ) );
 		assertEquals( null, remoteRegion.get( KEY ) );
 	}
 
-	protected abstract String getStandardRegionName(String regionPrefix);
+   protected void regionEvict(GeneralDataRegion region) throws Exception {
+      region.evict(KEY);
+   }
+
+   protected void regionPut(GeneralDataRegion region) throws Exception {
+      region.put(KEY, VALUE1);
+   }
+
+   protected abstract String getStandardRegionName(String regionPrefix);
 
 	/**
 	 * Test method for {@link QueryResultsRegion#evictAll()}.
@@ -142,11 +148,11 @@ public abstract class AbstractGeneralDataRegionTestCase extends AbstractRegionIm
 	private void evictOrRemoveAllTest(String configName) throws Exception {
 		Configuration cfg = createConfiguration();
 		InfinispanRegionFactory regionFactory = CacheTestUtil.startRegionFactory(
-				new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+				new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 				cfg,
 				getCacheTestSupport()
 		);
-		CacheAdapter localCache = getInfinispanCache( regionFactory );
+		AdvancedCache localCache = getInfinispanCache( regionFactory );
 
 		// Sleep a bit to avoid concurrent FLUSH problem
 		avoidConcurrentFlush();
@@ -160,11 +166,11 @@ public abstract class AbstractGeneralDataRegionTestCase extends AbstractRegionIm
 
 		cfg = createConfiguration();
 		regionFactory = CacheTestUtil.startRegionFactory(
-				new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+				new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 				cfg,
 				getCacheTestSupport()
 		);
-		CacheAdapter remoteCache = getInfinispanCache( regionFactory );
+      AdvancedCache remoteCache = getInfinispanCache( regionFactory );
 
 		// Sleep a bit to avoid concurrent FLUSH problem
 		avoidConcurrentFlush();
@@ -185,14 +191,14 @@ public abstract class AbstractGeneralDataRegionTestCase extends AbstractRegionIm
 		assertNull( "local is clean", localRegion.get( KEY ) );
 		assertNull( "remote is clean", remoteRegion.get( KEY ) );
 
-		localRegion.put( KEY, VALUE1 );
-		assertEquals( VALUE1, localRegion.get( KEY ) );
+      regionPut(localRegion);
+      assertEquals( VALUE1, localRegion.get( KEY ) );
 
 		// Allow async propagation
 		sleep( 250 );
 
-		remoteRegion.put( KEY, VALUE1 );
-		assertEquals( VALUE1, remoteRegion.get( KEY ) );
+      regionPut(remoteRegion);
+      assertEquals( VALUE1, remoteRegion.get( KEY ) );
 
 		// Allow async propagation
 		sleep( 250 );

@@ -1,59 +1,64 @@
 package org.hibernate.envers.test.integration.collection.norevision;
 
-import org.hibernate.MappingException;
-import org.hibernate.envers.test.AbstractSessionTest;
-import org.hibernate.envers.test.Priority;
-import org.junit.Test;
-
-import java.net.URISyntaxException;
 import java.util.List;
 
-public abstract class AbstractCollectionChangeTest extends AbstractSessionTest {
-    protected Integer personId;
+import org.hibernate.Session;
+import org.hibernate.cfg.Configuration;
+import org.hibernate.envers.configuration.EnversSettings;
+import org.hibernate.envers.test.BaseEnversFunctionalTestCase;
+import org.hibernate.envers.test.Priority;
 
-    @Override
-    protected void initMappings() throws MappingException, URISyntaxException {
-        config.addAnnotatedClass(Person.class);
-        config.addAnnotatedClass(Name.class);
-        config.setProperty("org.hibernate.envers.revision_on_collection_change", getCollectionChangeValue());
-    }
+import org.junit.Test;
 
-    protected abstract String getCollectionChangeValue();
+public abstract class AbstractCollectionChangeTest extends BaseEnversFunctionalTestCase {
+	protected Integer personId;
 
-    protected abstract List<Integer> getExpectedPersonRevisions();
+	@Override
+	protected void configure(Configuration configuration) {
+		configuration.setProperty( EnversSettings.REVISION_ON_COLLECTION_CHANGE, getCollectionChangeValue() );
+	}
 
-    @Test
-    @Priority(10)
-    public void initData() {
-    	newSessionFactory();
+	@Override
+	protected Class<?>[] getAnnotatedClasses() {
+		return new Class[] {Person.class, Name.class};
+	}
 
-        // Rev 1
-        getSession().getTransaction().begin();        
-        Person p = new Person();
-        Name n = new Name();
-        n.setName("name1");
-        p.getNames().add(n);
-        getSession().saveOrUpdate(p);
-        getSession().getTransaction().commit();
+	protected abstract String getCollectionChangeValue();
 
-        // Rev 2
-        getSession().getTransaction().begin();
-        n.setName("Changed name");
-        getSession().saveOrUpdate(p);
-        getSession().getTransaction().commit();
+	protected abstract List<Integer> getExpectedPersonRevisions();
 
-        // Rev 3
-        getSession().getTransaction().begin();
-        Name n2 = new Name();
-        n2.setName("name2");
-        p.getNames().add(n2);
-        getSession().getTransaction().commit();
+	@Test
+	@Priority(10)
+	public void initData() {
+		Session session = openSession();
 
-        personId = p.getId();
-    }
+		// Rev 1
+		session.getTransaction().begin();
+		Person p = new Person();
+		Name n = new Name();
+		n.setName( "name1" );
+		p.getNames().add( n );
+		session.saveOrUpdate( p );
+		session.getTransaction().commit();
 
-    @Test
-    public void testPersonRevisionCount() {
-        assert getAuditReader().getRevisions(Person.class, personId).equals(getExpectedPersonRevisions());
-    }
+		// Rev 2
+		session.getTransaction().begin();
+		n.setName( "Changed name" );
+		session.saveOrUpdate( p );
+		session.getTransaction().commit();
+
+		// Rev 3
+		session.getTransaction().begin();
+		Name n2 = new Name();
+		n2.setName( "name2" );
+		p.getNames().add( n2 );
+		session.getTransaction().commit();
+
+		personId = p.getId();
+	}
+
+	@Test
+	public void testPersonRevisionCount() {
+		assert getAuditReader().getRevisions( Person.class, personId ).equals( getExpectedPersonRevisions() );
+	}
 }

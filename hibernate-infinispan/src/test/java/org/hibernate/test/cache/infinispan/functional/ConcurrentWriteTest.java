@@ -23,7 +23,6 @@
  */
 package org.hibernate.test.cache.infinispan.functional;
 
-import javax.transaction.TransactionManager;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -37,21 +36,18 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.transaction.TransactionManager;
 
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
+import org.junit.Test;
 
 import org.hibernate.FlushMode;
 import org.hibernate.Session;
-import org.hibernate.cache.spi.RegionFactory;
-import org.hibernate.cache.infinispan.InfinispanRegionFactory;
 import org.hibernate.cfg.Configuration;
-import org.hibernate.service.jdbc.connections.spi.ConnectionProvider;
-import org.hibernate.service.jta.platform.spi.JtaPlatform;
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
+import org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform;
 import org.hibernate.stat.SecondLevelCacheStatistics;
-
-import org.junit.Test;
-
 import org.hibernate.test.cache.infinispan.functional.cluster.DualNodeConnectionProviderImpl;
 import org.hibernate.test.cache.infinispan.functional.cluster.DualNodeJtaPlatformImpl;
 import org.hibernate.test.cache.infinispan.functional.cluster.DualNodeJtaTransactionManagerImpl;
@@ -107,11 +103,6 @@ public class ConcurrentWriteTest extends SingleNodeTestCase {
 	}
 
 	@Override
-	protected Class<? extends RegionFactory> getCacheRegionFactory() {
-		return InfinispanRegionFactory.class;
-	}
-
-	@Override
 	protected Class<? extends ConnectionProvider> getConnectionProviderClass() {
 		return DualNodeConnectionProviderImpl.class;
 	}
@@ -161,6 +152,7 @@ public class ConcurrentWriteTest extends SingleNodeTestCase {
 	@Test
 	public void testSingleUser() throws Exception {
 		// setup
+sessionFactory().getStatistics().clear();
 		Customer customer = createCustomer( 0 );
 		final Integer customerId = customer.getId();
 		getCustomerIDs().add( customerId );
@@ -220,7 +212,7 @@ public class ConcurrentWriteTest extends SingleNodeTestCase {
 				Thread.sleep( LAUNCH_INTERVAL_MILLIS ); // rampup
 			}
 //         barrier.await(); // wait for all threads to be ready
-			barrier.await( 45, TimeUnit.SECONDS ); // wait for all threads to finish
+			barrier.await( 2, TimeUnit.MINUTES ); // wait for all threads to finish
 			log.info( "All threads finished, let's shutdown the executor and check whether any exceptions were reported" );
 			for ( Future<Void> future : futures ) {
 				future.get();
@@ -477,7 +469,7 @@ public class ConcurrentWriteTest extends SingleNodeTestCase {
 					contactExists();
 					thinkRandomTime();
 					++completedIterations;
-					if ( log.isTraceEnabled() ) {
+					if ( trace ) {
 						log.tracef( "Iteration completed {0}", completedIterations );
 					}
 				}

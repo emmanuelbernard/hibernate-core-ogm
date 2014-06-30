@@ -31,8 +31,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map;
 
-import org.dom4j.Node;
-
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.dialect.Dialect;
@@ -40,12 +38,14 @@ import org.hibernate.engine.spi.Mapping;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.util.collections.ArrayHelper;
-import org.hibernate.metamodel.relational.Size;
+import org.hibernate.metamodel.spi.relational.Size;
 import org.hibernate.usertype.EnhancedUserType;
 import org.hibernate.usertype.LoggableUserType;
 import org.hibernate.usertype.Sized;
 import org.hibernate.usertype.UserType;
 import org.hibernate.usertype.UserVersionType;
+
+import org.dom4j.Node;
 
 /**
  * Adapts {@link UserType} to the generic {@link Type} interface, in order
@@ -54,7 +54,10 @@ import org.hibernate.usertype.UserVersionType;
  * @author Gavin King
  * @author Steve Ebersole
  */
-public class CustomType extends AbstractType implements IdentifierType, DiscriminatorType, VersionType, BasicType {
+public class CustomType
+		extends AbstractType
+		implements IdentifierType, DiscriminatorType, VersionType, BasicType, StringRepresentableType {
+
 	private final UserType userType;
 	private final String name;
 	private final int[] types;
@@ -146,7 +149,7 @@ public class CustomType extends AbstractType implements IdentifierType, Discrimi
 			SessionImplementor session,
 			Object owner,
 			Map copyCache) throws HibernateException {
-		return userType.replace(original, target, owner);
+		return userType.replace( original, target, owner );
 	}
 
 	public void nullSafeSet(PreparedStatement st, Object value, int index, boolean[] settable, SessionImplementor session)
@@ -163,20 +166,12 @@ public class CustomType extends AbstractType implements IdentifierType, Discrimi
 
 	@SuppressWarnings({ "UnusedDeclaration" })
 	public String toXMLString(Object value, SessionFactoryImplementor factory) {
-		if ( value == null ) {
-			return null;
-		}
-		if ( userType instanceof EnhancedUserType ) {
-			return ( (EnhancedUserType) userType ).toXMLString( value );
-		}
-		else {
-			return value.toString();
-		}
+		return toString( value );
 	}
 
 	@SuppressWarnings({ "UnusedDeclaration" })
 	public Object fromXMLString(String xml, Mapping factory) {
-		return ( (EnhancedUserType) userType ).fromXMLString(xml);
+		return fromStringValue( xml );
 	}
 
 	public String getName() {
@@ -193,7 +188,7 @@ public class CustomType extends AbstractType implements IdentifierType, Discrimi
 	}
 
 	public Object stringToObject(String xml) {
-		return ( (EnhancedUserType) userType ).fromXMLString(xml);
+		return fromStringValue( xml );
 	}
 
 	public String objectToSQLString(Object value, Dialect dialect) throws Exception {
@@ -245,5 +240,40 @@ public class CustomType extends AbstractType implements IdentifierType, Discrimi
 	public boolean isDirty(Object old, Object current, boolean[] checkable, SessionImplementor session)
 			throws HibernateException {
 		return checkable[0] && isDirty(old, current, session);
+	}
+
+	@Override
+	@SuppressWarnings("unchecked")
+	public String toString(Object value) throws HibernateException {
+		if ( StringRepresentableType.class.isInstance( userType ) ) {
+			return ( (StringRepresentableType) userType ).toString( value );
+		}
+		if ( value == null ) {
+			return null;
+		}
+		if ( EnhancedUserType.class.isInstance( userType ) ) {
+			//noinspection deprecation
+			return ( (EnhancedUserType) userType ).toXMLString( value );
+		}
+		return value.toString();
+	}
+
+	@Override
+	public Object fromStringValue(String string) throws HibernateException {
+		if ( StringRepresentableType.class.isInstance( userType ) ) {
+			return ( (StringRepresentableType) userType ).fromStringValue( string );
+		}
+		if ( EnhancedUserType.class.isInstance( userType ) ) {
+			//noinspection deprecation
+			return ( (EnhancedUserType) userType ).fromXMLString( string );
+		}
+		throw new HibernateException(
+				String.format(
+						"Could not process #fromStringValue, UserType class [%s] did not implement %s or %s",
+						name,
+						StringRepresentableType.class.getName(),
+						EnhancedUserType.class.getName()
+				)
+		);
 	}
 }

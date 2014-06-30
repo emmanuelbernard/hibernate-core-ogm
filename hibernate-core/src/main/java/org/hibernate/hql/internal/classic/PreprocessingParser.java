@@ -27,6 +27,7 @@ package org.hibernate.hql.internal.classic;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
 import org.hibernate.QueryException;
 import org.hibernate.hql.internal.CollectionProperties;
 import org.hibernate.internal.util.StringHelper;
@@ -59,7 +60,7 @@ public class PreprocessingParser implements Parser {
 
 	private Map replacements;
 	private boolean quoted;
-	private StringBuffer quotedString;
+	private StringBuilder quotedString;
 	private ClauseParser parser = new ClauseParser();
 	private String lastToken;
 	private String currentCollectionProp;
@@ -79,7 +80,7 @@ public class PreprocessingParser implements Parser {
 				token = quotedString.toString();
 			}
 			else {
-				quotedString = new StringBuffer( 20 ).append( token );
+				quotedString = new StringBuilder( 20 ).append( token );
 			}
 			quoted = !quoted;
 		}

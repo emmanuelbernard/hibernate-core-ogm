@@ -25,6 +25,7 @@ package org.hibernate.mapping;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
+
 import org.hibernate.MappingException;
 import org.hibernate.cfg.Mappings;
 import org.hibernate.type.EntityType;
@@ -44,11 +45,11 @@ public class ManyToOne extends ToOne {
 
 	public Type getType() throws MappingException {
 		return getMappings().getTypeResolver().getTypeFactory().manyToOne(
-				getReferencedEntityName(), 
+				getReferencedEntityName(),
+				referenceToPrimaryKey, 
 				getReferencedPropertyName(),
 				isLazy(),
 				isUnwrapProxy(),
-				isEmbedded(),
 				isIgnoreNotFound(),
 				isLogicalOneToOne
 		);

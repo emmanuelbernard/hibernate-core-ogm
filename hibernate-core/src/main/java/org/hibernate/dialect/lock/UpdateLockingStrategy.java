@@ -22,19 +22,22 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.dialect.lock;
+
 import java.io.Serializable;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.JDBCException;
 import org.hibernate.LockMode;
 import org.hibernate.StaleObjectStateException;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.persister.entity.Lockable;
 import org.hibernate.pretty.MessageHelper;
 import org.hibernate.sql.Update;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -42,13 +45,14 @@ import org.jboss.logging.Logger;
  * <p/>
  * This strategy is not valid for read style locks.
  *
- * @since 3.2
- *
  * @author Steve Ebersole
+ * @since 3.2
  */
 public class UpdateLockingStrategy implements LockingStrategy {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, UpdateLockingStrategy.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			UpdateLockingStrategy.class.getName()
+	);
 
 	private final Lockable lockable;
 	private final LockMode lockMode;
@@ -68,7 +72,7 @@ public class UpdateLockingStrategy implements LockingStrategy {
 			throw new HibernateException( "[" + lockMode + "] not valid for update statement" );
 		}
 		if ( !lockable.isVersioned() ) {
-            LOG.writeLocksNotSupported(lockable.getEntityName());
+			LOG.writeLocksNotSupported( lockable.getEntityName() );
 			this.sql = null;
 		}
 		else {
@@ -76,22 +80,21 @@ public class UpdateLockingStrategy implements LockingStrategy {
 		}
 	}
 
-	/**
-	 * @see LockingStrategy#lock
-	 */
+	@Override
 	public void lock(
-	        Serializable id,
-	        Object version,
-	        Object object,
-	        int timeout,
-	        SessionImplementor session) throws StaleObjectStateException, JDBCException {
+			Serializable id,
+			Object version,
+			Object object,
+			int timeout,
+			SessionImplementor session) throws StaleObjectStateException, JDBCException {
 		if ( !lockable.isVersioned() ) {
 			throw new HibernateException( "write locks via update not supported for non-versioned entities [" + lockable.getEntityName() + "]" );
 		}
+
 		// todo : should we additionally check the current isolation mode explicitly?
-		SessionFactoryImplementor factory = session.getFactory();
+		final SessionFactoryImplementor factory = session.getFactory();
 		try {
-			PreparedStatement st = session.getTransactionCoordinator().getJdbcCoordinator().getStatementPreparer().prepareStatement( sql );
+			final PreparedStatement st = session.getTransactionCoordinator().getJdbcCoordinator().getStatementPreparer().prepareStatement( sql );
 			try {
 				lockable.getVersionType().nullSafeSet( st, version, 1, session );
 				int offset = 2;
@@ -103,30 +106,32 @@ public class UpdateLockingStrategy implements LockingStrategy {
 					lockable.getVersionType().nullSafeSet( st, version, offset, session );
 				}
 
-				int affected = st.executeUpdate();
+				final int affected = session.getTransactionCoordinator().getJdbcCoordinator().getResultSetReturn().executeUpdate( st );
 				if ( affected < 0 ) {
-					factory.getStatisticsImplementor().optimisticFailure( lockable.getEntityName() );
+					if (factory.getStatistics().isStatisticsEnabled()) {
+						factory.getStatisticsImplementor().optimisticFailure( lockable.getEntityName() );
+					}
 					throw new StaleObjectStateException( lockable.getEntityName(), id );
 				}
 
 			}
 			finally {
-				st.close();
+				session.getTransactionCoordinator().getJdbcCoordinator().release( st );
 			}
 
 		}
 		catch ( SQLException sqle ) {
 			throw session.getFactory().getSQLExceptionHelper().convert(
-			        sqle,
-			        "could not lock: " + MessageHelper.infoString( lockable, id, session.getFactory() ),
-			        sql
+					sqle,
+					"could not lock: " + MessageHelper.infoString( lockable, id, session.getFactory() ),
+					sql
 			);
 		}
 	}
 
 	protected String generateLockString() {
-		SessionFactoryImplementor factory = lockable.getFactory();
-		Update update = new Update( factory.getDialect() );
+		final SessionFactoryImplementor factory = lockable.getFactory();
+		final Update update = new Update( factory.getDialect() );
 		update.setTableName( lockable.getRootTableName() );
 		update.addPrimaryKeyColumns( lockable.getRootTableIdentifierColumnNames() );
 		update.setVersionColumnName( lockable.getVersionColumnName() );

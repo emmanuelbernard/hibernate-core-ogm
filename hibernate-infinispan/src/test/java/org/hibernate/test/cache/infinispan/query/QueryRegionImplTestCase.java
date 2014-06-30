@@ -24,9 +24,13 @@
 package org.hibernate.test.cache.infinispan.query;
 
 import java.util.Properties;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import junit.framework.AssertionFailedError;
+import org.hibernate.cache.infinispan.util.Caches;
+import org.infinispan.AdvancedCache;
 import org.infinispan.notifications.Listener;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryVisited;
 import org.infinispan.notifications.cachelistener.event.CacheEntryVisitedEvent;
@@ -34,17 +38,14 @@ import org.infinispan.transaction.tm.BatchModeTransactionManager;
 import org.infinispan.util.concurrent.IsolationLevel;
 import org.jboss.logging.Logger;
 
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.cache.infinispan.InfinispanRegionFactory;
+import org.hibernate.cache.internal.StandardQueryCache;
 import org.hibernate.cache.spi.CacheDataDescription;
+import org.hibernate.cache.spi.GeneralDataRegion;
 import org.hibernate.cache.spi.QueryResultsRegion;
 import org.hibernate.cache.spi.Region;
-import org.hibernate.cache.internal.StandardQueryCache;
-import org.hibernate.cache.infinispan.InfinispanRegionFactory;
-import org.hibernate.cache.infinispan.util.CacheAdapter;
-import org.hibernate.cache.infinispan.util.CacheAdapterImpl;
 import org.hibernate.cfg.Configuration;
-import org.hibernate.service.ServiceRegistryBuilder;
-
-import junit.framework.AssertionFailedError;
 
 import org.hibernate.test.cache.infinispan.AbstractGeneralDataRegionTestCase;
 import org.hibernate.test.cache.infinispan.util.CacheTestUtil;
@@ -76,9 +77,31 @@ public class QueryRegionImplTestCase extends AbstractGeneralDataRegionTestCase {
 		return regionPrefix + "/" + StandardQueryCache.class.getName();
 	}
 
-	@Override
-	protected CacheAdapter getInfinispanCache(InfinispanRegionFactory regionFactory) {
-		return CacheAdapterImpl.newInstance( regionFactory.getCacheManager().getCache( "local-query" ) );
+   @Override
+   protected void regionPut(final GeneralDataRegion region) throws Exception {
+      Caches.withinTx(BatchModeTransactionManager.getInstance(), new Callable<Void>() {
+         @Override
+         public Void call() throws Exception {
+            region.put(KEY, VALUE1);
+            return null;
+         }
+      });
+   }
+
+   @Override
+   protected void regionEvict(final GeneralDataRegion region) throws Exception {
+      Caches.withinTx(BatchModeTransactionManager.getInstance(), new Callable<Void>() {
+         @Override
+         public Void call() throws Exception {
+            region.evict(KEY);
+            return null;
+         }
+      });
+   }
+
+   @Override
+	protected AdvancedCache getInfinispanCache(InfinispanRegionFactory regionFactory) {
+		return regionFactory.getCacheManager().getCache( "local-query" ).getAdvancedCache();
 	}
 
 	@Override
@@ -89,7 +112,7 @@ public class QueryRegionImplTestCase extends AbstractGeneralDataRegionTestCase {
 	private void putDoesNotBlockGetTest() throws Exception {
 		Configuration cfg = createConfiguration();
 		InfinispanRegionFactory regionFactory = CacheTestUtil.startRegionFactory(
-				new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+				new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 				cfg,
 				getCacheTestSupport()
 		);
@@ -189,7 +212,7 @@ public class QueryRegionImplTestCase extends AbstractGeneralDataRegionTestCase {
 	private void getDoesNotBlockPutTest() throws Exception {
 		Configuration cfg = createConfiguration();
 		InfinispanRegionFactory regionFactory = CacheTestUtil.startRegionFactory(
-				new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+				new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 				cfg,
 				getCacheTestSupport()
 		);
@@ -206,7 +229,7 @@ public class QueryRegionImplTestCase extends AbstractGeneralDataRegionTestCase {
 		assertEquals( VALUE1, region.get( KEY ) );
 
 		// final Fqn rootFqn = getRegionFqn(getStandardRegionName(REGION_PREFIX), REGION_PREFIX);
-		final CacheAdapter jbc = getInfinispanCache( regionFactory );
+		final AdvancedCache jbc = getInfinispanCache(regionFactory);
 
 		final CountDownLatch blockerLatch = new CountDownLatch( 1 );
 		final CountDownLatch writerLatch = new CountDownLatch( 1 );
@@ -273,7 +296,7 @@ public class QueryRegionImplTestCase extends AbstractGeneralDataRegionTestCase {
 			blockerLatch.countDown();
 			unblocked = true;
 
-			if ( IsolationLevel.REPEATABLE_READ.equals( jbc.getConfiguration().getIsolationLevel() ) ) {
+			if ( IsolationLevel.REPEATABLE_READ.equals( jbc.getCacheConfiguration().locking().isolationLevel() ) ) {
 				assertEquals( VALUE1, region.get( KEY ) );
 			}
 			else {

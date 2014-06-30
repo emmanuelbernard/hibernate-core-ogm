@@ -23,12 +23,14 @@
  *
  */
 package org.hibernate.hql.internal.ast.util;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import antlr.ASTFactory;
 import antlr.collections.AST;
 import antlr.collections.impl.ASTArray;
@@ -45,6 +47,7 @@ public final class ASTUtil {
 	 *
 	 * @deprecated (tellclovertoignorethis)
 	 */
+	@Deprecated
 	private ASTUtil() {
 	}
 
@@ -61,6 +64,7 @@ public final class ASTUtil {
 	 *
 	 * @deprecated silly
 	 */
+	@Deprecated
 	public static AST create(ASTFactory astFactory, int type, String text) {
 		return astFactory.create( type, text );
 	}
@@ -111,7 +115,12 @@ public final class ASTUtil {
 	 *
 	 * @return AST - A new sub-tree of the form "(parent child1 child2)"
 	 */
-	public static AST createBinarySubtree(ASTFactory factory, int parentType, String parentText, AST child1, AST child2) {
+	public static AST createBinarySubtree(
+			ASTFactory factory,
+			int parentType,
+			String parentText,
+			AST child1,
+			AST child2) {
 		ASTArray array = createAstArray( factory, 3, parentType, parentText, child1 );
 		array.add( child2 );
 		return factory.make( array );
@@ -152,6 +161,7 @@ public final class ASTUtil {
 	 *
 	 * @param fixture The node against which to testto be checked for children.
 	 * @param test The node to be tested as being a subtree child of the parent.
+	 *
 	 * @return True if child is contained in the parent's collection of children.
 	 */
 	public static boolean isSubtreeChild(AST fixture, AST test) {
@@ -219,7 +229,7 @@ public final class ASTUtil {
 	 * @return The list representation of the tree.
 	 */
 	public static String getDebugString(AST n) {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		buf.append( "[ " );
 		buf.append( ( n == null ) ? "{null}" : n.toStringTree() );
 		buf.append( " ]" );
@@ -266,12 +276,12 @@ public final class ASTUtil {
 	}
 
 	public static String getPathText(AST n) {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		getPathText( buf, n );
 		return buf.toString();
 	}
 
-	private static void getPathText(StringBuffer buf, AST n) {
+	private static void getPathText(StringBuilder buf, AST n) {
 		AST firstChild = n.getFirstChild();
 		// If the node has a first child, recurse into the first child.
 		if ( firstChild != null ) {
@@ -313,7 +323,12 @@ public final class ASTUtil {
 		}
 	}
 
-	private static ASTArray createAstArray(ASTFactory factory, int size, int parentType, String parentText, AST child1) {
+	private static ASTArray createAstArray(
+			ASTFactory factory,
+			int size,
+			int parentType,
+			String parentText,
+			AST child1) {
 		ASTArray array = new ASTArray( size );
 		array.add( factory.create( parentType, parentText ) );
 		array.add( child1 );
@@ -338,6 +353,7 @@ public final class ASTUtil {
 	 * A predicate that uses inclusion, rather than exclusion semantics.
 	 */
 	public abstract static class IncludePredicate implements FilterPredicate {
+		@Override
 		public final boolean exclude(AST node) {
 			return !include( node );
 		}
@@ -357,6 +373,7 @@ public final class ASTUtil {
 			this.predicate = predicate;
 		}
 
+		@Override
 		public void visit(AST node) {
 			if ( predicate == null || !predicate.exclude( node ) ) {
 				collectedNodes.add( node );
@@ -378,18 +395,18 @@ public final class ASTUtil {
 	 * Method to generate a map of token type names, keyed by their token type values.
 	 *
 	 * @param tokenTypeInterface The *TokenTypes interface (or implementor of said interface).
+	 *
 	 * @return The generated map.
 	 */
 	public static Map generateTokenNameCache(Class tokenTypeInterface) {
 		final Field[] fields = tokenTypeInterface.getFields();
-		Map cache = new HashMap( (int)( fields.length * .75 ) + 1 );
-		for ( int i = 0; i < fields.length; i++ ) {
-			final Field field = fields[i];
+		Map cache = new HashMap( (int) ( fields.length * .75 ) + 1 );
+		for ( final Field field : fields ) {
 			if ( Modifier.isStatic( field.getModifiers() ) ) {
 				try {
 					cache.put( field.get( null ), field.getName() );
 				}
-				catch ( Throwable ignore ) {
+				catch (Throwable ignore) {
 				}
 			}
 		}
@@ -409,6 +426,7 @@ public final class ASTUtil {
 	 *
 	 * @deprecated Use #getTokenTypeName instead
 	 */
+	@Deprecated
 	public static String getConstantName(Class owner, int value) {
 		return getTokenTypeName( owner, value );
 	}
@@ -428,10 +446,10 @@ public final class ASTUtil {
 		String tokenTypeName = Integer.toString( tokenType );
 		if ( tokenTypeInterface != null ) {
 			Field[] fields = tokenTypeInterface.getFields();
-			for ( int i = 0; i < fields.length; i++ ) {
-				final Integer fieldValue = extractIntegerValue( fields[i] );
-				if ( fieldValue != null && fieldValue.intValue() == tokenType ) {
-					tokenTypeName = fields[i].getName();
+			for ( Field field : fields ) {
+				final Integer fieldValue = extractIntegerValue( field );
+				if ( fieldValue != null && fieldValue == tokenType ) {
+					tokenTypeName = field.getName();
 					break;
 				}
 			}
@@ -444,18 +462,18 @@ public final class ASTUtil {
 		try {
 			Object value = field.get( null );
 			if ( value instanceof Integer ) {
-				rtn = ( Integer ) value;
+				rtn = (Integer) value;
 			}
 			else if ( value instanceof Short ) {
-				rtn = new Integer( ( ( Short ) value ).intValue() );
+				rtn = ( (Short) value ).intValue();
 			}
 			else if ( value instanceof Long ) {
-				if ( ( ( Long ) value ).longValue() <= Integer.MAX_VALUE ) {
-					rtn = new Integer( ( ( Long ) value ).intValue() );
+				if ( (Long) value <= Integer.MAX_VALUE ) {
+					rtn = ( (Long) value ).intValue();
 				}
 			}
 		}
-		catch ( IllegalAccessException ignore ) {
+		catch (IllegalAccessException ignore) {
 		}
 		return rtn;
 	}

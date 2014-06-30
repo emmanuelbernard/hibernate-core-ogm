@@ -27,8 +27,6 @@ package org.hibernate.internal.util;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
 import org.hibernate.bytecode.instrumentation.spi.LazyPropertyInitializer;
 import org.hibernate.engine.spi.EntityKey;
@@ -37,6 +35,8 @@ import org.hibernate.engine.spi.TypedValue;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.type.Type;
+
+import org.jboss.logging.Logger;
 
 /**
  * Renders entities and query parameters to a nicely readable string.
@@ -111,14 +111,14 @@ public final class EntityPrinter {
 	// Cannot use Map as an argument because it clashes with the previous method (due to type erasure)
 	public void toString(Iterable<Map.Entry<EntityKey,Object>> entitiesByEntityKey) throws HibernateException {
         if ( ! LOG.isDebugEnabled() || ! entitiesByEntityKey.iterator().hasNext() ) return;
-        LOG.debugf( "Listing entities:" );
+        LOG.debug( "Listing entities:" );
 		int i=0;
 		for (  Map.Entry<EntityKey,Object> entityKeyAndEntity : entitiesByEntityKey ) {
 			if (i++>20) {
-                LOG.debugf("More......");
+                LOG.debug("More......");
 				break;
 			}
-            LOG.debugf( toString( entityKeyAndEntity.getKey().getEntityName(), entityKeyAndEntity.getValue() ) );
+            LOG.debug( toString( entityKeyAndEntity.getKey().getEntityName(), entityKeyAndEntity.getValue() ) );
 		}
 	}
 

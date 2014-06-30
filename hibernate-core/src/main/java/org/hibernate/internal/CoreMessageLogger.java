@@ -38,26 +38,27 @@ import javax.naming.NamingException;
 import javax.transaction.Synchronization;
 import javax.transaction.SystemException;
 
-import org.jboss.logging.BasicLogger;
-import org.jboss.logging.Cause;
-import org.jboss.logging.LogMessage;
-import org.jboss.logging.Message;
-import org.jboss.logging.MessageLogger;
-
 import org.hibernate.HibernateException;
+import org.hibernate.LockMode;
 import org.hibernate.cache.CacheException;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.jdbc.dialect.spi.DialectResolver;
+import org.hibernate.engine.jndi.JndiException;
+import org.hibernate.engine.jndi.JndiNameException;
 import org.hibernate.engine.loading.internal.CollectionLoadContext;
 import org.hibernate.engine.loading.internal.EntityLoadContext;
 import org.hibernate.engine.spi.CollectionKey;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.id.IntegralDataTypeHolder;
-import org.hibernate.service.jdbc.dialect.internal.AbstractDialectResolver;
-import org.hibernate.service.jndi.JndiException;
-import org.hibernate.service.jndi.JndiNameException;
 import org.hibernate.type.BasicType;
 import org.hibernate.type.SerializationException;
 import org.hibernate.type.Type;
+
+import org.jboss.logging.BasicLogger;
+import org.jboss.logging.annotations.Cause;
+import org.jboss.logging.annotations.LogMessage;
+import org.jboss.logging.annotations.Message;
+import org.jboss.logging.annotations.MessageLogger;
 
 import static org.jboss.logging.Logger.Level.DEBUG;
 import static org.jboss.logging.Logger.Level.ERROR;
@@ -214,7 +215,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	void deprecatedOracleDialect();
 
 	@LogMessage(level = WARN)
-	@Message(value = "DEPRECATED : use {} instead with custom {} implementation", id = 65)
+	@Message(value = "DEPRECATED : use [%s] instead with custom [%s] implementation", id = 65)
 	void deprecatedUuidGenerator(String name,
 								 String name2);
 
@@ -345,10 +346,6 @@ public interface CoreMessageLogger extends BasicLogger {
 	void fetchingDatabaseMetadata();
 
 	@LogMessage(level = WARN)
-	@Message(value = "@Filter not allowed on subclasses (ignored): %s", id = 103)
-	void filterAnnotationOnSubclass(String className);
-
-	@LogMessage(level = WARN)
 	@Message(value = "firstResult/maxResults specified with collection fetch; applying in memory!", id = 104)
 	void firstOrMaxResultsSpecifiedWithCollectionFetch();
 
@@ -387,8 +384,8 @@ public interface CoreMessageLogger extends BasicLogger {
 	void handlingTransientEntity();
 
 	@LogMessage(level = INFO)
-	@Message(value = "Hibernate connection pool size: %s", id = 115)
-	void hibernateConnectionPoolSize(int poolSize);
+	@Message(value = "Hibernate connection pool size: %s (min=%s)", id = 115)
+	void hibernateConnectionPoolSize(int poolSize, int minSize);
 
 	@LogMessage(level = WARN)
 	@Message(value = "Config specified explicit optimizer of [%s], but [%s=%s; honoring optimizer setting", id = 116)
@@ -396,7 +393,7 @@ public interface CoreMessageLogger extends BasicLogger {
 								  String incrementParam,
 								  int incrementSize);
 
-	@LogMessage(level = INFO)
+	@LogMessage(level = DEBUG)
 	@Message(value = "HQL: %s, time: %sms, rows: %s", id = 117)
 	void hql(String hql,
 			 Long valueOf,
@@ -615,9 +612,9 @@ public interface CoreMessageLogger extends BasicLogger {
 	@Message(value = "Package not found or wo package-info.java: %s", id = 194)
 	void packageNotFound(String packageName);
 
-	@LogMessage(level = WARN)
-	@Message(value = "Parameter position [%s] occurred as both JPA and Hibernate positional parameter", id = 195)
-	void parameterPositionOccurredAsBothJpaAndHibernatePositionalParameter(Integer position);
+//	@LogMessage(level = WARN)
+//	@Message(value = "Parameter position [%s] occurred as both JPA and Hibernate positional parameter", id = 195)
+//	void parameterPositionOccurredAsBothJpaAndHibernatePositionalParameter(Integer position);
 
 	@LogMessage(level = ERROR)
 	@Message(value = "Error parsing XML (%s) : %s", id = 196)
@@ -807,9 +804,9 @@ public interface CoreMessageLogger extends BasicLogger {
 	void splitQueries(String sourceQuery,
 					  int length);
 
-	@LogMessage(level = ERROR)
-	@Message(value = "SQLException escaped proxy", id = 246)
-	void sqlExceptionEscapedProxy(@Cause SQLException e);
+//	@LogMessage(level = ERROR)
+//	@Message(value = "SQLException escaped proxy", id = 246)
+//	void sqlExceptionEscapedProxy(@Cause SQLException e);
 
 	@LogMessage(level = WARN)
 	@Message(value = "SQL Error: %s, SQLState: %s", id = 247)
@@ -1079,7 +1076,7 @@ public interface CoreMessageLogger extends BasicLogger {
 
 	@LogMessage(level = WARN)
 	@Message(value = "Error executing resolver [%s] : %s", id = 316)
-	void unableToExecuteResolver(AbstractDialectResolver abstractDialectResolver,
+	void unableToExecuteResolver(DialectResolver abstractDialectResolver,
 								 String message);
 
 	@LogMessage(level = INFO)
@@ -1094,6 +1091,10 @@ public interface CoreMessageLogger extends BasicLogger {
 	@Message(value = "Unable to instantiate configured schema name resolver [%s] %s", id = 320)
 	void unableToInstantiateConfiguredSchemaNameResolver(String resolverClassName,
 														 String message);
+
+	@LogMessage(level = WARN)
+	@Message(value = "Unable to interpret specified optimizer [%s], falling back to noop", id = 321)
+	void unableToLocateCustomOptimizerClass(String type);
 
 	@LogMessage(level = WARN)
 	@Message(value = "Unable to instantiate specified optimizer [%s], falling back to noop", id = 322)
@@ -1130,10 +1131,6 @@ public interface CoreMessageLogger extends BasicLogger {
 	@LogMessage(level = WARN)
 	@Message(value = "Unable to locate MBeanServer on JMX service shutdown", id = 332)
 	void unableToLocateMBeanServer();
-
-	@LogMessage(level = INFO)
-	@Message(value = "Could not locate 'java.sql.NClob' class; assuming JDBC 3", id = 333)
-	void unableToLocateNClobClass();
 
 	@LogMessage(level = WARN)
 	@Message(value = "Unable to locate requested UUID generation strategy class : %s", id = 334)
@@ -1234,7 +1231,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	void unableToRemoveBagJoinFetch();
 
 	@LogMessage(level = INFO)
-	@Message(value = "Could not resolve aggregate function {}; using standard definition", id = 359)
+	@Message(value = "Could not resolve aggregate function [%s]; using standard definition", id = 359)
 	void unableToResolveAggregateFunction(String name);
 
 	@LogMessage(level = INFO)
@@ -1345,7 +1342,9 @@ public interface CoreMessageLogger extends BasicLogger {
 	@Message(value = "ResultSet had no statement associated with it, but was not yet registered", id = 386)
 	void unregisteredResultSetWithoutStatement();
 
-	@LogMessage(level = WARN)
+	// Keep this at DEBUG level, rather than warn.  Numerous connection pool implementations can return a
+	// proxy/wrapper around the JDBC Statement, causing excessive logging here.  See HHH-8210.
+	@LogMessage(level = DEBUG)
 	@Message(value = "ResultSet's statement was not registered", id = 387)
 	void unregisteredStatement();
 
@@ -1412,7 +1411,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	void usingDriver(String driverClassName,
 					 String url);
 
-	@LogMessage(level = INFO)
+	@LogMessage(level = WARN)
 	@Message(value = "Using Hibernate built-in connection pool (not for production use!)", id = 402)
 	void usingHibernateBuiltInConnectionPool();
 
@@ -1498,19 +1497,19 @@ public interface CoreMessageLogger extends BasicLogger {
 	void disablingContextualLOBCreationSinceCreateClobFailed(Throwable t);
 
 	@LogMessage(level = INFO)
-	@Message(value = "Could not close session; swallowing exception as transaction completed", id = 425)
+	@Message(value = "Could not close session; swallowing exception[%s] as transaction completed", id = 425)
 	void unableToCloseSessionButSwallowingError(HibernateException e);
 
 	@LogMessage(level = WARN)
-	@Message(value = "You should set hibernate.transaction.manager_lookup_class if cache is enabled", id = 426)
+	@Message(value = "You should set hibernate.transaction.jta.platform if cache is enabled", id = 426)
 	void setManagerLookupClass();
 
-	@LogMessage(level = WARN)
-	@Message(value = "Using deprecated %s strategy [%s], use newer %s strategy instead [%s]", id = 427)
-	void deprecatedTransactionManagerStrategy(String name,
-											  String transactionManagerStrategy,
-											  String name2,
-											  String jtaPlatform);
+//	@LogMessage(level = WARN)
+//	@Message(value = "Using deprecated %s strategy [%s], use newer %s strategy instead [%s]", id = 427)
+//	void deprecatedTransactionManagerStrategy(String name,
+//											  String transactionManagerStrategy,
+//											  String name2,
+//											  String jtaPlatform);
 
 	@LogMessage(level = INFO)
 	@Message(value = "Encountered legacy TransactionManagerLookup specified; convert to newer %s contract specified via %s setting",
@@ -1547,4 +1546,178 @@ public interface CoreMessageLogger extends BasicLogger {
 	@Message(value = "update timestamps cache misses: %s", id = 435)
 	void timestampCacheMisses(long updateTimestampsCachePutCount);
 
+	@LogMessage(level = WARN)
+	@Message(value = "Entity manager factory name (%s) is already registered.  If entity manager will be clustered "+
+			"or passivated, specify a unique value for property '%s'", id = 436)
+	void entityManagerFactoryAlreadyRegistered(String emfName, String propertyName);
+
+	@LogMessage(level = WARN)
+	@Message(value = "Attempting to save one or more entities that have a non-nullable association with an unsaved transient entity. The unsaved transient entity must be saved in an operation prior to saving these dependent entities.\n" +
+			"\tUnsaved transient entity: (%s)\n\tDependent entities: (%s)\n\tNon-nullable association(s): (%s)" , id = 437)
+	void cannotResolveNonNullableTransientDependencies(String transientEntityString,
+													   Set<String> dependentEntityStrings,
+													   Set<String> nonNullableAssociationPaths);
+
+	@LogMessage(level = INFO)
+	@Message(value = "NaturalId cache puts: %s", id = 438)
+	void naturalIdCachePuts(long naturalIdCachePutCount);
+
+	@LogMessage(level = INFO)
+	@Message(value = "NaturalId cache hits: %s", id = 439)
+	void naturalIdCacheHits(long naturalIdCacheHitCount);
+
+	@LogMessage(level = INFO)
+	@Message(value = "NaturalId cache misses: %s", id = 440)
+	void naturalIdCacheMisses(long naturalIdCacheMissCount);
+
+	@LogMessage(level = INFO)
+	@Message(value = "Max NaturalId query time: %sms", id = 441)
+	void naturalIdMaxQueryTime(long naturalIdQueryExecutionMaxTime);
+	
+	@LogMessage(level = INFO)
+	@Message(value = "NaturalId queries executed to database: %s", id = 442)
+	void naturalIdQueriesExecuted(long naturalIdQueriesExecutionCount);
+
+	@LogMessage(level = WARN)
+	@Message(
+			value = "Dialect [%s] limits the number of elements in an IN predicate to %s entries.  " +
+					"However, the given parameter list [%s] contained %s entries, which will likely cause failures " +
+					"to execute the query in the database",
+			id = 443
+	)
+	void tooManyInExpressions(String dialectName, int limit, String paramName, int size);
+
+	@LogMessage(level = WARN)
+	@Message(
+			value = "Encountered request for locking however dialect reports that database prefers locking be done in a " +
+					"separate select (follow-on locking); results will be locked after initial query executes",
+			id = 444
+	)
+	void usingFollowOnLocking();
+
+	@LogMessage(level = WARN)
+	@Message(
+			value = "Alias-specific lock modes requested, which is not currently supported with follow-on locking; " +
+					"all acquired locks will be [%s]",
+			id = 445
+	)
+	void aliasSpecificLockingWithFollowOnLocking(LockMode lockMode);
+
+	@LogMessage(level = WARN)
+	@Message(
+			value = "embed-xml attributes were intended to be used for DOM4J entity mode. Since that entity mode has been " +
+					"removed, embed-xml attributes are no longer supported and should be removed from mappings.",
+			id = 446
+	)
+	void embedXmlAttributesNoLongerSupported();
+
+	@LogMessage(level = WARN)
+	@Message(
+			value = "Explicit use of UPGRADE_SKIPLOCKED in lock() calls is not recommended; use normal UPGRADE locking instead",
+			id = 447
+	)
+	void explicitSkipLockedLockCombo();
+
+	@LogMessage(level = INFO)
+	@Message( value = "'javax.persistence.validation.mode' named multiple values : %s", id = 448 )
+	void multipleValidationModes(String modes);
+
+	@LogMessage(level = WARN)
+	@Message(
+			id = 449,
+			value = "@Convert annotation applied to Map attribute [%s] did not explicitly specify attributeName " +
+					"using 'key'/'value' as required by spec; attempting to DoTheRightThing"
+	)
+	void nonCompliantMapConversion(String collectionRole);
+
+	@LogMessage(level = WARN)
+	@Message(
+			id = 450,
+			value = "Encountered request for Service by non-primary service role [%s -> %s]; please update usage"
+	)
+	void alternateServiceRole(String requestedRole, String targetRole);
+
+	@LogMessage(level = WARN)
+	@Message(
+			id = 451,
+			value = "Transaction afterCompletion called by a background thread; " +
+					"delaying afterCompletion processing until the original thread can handle it. [status=%s]"
+	)
+	void rollbackFromBackgroundThread(int status);
+	
+	@LogMessage(level = WARN)
+	@Message(value = "Exception while loading a class or resource found during scanning", id = 452)
+	void unableToLoadScannedClassOrResource(@Cause Exception e);
+	
+	@LogMessage(level = WARN)
+	@Message(value = "Exception while discovering OSGi service implementations : %s", id = 453)
+	void unableToDiscoverOsgiService(String service, @Cause Exception e);
+
+	@LogMessage(level = WARN)
+	@Message(value = "The outer-join attribute on <many-to-many> has been deprecated. Instead of outer-join=\"false\", use lazy=\"extra\" with <map>, <set>, <bag>, <idbag>, or <list>, which will only initialize entities (not as a proxy) as needed.", id = 454)
+	void deprecatedManyToManyOuterJoin();
+
+	@LogMessage(level = WARN)
+	@Message(value = "The fetch attribute on <many-to-many> has been deprecated. Instead of fetch=\"select\", use lazy=\"extra\" with <map>, <set>, <bag>, <idbag>, or <list>, which will only initialize entities (not as a proxy) as needed.", id = 455)
+	void deprecatedManyToManyFetch();
+
+	@LogMessage(level = WARN)
+	@Message(value = "Named parameters are used for a callable statement, but database metadata indicates named parameters are not supported.", id = 456)
+	void unsupportedNamedParameters();
+
+	@LogMessage(level = WARN)
+	@Message(
+			id = 457,
+			value = "Joined inheritance hierarchy [%1$s] defined explicit @DiscriminatorColumn.  Legacy Hibernate behavior " +
+					"was to ignore the @DiscriminatorColumn.  However, as part of issue HHH-6911 we now apply the " +
+					"explicit @DiscriminatorColumn.  If you would prefer the legacy behavior, enable the `%2$s` setting " +
+					"(%2$s=true)"
+	)
+	void applyingExplicitDiscriminatorColumnForJoined(String className, String overrideSetting);
+
+	@Message(value = "@CollectionTable and @JoinTable specified on the same attribute. Check %s#%s", id = 458)
+	String collectionTableAndJoinTableUsedTogether(String entityName, String propertyName);
+
+	@Message(value = "@CollectionTable annotation without a @ElementCollection. Check %s#%s", id = 459)
+	String collectionTableWithoutElementCollection(String entityName, String propertyName);
+
+	@Message(value = "@JoinTable annotation without an association. Check %s#%s", id = 460)
+	String joinTableForNonAssociationAttribute(String entityName, String propertyName);
+
+	@LogMessage( level = ERROR )
+	@Message( value = "Illegal argument on static metamodel field injection : %s#%s; expected type :  %s; encountered type : %s", id = 461 )
+	void illegalArgumentOnStaticMetamodelFieldInjection( String metamodelClassName,
+														 String attributeName,
+														 String attributeJavaType,
+														 String metamodelFieldJavaType );
+		// moved from EntityManagerMessageLogger w/ id 15007
+
+	@LogMessage( level = ERROR )
+	@Message( value = "Unable to locate static metamodel field : %s#%s", id = 462 )
+	void unableToLocateStaticMetamodelField( String metamodelClassName,
+											 String attributeName );
+	// moved from EntityManagerMessageLogger w/ id 15011
+
+
+	@Message(value = "The access type of class %s is AccessType.FIELD. To override the access for an attribute " +
+			"@Access has to be placed on the property (getter)", id = 463)
+	String accessTypeOverrideShouldBeAnnotatedOnProperty( String className );
+
+	@Message(value = "The access type of class %s is AccessType.FIELD. To override the access for an attribute " +
+			"@Access has to be placed on the property (getter) with an access type of AccessType.PROPERTY. " +
+			"Using AccessType.FIELD on the property has no effect", id = 464)
+	String accessTypeOverrideShouldBeProperty( String className );
+
+	@Message(value = "The access type of class %s is AccessType.PROPERTY. To override the access for a field " +
+			"@Access has to be placed on the field ", id = 465)
+	String accessTypeOverrideShouldBeAnnotatedOnField( String className );
+
+	@Message(value = "The access type of class %s is AccessType.PROPERTY. To override the access for a field " +
+			"@Access has to be placed on the field with an access type of AccessType.FIELD. " +
+			"Using AccessType.PROPERTY on the field has no effect", id = 466)
+	String accessTypeOverrideShouldBeField( String className );
+	
+	@LogMessage(level = DEBUG)
+	@Message(value = "Creating pooled optimizer (lo) with [incrementSize=%s; returnClass=%s]", id = 467)
+	void creatingPooledLoOptimizer(int incrementSize, String name);
 }

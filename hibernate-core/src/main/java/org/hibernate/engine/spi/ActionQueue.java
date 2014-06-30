@@ -28,137 +28,294 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
-
-import org.jboss.logging.Logger;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
+import org.hibernate.PropertyValueException;
+import org.hibernate.action.internal.AbstractEntityInsertAction;
 import org.hibernate.action.internal.BulkOperationCleanupAction;
-import org.hibernate.action.internal.CollectionAction;
 import org.hibernate.action.internal.CollectionRecreateAction;
 import org.hibernate.action.internal.CollectionRemoveAction;
 import org.hibernate.action.internal.CollectionUpdateAction;
-import org.hibernate.action.internal.EntityAction;
 import org.hibernate.action.internal.EntityDeleteAction;
 import org.hibernate.action.internal.EntityIdentityInsertAction;
 import org.hibernate.action.internal.EntityInsertAction;
 import org.hibernate.action.internal.EntityUpdateAction;
+import org.hibernate.action.internal.OrphanRemovalAction;
+import org.hibernate.action.internal.QueuedOperationCollectionAction;
+import org.hibernate.action.internal.UnresolvedEntityInsertActions;
 import org.hibernate.action.spi.AfterTransactionCompletionProcess;
 import org.hibernate.action.spi.BeforeTransactionCompletionProcess;
 import org.hibernate.action.spi.Executable;
 import org.hibernate.cache.CacheException;
+import org.hibernate.engine.internal.NonNullableTransientDependencies;
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.proxy.LazyInitializer;
 import org.hibernate.type.Type;
 
 /**
  * Responsible for maintaining the queue of actions related to events.
- * </p>
- * The ActionQueue holds the DML operations queued as part of a session's
- * transactional-write-behind semantics.  DML operations are queued here
- * until a flush forces them to be executed against the database.
  *
+ * The ActionQueue holds the DML operations queued as part of a session's transactional-write-behind semantics. The
+ * DML operations are queued here until a flush forces them to be executed against the database.
+ * 
  * @author Steve Ebersole
+ * @author Gail Badner
+ * @author Anton Marsden
  */
 public class ActionQueue {
-
-	static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, ActionQueue.class.getName());
-	static final boolean TRACE = LOG.isTraceEnabled();
-	private static final int INIT_QUEUE_LIST_SIZE = 5;
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( ActionQueue.class );
 
 	private SessionImplementor session;
+
+	private UnresolvedEntityInsertActions unresolvedInsertions;
 
 	// Object insertions, updates, and deletions have list semantics because
 	// they must happen in the right order so as to respect referential
 	// integrity
-	private ArrayList insertions;
-	private ArrayList deletions;
-	private ArrayList updates;
+	private final ExecutableList<AbstractEntityInsertAction> insertions;
+	private final ExecutableList<EntityDeleteAction> deletions;
+	private final ExecutableList<EntityUpdateAction> updates;
+
 	// Actually the semantics of the next three are really "Bag"
 	// Note that, unlike objects, collection insertions, updates,
 	// deletions are not really remembered between flushes. We
 	// just re-use the same Lists for convenience.
-	private ArrayList collectionCreations;
-	private ArrayList collectionUpdates;
-	private ArrayList collectionRemovals;
+	private final ExecutableList<CollectionRecreateAction> collectionCreations;
+	private final ExecutableList<CollectionUpdateAction> collectionUpdates;
+	private final ExecutableList<QueuedOperationCollectionAction> collectionQueuedOps;
+	private final ExecutableList<CollectionRemoveAction> collectionRemovals;
+	
+	// TODO: The removeOrphan concept is a temporary "hack" for HHH-6484.  This should be removed once action/task
+	// ordering is improved.
+	private final ExecutableList<OrphanRemovalAction> orphanRemovals;
 
+	// an immutable array holding all 7 ExecutionLists in execution order
+	private final List<ExecutableList<?>> executableLists;
+
+	private transient boolean isTransactionCoordinatorShared;
 	private AfterTransactionCompletionProcessQueue afterTransactionProcesses;
 	private BeforeTransactionCompletionProcessQueue beforeTransactionProcesses;
 
 	/**
 	 * Constructs an action queue bound to the given session.
-	 *
+	 * 
 	 * @param session The session "owning" this queue.
 	 */
 	public ActionQueue(SessionImplementor session) {
 		this.session = session;
-		init();
-	}
 
-	private void init() {
-		insertions = new ArrayList( INIT_QUEUE_LIST_SIZE );
-		deletions = new ArrayList( INIT_QUEUE_LIST_SIZE );
-		updates = new ArrayList( INIT_QUEUE_LIST_SIZE );
+		unresolvedInsertions = new UnresolvedEntityInsertActions();
 
-		collectionCreations = new ArrayList( INIT_QUEUE_LIST_SIZE );
-		collectionRemovals = new ArrayList( INIT_QUEUE_LIST_SIZE );
-		collectionUpdates = new ArrayList( INIT_QUEUE_LIST_SIZE );
+		insertions = new ExecutableList<AbstractEntityInsertAction>( new InsertActionSorter() );
+		deletions = new ExecutableList<EntityDeleteAction>();
+		updates = new ExecutableList<EntityUpdateAction>();
 
+		collectionCreations = new ExecutableList<CollectionRecreateAction>();
+		collectionRemovals = new ExecutableList<CollectionRemoveAction>();
+		collectionUpdates = new ExecutableList<CollectionUpdateAction>();
+		collectionQueuedOps = new ExecutableList<QueuedOperationCollectionAction>();
+		
+		orphanRemovals = new ExecutableList<OrphanRemovalAction>();
+
+		// Important: these lists are in execution order
+		List<ExecutableList<?>> tmp = new ArrayList<ExecutableList<?>>( 7 );
+		tmp.add( orphanRemovals );
+		tmp.add( insertions );
+		tmp.add( updates );
+		// do before actions are handled in the other collection queues
+		tmp.add( collectionQueuedOps );
+		tmp.add( collectionRemovals );
+		tmp.add( collectionUpdates );
+		tmp.add( collectionCreations );
+		tmp.add( deletions );
+
+		executableLists = Collections.unmodifiableList( tmp );
+
+		isTransactionCoordinatorShared = false;
 		afterTransactionProcesses = new AfterTransactionCompletionProcessQueue( session );
 		beforeTransactionProcesses = new BeforeTransactionCompletionProcessQueue( session );
+
 	}
 
 	public void clear() {
-		updates.clear();
-		insertions.clear();
-		deletions.clear();
-
-		collectionCreations.clear();
-		collectionRemovals.clear();
-		collectionUpdates.clear();
+		for ( ExecutableList<?> l : executableLists ) {
+			l.clear();
+		}
+		unresolvedInsertions.clear();
 	}
 
-	@SuppressWarnings({ "unchecked" })
+	/**
+	 * Adds an entity insert action
+	 *
+	 * @param action The action representing the entity insertion
+	 */
 	public void addAction(EntityInsertAction action) {
-		insertions.add( action );
+		LOG.tracev( "Adding an EntityInsertAction for [{0}] object", action.getEntityName() );
+		addInsertAction( action );
 	}
 
-	@SuppressWarnings({ "unchecked" })
+	private void addInsertAction(AbstractEntityInsertAction insert) {
+		if ( insert.isEarlyInsert() ) {
+			// For early inserts, must execute inserts before finding non-nullable transient entities.
+			// TODO: find out why this is necessary
+			LOG.tracev( "Executing inserts before finding non-nullable transient entities for early insert: [{0}]", insert );
+			executeInserts();
+		}
+		NonNullableTransientDependencies nonNullableTransientDependencies = insert.findNonNullableTransientEntities();
+		if ( nonNullableTransientDependencies == null ) {
+			LOG.tracev( "Adding insert with no non-nullable, transient entities: [{0}]", insert );
+			addResolvedEntityInsertAction( insert );
+		}
+		else {
+			if ( LOG.isTraceEnabled() ) {
+				LOG.tracev( "Adding insert with non-nullable, transient entities; insert=[{0}], dependencies=[{1}]", insert,
+							nonNullableTransientDependencies.toLoggableString( insert.getSession() ) );
+			}
+			unresolvedInsertions.addUnresolvedEntityInsertAction( insert, nonNullableTransientDependencies );
+		}
+	}
+
+	private void addResolvedEntityInsertAction(AbstractEntityInsertAction insert) {
+		if ( insert.isEarlyInsert() ) {
+			LOG.trace( "Executing insertions before resolved early-insert" );
+			executeInserts();
+			LOG.debug( "Executing identity-insert immediately" );
+			execute( insert );
+		}
+		else {
+			LOG.trace( "Adding resolved non-early insert action." );
+			insertions.add( insert );
+		}
+		insert.makeEntityManaged();
+		for ( AbstractEntityInsertAction resolvedAction : unresolvedInsertions.resolveDependentActions( insert.getInstance(), session ) ) {
+			addResolvedEntityInsertAction( resolvedAction );
+		}
+	}
+
+	/**
+	 * Adds an entity (IDENTITY) insert action
+	 *
+	 * @param action The action representing the entity insertion
+	 */
+	public void addAction(EntityIdentityInsertAction action) {
+		LOG.tracev( "Adding an EntityIdentityInsertAction for [{0}] object", action.getEntityName() );
+		addInsertAction( action );
+	}
+
+	/**
+	 * Adds an entity delete action
+	 *
+	 * @param action The action representing the entity deletion
+	 */
 	public void addAction(EntityDeleteAction action) {
 		deletions.add( action );
 	}
 
-	@SuppressWarnings({ "unchecked" })
+	/**
+	 * Adds an orphan removal action
+	 *
+	 * @param action The action representing the orphan removal
+	 */
+	public void addAction(OrphanRemovalAction action) {
+		orphanRemovals.add( action );
+	}
+
+	/**
+	 * Adds an entity update action
+	 *
+	 * @param action The action representing the entity update
+	 */
 	public void addAction(EntityUpdateAction action) {
 		updates.add( action );
 	}
 
-	@SuppressWarnings({ "unchecked" })
+	/**
+	 * Adds a collection (re)create action
+	 *
+	 * @param action The action representing the (re)creation of a collection
+	 */
 	public void addAction(CollectionRecreateAction action) {
 		collectionCreations.add( action );
 	}
 
-	@SuppressWarnings({ "unchecked" })
+	/**
+	 * Adds a collection remove action
+	 *
+	 * @param action The action representing the removal of a collection
+	 */
 	public void addAction(CollectionRemoveAction action) {
 		collectionRemovals.add( action );
 	}
 
-	@SuppressWarnings({ "unchecked" })
+	/**
+	 * Adds a collection update action
+	 *
+	 * @param action The action representing the update of a collection
+	 */
 	public void addAction(CollectionUpdateAction action) {
 		collectionUpdates.add( action );
 	}
 
-	@SuppressWarnings({ "unchecked" })
-	public void addAction(EntityIdentityInsertAction insert) {
-		insertions.add( insert );
+	/**
+	 * Adds an action relating to a collection queued operation (extra lazy).
+	 *
+	 * @param action The action representing the queued operation
+	 */
+	public void addAction(QueuedOperationCollectionAction action) {
+		collectionQueuedOps.add( action );
 	}
 
-	public void addAction(BulkOperationCleanupAction cleanupAction) {
-		registerCleanupActions( cleanupAction );
+	/**
+	 * Adds an action defining a cleanup relating to a bulk operation (HQL/JPQL or Criteria based update/delete)
+	 *
+	 * @param action The action representing the queued operation
+	 */
+	public void addAction(BulkOperationCleanupAction action) {
+		registerCleanupActions( action );
+	}
+
+	private void registerCleanupActions(Executable executable) {
+		beforeTransactionProcesses.register( executable.getBeforeTransactionCompletionProcess() );
+		if ( session.getFactory().getSettings().isQueryCacheEnabled() ) {
+			invalidateSpaces( executable.getPropertySpaces() );
+		}
+		afterTransactionProcesses.register( executable.getAfterTransactionCompletionProcess() );
+	}
+
+	/**
+	 * Are there unresolved entity insert actions that depend on non-nullable associations with a transient entity?
+	 * 
+	 * @return true, if there are unresolved entity insert actions that depend on non-nullable associations with a
+	 * transient entity; false, otherwise
+	 */
+	public boolean hasUnresolvedEntityInsertActions() {
+		return !unresolvedInsertions.isEmpty();
+	}
+
+	/**
+	 * Throws {@link org.hibernate.PropertyValueException} if there are any unresolved entity insert actions that depend
+	 * on non-nullable associations with a transient entity. This method should be called on completion of an operation
+	 * (after all cascades are completed) that saves an entity.
+	 * 
+	 * @throws org.hibernate.PropertyValueException if there are any unresolved entity insert actions;
+	 * {@link org.hibernate.PropertyValueException#getEntityName()} and
+	 * {@link org.hibernate.PropertyValueException#getPropertyName()} will return the entity name and property value for
+	 * the first unresolved entity insert action.
+	 */
+	public void checkNoUnresolvedActionsAfterOperation() throws PropertyValueException {
+		unresolvedInsertions.checkNoUnresolvedActionsAfterOperation();
 	}
 
 	public void registerProcess(AfterTransactionCompletionProcess process) {
@@ -171,7 +328,7 @@ public class ActionQueue {
 
 	/**
 	 * Perform all currently queued entity-insertion actions.
-	 *
+	 * 
 	 * @throws HibernateException error executing queued insertion actions.
 	 */
 	public void executeInserts() throws HibernateException {
@@ -180,75 +337,104 @@ public class ActionQueue {
 
 	/**
 	 * Perform all currently queued actions.
-	 *
+	 * 
 	 * @throws HibernateException error executing queued actions.
 	 */
 	public void executeActions() throws HibernateException {
-		executeActions( insertions );
-		executeActions( updates );
-		executeActions( collectionRemovals );
-		executeActions( collectionUpdates );
-		executeActions( collectionCreations );
-		executeActions( deletions );
+		if ( !unresolvedInsertions.isEmpty() ) {
+			throw new IllegalStateException( "About to execute actions, but there are unresolved entity insert actions." );
+		}
+
+		for ( ExecutableList<?> l : executableLists ) {
+			executeActions( l );
+		}
 	}
 
 	/**
 	 * Prepares the internal action queues for execution.
-	 *
+	 * 
 	 * @throws HibernateException error preparing actions.
 	 */
 	public void prepareActions() throws HibernateException {
 		prepareActions( collectionRemovals );
 		prepareActions( collectionUpdates );
 		prepareActions( collectionCreations );
+		prepareActions( collectionQueuedOps );
+	}
+
+	private void prepareActions(ExecutableList<?> queue) throws HibernateException {
+		for ( Executable executable : queue ) {
+			executable.beforeExecutions();
+		}
 	}
 
 	/**
 	 * Performs cleanup of any held cache softlocks.
-	 *
+	 * 
 	 * @param success Was the transaction successful.
 	 */
 	public void afterTransactionCompletion(boolean success) {
-		afterTransactionProcesses.afterTransactionCompletion( success );
+		if ( !isTransactionCoordinatorShared ) {
+			// Execute completion actions only in transaction owner (aka parent session).
+			afterTransactionProcesses.afterTransactionCompletion( success );
+		}
 	}
 
 	/**
 	 * Execute any registered {@link org.hibernate.action.spi.BeforeTransactionCompletionProcess}
 	 */
 	public void beforeTransactionCompletion() {
-		beforeTransactionProcesses.beforeTransactionCompletion();
-	}
-
-	/**
-	 * Check whether the given tables/query-spaces are to be executed against
-	 * given the currently queued actions.
-	 *
-	 * @param tables The table/query-spaces to check.
-	 *
-	 * @return True if we contain pending actions against any of the given
-	 *         tables; false otherwise.
-	 */
-	public boolean areTablesToBeUpdated(Set tables) {
-		return areTablesToUpdated( updates, tables ) ||
-				areTablesToUpdated( insertions, tables ) ||
-				areTablesToUpdated( deletions, tables ) ||
-				areTablesToUpdated( collectionUpdates, tables ) ||
-				areTablesToUpdated( collectionCreations, tables ) ||
-				areTablesToUpdated( collectionRemovals, tables );
+		if ( !isTransactionCoordinatorShared ) {
+			// Execute completion actions only in transaction owner (aka parent session).
+			beforeTransactionProcesses.beforeTransactionCompletion();
+		}
 	}
 
 	/**
 	 * Check whether any insertion or deletion actions are currently queued.
 	 *
-	 * @return True if insertions or deletions are currently queued; false otherwise.
+	 * @return {@code true} if insertions or deletions are currently queued; {@code false} otherwise.
 	 */
 	public boolean areInsertionsOrDeletionsQueued() {
-		return ( insertions.size() > 0 || deletions.size() > 0 );
+		return !insertions.isEmpty() || !unresolvedInsertions.isEmpty() || !deletions.isEmpty() || !orphanRemovals.isEmpty();
 	}
 
-	@SuppressWarnings({ "unchecked" })
-	private static boolean areTablesToUpdated(List actions, Set tableSpaces) {
-		for ( Executable action : (List<Executable>) actions ) {
+	/**
+	 * Check whether the given tables/query-spaces are to be executed against given the currently queued actions.
+	 * 
+	 * @param tables The table/query-spaces to check.
+	 *
+	 * @return {@code true} if we contain pending actions against any of the given tables; {@code false} otherwise.
+	 */
+	public boolean areTablesToBeUpdated(@SuppressWarnings("rawtypes") Set tables) {
+		if ( tables.isEmpty() ) {
+			return false;
+		}
+		for ( ExecutableList<?> l : executableLists ) {
+			if ( areTablesToBeUpdated( l, tables ) ) {
+				return true;
+			}
+		}
+		return areTablesToBeUpdated( unresolvedInsertions, tables );
+	}
+
+	private static boolean areTablesToBeUpdated(ExecutableList<?> actions, @SuppressWarnings("rawtypes") Set tableSpaces) {
+		if ( actions.isEmpty() ) {
+			return false;
+		}
+
+		for ( Serializable actionSpace : actions.getQuerySpaces() ) {
+			if ( tableSpaces.contains( actionSpace ) ) {
+				LOG.debugf( "Changes must be flushed to space: %s", actionSpace );
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static boolean areTablesToBeUpdated(UnresolvedEntityInsertActions actions, @SuppressWarnings("rawtypes") Set tableSpaces) {
+		for ( Executable action : actions.getDependentEntityInsertActions() ) {
 			final Serializable[] spaces = action.getPropertySpaces();
 			for ( Serializable space : spaces ) {
 				if ( tableSpaces.contains( space ) ) {
@@ -260,16 +446,46 @@ public class ActionQueue {
 		return false;
 	}
 
-	private void executeActions(List list) throws HibernateException {
-		int size = list.size();
-		for ( int i = 0; i < size; i++ ) {
-			execute( (Executable) list.get( i ) );
+	/**
+	 * Perform {@link org.hibernate.action.spi.Executable#execute()} on each element of the list
+	 * 
+	 * @param list The list of Executable elements to be performed
+	 *
+	 * @throws HibernateException
+	 */
+	private <E extends Executable & Comparable<?> & Serializable> void executeActions(ExecutableList<E> list) throws HibernateException {
+		// todo : consider ways to improve the double iteration of Executables here:
+		//		1) we explicitly iterate list here to perform Executable#execute()
+		//		2) ExecutableList#getQuerySpaces also iterates the Executables to collect query spaces.
+		try {
+			for ( E e : list ) {
+				try {
+					e.execute();
+				}
+				finally {
+					beforeTransactionProcesses.register( e.getBeforeTransactionCompletionProcess() );
+					afterTransactionProcesses.register( e.getAfterTransactionCompletionProcess() );
+				}
+			}
 		}
+		finally {
+			if ( session.getFactory().getSettings().isQueryCacheEnabled() ) {
+				// Strictly speaking, only a subset of the list may have been processed if a RuntimeException occurs.
+				// We still invalidate all spaces. I don't see this as a big deal - after all, RuntimeExceptions are
+				// unexpected.
+				Set<Serializable> propertySpaces = list.getQuerySpaces();
+				invalidateSpaces( propertySpaces.toArray( new Serializable[propertySpaces.size()] ) );
+			}
+		}
+
 		list.clear();
 		session.getTransactionCoordinator().getJdbcCoordinator().executeBatch();
 	}
 
-	public void execute(Executable executable) {
+	/**
+	 * @param executable The action to execute
+	 */
+	public <E extends Executable & Comparable<?>> void execute(E executable) {
 		try {
 			executable.execute();
 		}
@@ -278,39 +494,38 @@ public class ActionQueue {
 		}
 	}
 
-	private void registerCleanupActions(Executable executable) {
-		beforeTransactionProcesses.register( executable.getBeforeTransactionCompletionProcess() );
-		if ( session.getFactory().getSettings().isQueryCacheEnabled() ) {
-			final String[] spaces = (String[]) executable.getPropertySpaces();
-			afterTransactionProcesses.addSpacesToInvalidate( spaces );
-			session.getFactory().getUpdateTimestampsCache().preinvalidate( spaces );
-		}
-		afterTransactionProcesses.register( executable.getAfterTransactionCompletionProcess() );
-	}
-
-	@SuppressWarnings({ "unchecked" })
-	private void prepareActions(List queue) throws HibernateException {
-		for ( Executable executable : (List<Executable>) queue ) {
-			executable.beforeExecutions();
+	/**
+	 * This method is now called once per execution of an ExecutableList or once for execution of an Execution.
+	 * 
+	 * @param spaces The spaces to invalidate
+	 */
+	private void invalidateSpaces(Serializable... spaces) {
+		if ( spaces != null && spaces.length > 0 ) {
+			for ( Serializable s : spaces ) {
+				afterTransactionProcesses.addSpaceToInvalidate( (String) s );
+			}
+			// Performance win: If we are processing an ExecutableList, this will only be called once
+			session.getFactory().getUpdateTimestampsCache().preInvalidate( spaces, session );
 		}
 	}
 
 	/**
 	 * Returns a string representation of the object.
-	 *
+	 * 
 	 * @return a string representation of the object.
 	 */
 	@Override
-    public String toString() {
-		return new StringBuilder()
-				.append( "ActionQueue[insertions=" ).append( insertions )
-				.append( " updates=" ).append( updates )
-				.append( " deletions=" ).append( deletions )
-				.append( " collectionCreations=" ).append( collectionCreations )
-				.append( " collectionRemovals=" ).append( collectionRemovals )
-				.append( " collectionUpdates=" ).append( collectionUpdates )
-				.append( "]" )
-				.toString();
+	public String toString() {
+		return "ActionQueue[insertions=" + insertions
+				+ " updates=" + updates
+				+ " deletions=" + deletions
+				+ " orphanRemovals=" + orphanRemovals
+				+ " collectionCreations=" + collectionCreations
+				+ " collectionRemovals=" + collectionRemovals
+				+ " collectionUpdates=" + collectionUpdates
+				+ " collectionQueuedOps=" + collectionQueuedOps
+				+ " unresolvedInsertDependencies=" + unresolvedInsertions
+				+ "]";
 	}
 
 	public int numberOfCollectionRemovals() {
@@ -326,7 +541,7 @@ public class ActionQueue {
 	}
 
 	public int numberOfDeletions() {
-		return deletions.size();
+		return deletions.size() + orphanRemovals.size();
 	}
 
 	public int numberOfUpdates() {
@@ -337,286 +552,210 @@ public class ActionQueue {
 		return insertions.size();
 	}
 
-	@SuppressWarnings({ "unchecked" })
-	public void sortCollectionActions() {
-		if ( session.getFactory().getSettings().isOrderUpdatesEnabled() ) {
-			//sort the updates by fk
-			java.util.Collections.sort( collectionCreations );
-			java.util.Collections.sort( collectionUpdates );
-			java.util.Collections.sort( collectionRemovals );
-		}
-	}
-
-	@SuppressWarnings({ "unchecked" })
-	public void sortActions() {
-		if ( session.getFactory().getSettings().isOrderUpdatesEnabled() ) {
-			//sort the updates by pk
-			java.util.Collections.sort( updates );
-		}
-		if ( session.getFactory().getSettings().isOrderInsertsEnabled() ) {
-			sortInsertActions();
-		}
+	public TransactionCompletionProcesses getTransactionCompletionProcesses() {
+		return new TransactionCompletionProcesses( beforeTransactionProcesses, afterTransactionProcesses );
 	}
 
 	/**
-	 * Order the {@link #insertions} queue such that we group inserts
-	 * against the same entity together (without violating constraints).  The
-	 * original order is generated by cascade order, which in turn is based on
-	 * the directionality of foreign-keys.  So even though we will be changing
-	 * the ordering here, we need to make absolutely certain that we do not
-	 * circumvent this FK ordering to the extent of causing constraint
-	 * violations
+	 * Bind transaction completion processes to make them shared between primary and secondary session.
+	 * Transaction completion processes are always executed by transaction owner (primary session),
+	 * but can be registered using secondary session too.
+	 *
+	 * @param processes Transaction completion processes.
+	 * @param isTransactionCoordinatorShared Flag indicating shared transaction context.
 	 */
-	private void sortInsertActions() {
-		new InsertActionSorter().sort();
+	public void setTransactionCompletionProcesses(TransactionCompletionProcesses processes, boolean isTransactionCoordinatorShared) {
+		this.isTransactionCoordinatorShared = isTransactionCoordinatorShared;
+		this.beforeTransactionProcesses = processes.beforeTransactionCompletionProcesses;
+		this.afterTransactionProcesses = processes.afterTransactionCompletionProcesses;
 	}
 
-	@SuppressWarnings({ "UnusedDeclaration" })
-	public ArrayList cloneDeletions() {
-		return ( ArrayList ) deletions.clone();
+	public void sortCollectionActions() {
+		if ( session.getFactory().getSettings().isOrderUpdatesEnabled() ) {
+			// sort the updates by fk
+			collectionCreations.sort();
+			collectionUpdates.sort();
+			collectionQueuedOps.sort();
+			collectionRemovals.sort();
+		}
+	}
+
+	public void sortActions() {
+		if ( session.getFactory().getSettings().isOrderUpdatesEnabled() ) {
+			// sort the updates by pk
+			updates.sort();
+		}
+		if ( session.getFactory().getSettings().isOrderInsertsEnabled() ) {
+			insertions.sort();
+		}
 	}
 
 	public void clearFromFlushNeededCheck(int previousCollectionRemovalSize) {
 		collectionCreations.clear();
 		collectionUpdates.clear();
+		collectionQueuedOps.clear();
 		updates.clear();
 		// collection deletions are a special case since update() can add
 		// deletions of collections not loaded by the session.
-		for ( int i = collectionRemovals.size() - 1; i >= previousCollectionRemovalSize; i-- ) {
-			collectionRemovals.remove( i );
+		if ( collectionRemovals.size() > previousCollectionRemovalSize ) {
+			collectionRemovals.removeLastN( collectionRemovals.size() - previousCollectionRemovalSize );
 		}
 	}
 
-	@SuppressWarnings({ "UnusedDeclaration" })
 	public boolean hasAfterTransactionActions() {
-		return afterTransactionProcesses.processes.size() > 0;
+		return isTransactionCoordinatorShared ? false : afterTransactionProcesses.hasActions();
 	}
 
 	public boolean hasBeforeTransactionActions() {
-		return beforeTransactionProcesses.processes.size() > 0;
+		return isTransactionCoordinatorShared ? false : beforeTransactionProcesses.hasActions();
 	}
 
 	public boolean hasAnyQueuedActions() {
-		return updates.size() > 0 ||
-				insertions.size() > 0 ||
-				deletions.size() > 0 ||
-				collectionUpdates.size() > 0 ||
-				collectionRemovals.size() > 0 ||
-				collectionCreations.size() > 0;
+		return !updates.isEmpty() || !insertions.isEmpty() || !unresolvedInsertions.isEmpty() || !deletions.isEmpty() || !collectionUpdates.isEmpty()
+				|| !collectionQueuedOps.isEmpty() || !collectionRemovals.isEmpty() || !collectionCreations.isEmpty();
+	}
+
+	public void unScheduleDeletion(EntityEntry entry, Object rescuedEntity) {
+		if ( rescuedEntity instanceof HibernateProxy ) {
+			LazyInitializer initializer = ( ( HibernateProxy ) rescuedEntity ).getHibernateLazyInitializer();
+			if ( !initializer.isUninitialized() ) {
+				rescuedEntity = initializer.getImplementation( session );
+			}
+		}
+		for ( int i = 0; i < deletions.size(); i++ ) {
+			EntityDeleteAction action = deletions.get( i );
+			if ( action.getInstance() == rescuedEntity ) {
+				deletions.remove( i );
+				return;
+			}
+		}
+		for ( int i = 0; i < orphanRemovals.size(); i++ ) {
+			EntityDeleteAction action = orphanRemovals.get( i );
+			if ( action.getInstance() == rescuedEntity ) {
+				orphanRemovals.remove( i );
+				return;
+			}
+		}
+		throw new AssertionFailure( "Unable to perform un-delete for instance " + entry.getEntityName() );
 	}
 
 	/**
-	 * Used by the owning session to explicitly control serialization of the
-	 * action queue
-	 *
+	 * Used by the owning session to explicitly control serialization of the action queue
+	 * 
 	 * @param oos The stream to which the action queue should get written
-	 *
 	 * @throws IOException Indicates an error writing to the stream
 	 */
 	public void serialize(ObjectOutputStream oos) throws IOException {
-		if ( TRACE ) LOG.trace( "Serializing action-queue" );
+		LOG.trace( "Serializing action-queue" );
 
-		int queueSize = insertions.size();
-		if ( TRACE ) LOG.trace( "Starting serialization of [" + queueSize + "] insertions entries" );
-		oos.writeInt( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			oos.writeObject( insertions.get( i ) );
-		}
+		unresolvedInsertions.serialize( oos );
 
-		queueSize = deletions.size();
-		if ( TRACE ) LOG.trace( "Starting serialization of [" + queueSize + "] deletions entries" );
-		oos.writeInt( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			oos.writeObject( deletions.get( i ) );
-		}
-
-		queueSize = updates.size();
-		if ( TRACE ) LOG.trace( "Starting serialization of [" + queueSize + "] updates entries" );
-		oos.writeInt( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			oos.writeObject( updates.get( i ) );
-		}
-
-		queueSize = collectionUpdates.size();
-		if ( TRACE ) LOG.trace( "Starting serialization of [" + queueSize + "] collectionUpdates entries" );
-		oos.writeInt( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			oos.writeObject( collectionUpdates.get( i ) );
-		}
-
-		queueSize = collectionRemovals.size();
-		if ( TRACE ) LOG.trace( "Starting serialization of [" + queueSize + "] collectionRemovals entries" );
-		oos.writeInt( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			oos.writeObject( collectionRemovals.get( i ) );
-		}
-
-		queueSize = collectionCreations.size();
-		if ( TRACE ) LOG.trace( "Starting serialization of [" + queueSize + "] collectionCreations entries" );
-		oos.writeInt( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			oos.writeObject( collectionCreations.get( i ) );
+		for ( ExecutableList<?> l : executableLists ) {
+			l.writeExternal( oos );
 		}
 	}
 
 	/**
-	 * Used by the owning session to explicitly control deserialization of the
-	 * action queue
-	 *
+	 * Used by the owning session to explicitly control deserialization of the action queue.
+	 * 
 	 * @param ois The stream from which to read the action queue
 	 * @param session The session to which the action queue belongs
-	 *
 	 * @return The deserialized action queue
-	 *
 	 * @throws IOException indicates a problem reading from the stream
 	 * @throws ClassNotFoundException Generally means we were unable to locate user classes.
 	 */
-	@SuppressWarnings({ "unchecked" })
-	public static ActionQueue deserialize(
-			ObjectInputStream ois,
-			SessionImplementor session) throws IOException, ClassNotFoundException {
-		if ( TRACE ) LOG.trace( "Dedeserializing action-queue" );
+	public static ActionQueue deserialize(ObjectInputStream ois, SessionImplementor session) throws IOException, ClassNotFoundException {
+		LOG.trace( "Deserializing action-queue" );
 		ActionQueue rtn = new ActionQueue( session );
 
-		int queueSize = ois.readInt();
-		if ( TRACE ) LOG.trace( "Starting deserialization of [" + queueSize + "] insertions entries" );
-		rtn.insertions = new ArrayList<Executable>( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			EntityAction action = ( EntityAction ) ois.readObject();
-			action.afterDeserialize( session );
-			rtn.insertions.add( action );
+		rtn.unresolvedInsertions = UnresolvedEntityInsertActions.deserialize( ois, session );
+
+		for ( ExecutableList<?> l : rtn.executableLists ) {
+			l.readExternal( ois );
+			LOG.tracev( "Deserialized [{0}] entries", l.size() );
+			l.afterDeserialize( session );
 		}
 
-		queueSize = ois.readInt();
-		if ( TRACE ) LOG.trace( "Starting deserialization of [" + queueSize + "] deletions entries" );
-		rtn.deletions = new ArrayList<Executable>( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			EntityAction action = ( EntityAction ) ois.readObject();
-			action.afterDeserialize( session );
-			rtn.deletions.add( action );
-		}
-
-		queueSize = ois.readInt();
-		if ( TRACE ) LOG.trace( "Starting deserialization of [" + queueSize + "] updates entries" );
-		rtn.updates = new ArrayList<Executable>( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			EntityAction action = ( EntityAction ) ois.readObject();
-			action.afterDeserialize( session );
-			rtn.updates.add( action );
-		}
-
-		queueSize = ois.readInt();
-		if ( TRACE ) LOG.trace( "Starting deserialization of [" + queueSize + "] collectionUpdates entries" );
-		rtn.collectionUpdates = new ArrayList<Executable>( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			CollectionAction action = (CollectionAction) ois.readObject();
-			action.afterDeserialize( session );
-			rtn.collectionUpdates.add( action );
-		}
-
-		queueSize = ois.readInt();
-		if ( TRACE ) LOG.trace( "Starting deserialization of [" + queueSize + "] collectionRemovals entries" );
-		rtn.collectionRemovals = new ArrayList<Executable>( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			CollectionAction action = ( CollectionAction ) ois.readObject();
-			action.afterDeserialize( session );
-			rtn.collectionRemovals.add( action );
-		}
-
-		queueSize = ois.readInt();
-		if ( TRACE ) LOG.trace( "Starting deserialization of [" + queueSize + "] collectionCreations entries" );
-		rtn.collectionCreations = new ArrayList<Executable>( queueSize );
-		for ( int i = 0; i < queueSize; i++ ) {
-			CollectionAction action = ( CollectionAction ) ois.readObject();
-			action.afterDeserialize( session );
-			rtn.collectionCreations.add( action );
-		}
 		return rtn;
 	}
 
-	private static class BeforeTransactionCompletionProcessQueue {
-		private SessionImplementor session;
-		private List<BeforeTransactionCompletionProcess> processes = new ArrayList<BeforeTransactionCompletionProcess>();
+	private static abstract class AbstractTransactionCompletionProcessQueue<T> {
+		protected SessionImplementor session;
+		// Concurrency handling required when transaction completion process is dynamically registered
+		// inside event listener (HHH-7478).
+		protected Queue<T> processes = new ConcurrentLinkedQueue<T>();
 
-		private BeforeTransactionCompletionProcessQueue(SessionImplementor session) {
+		private AbstractTransactionCompletionProcessQueue(SessionImplementor session) {
 			this.session = session;
 		}
 
-		public void register(BeforeTransactionCompletionProcess process) {
+		public void register(T process) {
 			if ( process == null ) {
 				return;
 			}
 			processes.add( process );
 		}
 
-		public void beforeTransactionCompletion() {
-			final int size = processes.size();
-			for ( int i = 0; i < size; i++ ) {
-				try {
-					BeforeTransactionCompletionProcess process = processes.get( i );
-					process.doBeforeTransactionCompletion( session );
-				}
-				catch ( HibernateException he ) {
-					throw he;
-				}
-				catch ( Exception e ) {
-					throw new AssertionFailure( "Unable to perform beforeTransactionCompletion callback", e );
-				}
-			}
-			processes.clear();
+		public boolean hasActions() {
+			return !processes.isEmpty();
 		}
 	}
 
-	private static class AfterTransactionCompletionProcessQueue {
-		private SessionImplementor session;
-		private Set<String> querySpacesToInvalidate = new HashSet<String>();
-		private List<AfterTransactionCompletionProcess> processes
-				= new ArrayList<AfterTransactionCompletionProcess>( INIT_QUEUE_LIST_SIZE * 3 );
-
-		private AfterTransactionCompletionProcessQueue(SessionImplementor session) {
-			this.session = session;
+	/**
+	 * Encapsulates behavior needed for before transaction processing
+	 */
+	private static class BeforeTransactionCompletionProcessQueue extends AbstractTransactionCompletionProcessQueue<BeforeTransactionCompletionProcess> {
+		private BeforeTransactionCompletionProcessQueue(SessionImplementor session) {
+			super( session );
 		}
 
-		public void addSpacesToInvalidate(String[] spaces) {
-			if ( spaces == null ) {
-				return;
+		public void beforeTransactionCompletion() {
+			while ( !processes.isEmpty() ) {
+				try {
+					processes.poll().doBeforeTransactionCompletion( session );
+				}
+				catch (HibernateException he) {
+					throw he;
+				}
+				catch (Exception e) {
+					throw new AssertionFailure( "Unable to perform beforeTransactionCompletion callback", e );
+				}
 			}
-			for ( int i = 0, max = spaces.length; i < max; i++ ) {
-				addSpaceToInvalidate( spaces[i] );
-			}
+		}
+	}
+
+	/**
+	 * Encapsulates behavior needed for after transaction processing
+	 */
+	private static class AfterTransactionCompletionProcessQueue extends AbstractTransactionCompletionProcessQueue<AfterTransactionCompletionProcess> {
+		private Set<String> querySpacesToInvalidate = new HashSet<String>();
+
+		private AfterTransactionCompletionProcessQueue(SessionImplementor session) {
+			super( session );
 		}
 
 		public void addSpaceToInvalidate(String space) {
 			querySpacesToInvalidate.add( space );
 		}
 
-		public void register(AfterTransactionCompletionProcess process) {
-			if ( process == null ) {
-				return;
-			}
-			processes.add( process );
-		}
-
 		public void afterTransactionCompletion(boolean success) {
-			final int size = processes.size();
-			for ( int i = 0; i < size; i++ ) {
+			while ( !processes.isEmpty() ) {
 				try {
-					AfterTransactionCompletionProcess process = processes.get( i );
-					process.doAfterTransactionCompletion( success, session );
+					processes.poll().doAfterTransactionCompletion( success, session );
 				}
-				catch ( CacheException ce ) {
+				catch (CacheException ce) {
 					LOG.unableToReleaseCacheLock( ce );
 					// continue loop
 				}
-				catch ( Exception e ) {
+				catch (Exception e) {
 					throw new AssertionFailure( "Exception releasing cache locks", e );
 				}
 			}
-			processes.clear();
 
 			if ( session.getFactory().getSettings().isQueryCacheEnabled() ) {
 				session.getFactory().getUpdateTimestampsCache().invalidate(
-						querySpacesToInvalidate.toArray( new String[ querySpacesToInvalidate.size()] )
+						querySpacesToInvalidate.toArray( new String[querySpacesToInvalidate.size()] ),
+						session
 				);
 			}
 			querySpacesToInvalidate.clear();
@@ -624,30 +763,59 @@ public class ActionQueue {
 	}
 
 	/**
+	 * Wrapper class allowing to bind the same transaction completion process queues in different sessions.
+	 */
+	public static class TransactionCompletionProcesses {
+		private final BeforeTransactionCompletionProcessQueue beforeTransactionCompletionProcesses;
+		private final AfterTransactionCompletionProcessQueue afterTransactionCompletionProcesses;
+
+		private TransactionCompletionProcesses(
+				BeforeTransactionCompletionProcessQueue beforeTransactionCompletionProcessQueue,
+				AfterTransactionCompletionProcessQueue afterTransactionCompletionProcessQueue) {
+			this.beforeTransactionCompletionProcesses = beforeTransactionCompletionProcessQueue;
+			this.afterTransactionCompletionProcesses = afterTransactionCompletionProcessQueue;
+		}
+	}
+
+	/**
+	 * Order the {@link #insertions} queue such that we group inserts against the same entity together (without
+	 * violating constraints). The original order is generated by cascade order, which in turn is based on the
+	 * directionality of foreign-keys. So even though we will be changing the ordering here, we need to make absolutely
+	 * certain that we do not circumvent this FK ordering to the extent of causing constraint violations.
+	 * <p>
 	 * Sorts the insert actions using more hashes.
-	 *
+	 * </p>
+	 * NOTE: this class is not thread-safe.
+	 * 
 	 * @author Jay Erb
 	 */
-	private class InsertActionSorter {
+	private static class InsertActionSorter implements ExecutableList.Sorter<AbstractEntityInsertAction> {
+		/**
+		 * Singleton access
+		 */
+		public static final InsertActionSorter INSTANCE = new InsertActionSorter();
+
 		// the mapping of entity names to their latest batch numbers.
-		private HashMap<String,Integer> latestBatches = new HashMap<String,Integer>();
-		private HashMap<Object,Integer> entityBatchNumber;
+		private Map<String, Integer> latestBatches;
+		private Map<Object, Integer> entityBatchNumber;
 
 		// the map of batch numbers to EntityInsertAction lists
-		private HashMap<Integer,List<EntityInsertAction>> actionBatches = new HashMap<Integer,List<EntityInsertAction>>();
+		private Map<Integer, List<AbstractEntityInsertAction>> actionBatches;
 
 		public InsertActionSorter() {
-			//optimize the hash size to eliminate a rehash.
-			entityBatchNumber = new HashMap<Object,Integer>( insertions.size() + 1, 1.0f );
 		}
 
 		/**
 		 * Sort the insert actions.
 		 */
-		@SuppressWarnings({ "unchecked", "UnnecessaryBoxing" })
-		public void sort() {
+		public void sort(List<AbstractEntityInsertAction> insertions) {
+			// optimize the hash size to eliminate a rehash.
+			this.latestBatches = new HashMap<String, Integer>();
+			this.entityBatchNumber = new HashMap<Object, Integer>( insertions.size() + 1, 1.0f );
+			this.actionBatches = new HashMap<Integer, List<AbstractEntityInsertAction>>();
+
 			// the list of entity names that indicate the batch number
-			for ( EntityInsertAction action : (List<EntityInsertAction>) insertions ) {
+			for ( AbstractEntityInsertAction action : insertions ) {
 				// remove the current element from insertions. It will be added back later.
 				String entityName = action.getEntityName();
 
@@ -678,25 +846,19 @@ public class ActionQueue {
 
 			// now rebuild the insertions list. There is a batch for each entry in the name list.
 			for ( int i = 0; i < actionBatches.size(); i++ ) {
-				List<EntityInsertAction> batch = actionBatches.get( i );
-				for ( EntityInsertAction action : batch ) {
-					insertions.add( action );
-				}
+				List<AbstractEntityInsertAction> batch = actionBatches.get( i );
+				insertions.addAll( batch );
 			}
 		}
 
 		/**
 		 * Finds an acceptable batch for this entity to be a member as part of the {@link InsertActionSorter}
-		 *
+		 * 
 		 * @param action The action being sorted
 		 * @param entityName The name of the entity affected by the action
-		 *
 		 * @return An appropriate batch number; todo document this process better
 		 */
-		@SuppressWarnings({ "UnnecessaryBoxing", "unchecked" })
-		private Integer findBatchNumber(
-				EntityInsertAction action,
-				String entityName) {
+		private Integer findBatchNumber(AbstractEntityInsertAction action, String entityName) {
 			// loop through all the associated entities and make sure they have been
 			// processed before the latest
 			// batch associated with this entity type.
@@ -707,8 +869,7 @@ public class ActionQueue {
 			// loop through all the associations of the current entity and make sure that they are processed
 			// before the current batch number
 			Object[] propertyValues = action.getState();
-			Type[] propertyTypes = action.getPersister().getClassMetadata()
-					.getPropertyTypes();
+			Type[] propertyTypes = action.getPersister().getClassMetadata().getPropertyTypes();
 
 			for ( int i = 0; i < propertyValues.length; i++ ) {
 				Object value = propertyValues[i];
@@ -730,16 +891,16 @@ public class ActionQueue {
 			return latestBatchNumberForType;
 		}
 
-		@SuppressWarnings({ "unchecked" })
-		private void addToBatch(Integer batchNumber, EntityInsertAction action) {
-			List<EntityInsertAction> actions = actionBatches.get( batchNumber );
+		private void addToBatch(Integer batchNumber, AbstractEntityInsertAction action) {
+			List<AbstractEntityInsertAction> actions = actionBatches.get( batchNumber );
 
 			if ( actions == null ) {
-				actions = new LinkedList<EntityInsertAction>();
+				actions = new LinkedList<AbstractEntityInsertAction>();
 				actionBatches.put( batchNumber, actions );
 			}
 			actions.add( action );
 		}
 
 	}
+
 }

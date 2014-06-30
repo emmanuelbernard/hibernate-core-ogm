@@ -24,6 +24,7 @@
 package org.hibernate.type;
 
 import java.util.Map;
+import java.util.Set;
 
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -79,13 +80,24 @@ public interface AssociationType extends Type {
 	 */	
 	public String getOnCondition(String alias, SessionFactoryImplementor factory, Map enabledFilters) 
 	throws MappingException;
+
+	/**
+	 * Get the "filtering" SQL fragment that is applied in the
+	 * SQL on clause, in addition to the usual join condition
+	 */
+	public String getOnCondition(String alias, SessionFactoryImplementor factory, Map enabledFilters, Set<String> treatAsDeclarations);
 	
 	/**
 	 * Do we dirty check this association, even when there are
 	 * no columns to be updated?
 	 */
 	public abstract boolean isAlwaysDirtyChecked();
-	
+
+	/**
+	 * @deprecated To be removed in 5.  Removed as part of removing the notion of DOM entity-mode.
+	 * See Jira issue: <a href="https://hibernate.onjira.com/browse/HHH-7771">HHH-7771</a>
+	 */
+	@Deprecated
 	public boolean isEmbeddedInXML();
 }
 

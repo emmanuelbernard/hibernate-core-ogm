@@ -23,49 +23,65 @@
  */
 package org.hibernate.envers.test.integration.data;
 
-import org.hibernate.ejb.Ejb3Configuration;
-import org.hibernate.envers.test.AbstractEntityTest;
-import org.junit.Test;
-
 import javax.persistence.EntityManager;
 import java.util.Arrays;
+import java.util.Map;
+
+import org.hibernate.dialect.PostgreSQL82Dialect;
+import org.hibernate.envers.test.BaseEnversJPAFunctionalTestCase;
+
+import org.junit.Test;
+
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
 
 /**
  * @author Adam Warski (adam at warski dot org)
  */
-public class LobSerializables extends AbstractEntityTest {
-    private Integer id1;
+@RequiresDialectFeature(DialectChecks.SupportsExpectedLobUsagePattern.class)
+public class LobSerializables extends BaseEnversJPAFunctionalTestCase {
+	private Integer id1;
 
-    public void configure(Ejb3Configuration cfg) {
-        cfg.addAnnotatedClass(LobSerializableTestEntity.class);
-    }
+	@Override
+	protected Class<?>[] getAnnotatedClasses() {
+		return new Class[] {LobSerializableTestEntity.class};
+	}
 
-    @Test
-    public void initData() {
-        EntityManager em = getEntityManager();
-        em.getTransaction().begin();
-        LobSerializableTestEntity ste = new LobSerializableTestEntity(new SerObject("d1"));
-        em.persist(ste);
-        id1 = ste.getId();
-        em.getTransaction().commit();
+	@Override
+	protected void addConfigOptions(Map options) {
+		super.addConfigOptions( options );
+		if ( getDialect() instanceof PostgreSQL82Dialect ) {
+			// In PostgreSQL LOBs cannot be used in auto-commit mode.
+			options.put( "hibernate.connection.autocommit", "false" );
+		}
+	}
 
-        em.getTransaction().begin();
-        ste = em.find(LobSerializableTestEntity.class, id1);
-        ste.setObj(new SerObject("d2"));
-        em.getTransaction().commit();
-    }
+	@Test
+	public void initData() {
+		EntityManager em = getEntityManager();
+		em.getTransaction().begin();
+		LobSerializableTestEntity ste = new LobSerializableTestEntity( new SerObject( "d1" ) );
+		em.persist( ste );
+		id1 = ste.getId();
+		em.getTransaction().commit();
 
-    @Test
-    public void testRevisionsCounts() {
-        assert Arrays.asList(1, 2).equals(getAuditReader().getRevisions(LobSerializableTestEntity.class, id1));
-    }
+		em.getTransaction().begin();
+		ste = em.find( LobSerializableTestEntity.class, id1 );
+		ste.setObj( new SerObject( "d2" ) );
+		em.getTransaction().commit();
+	}
 
-    @Test
-    public void testHistoryOfId1() {
-        LobSerializableTestEntity ver1 = new LobSerializableTestEntity(id1, new SerObject("d1"));
-        LobSerializableTestEntity ver2 = new LobSerializableTestEntity(id1, new SerObject("d2"));
+	@Test
+	public void testRevisionsCounts() {
+		assert Arrays.asList( 1, 2 ).equals( getAuditReader().getRevisions( LobSerializableTestEntity.class, id1 ) );
+	}
 
-        assert getAuditReader().find(LobSerializableTestEntity.class, id1, 1).equals(ver1);
-        assert getAuditReader().find(LobSerializableTestEntity.class, id1, 2).equals(ver2);
-    }
+	@Test
+	public void testHistoryOfId1() {
+		LobSerializableTestEntity ver1 = new LobSerializableTestEntity( id1, new SerObject( "d1" ) );
+		LobSerializableTestEntity ver2 = new LobSerializableTestEntity( id1, new SerObject( "d2" ) );
+
+		assert getAuditReader().find( LobSerializableTestEntity.class, id1, 1 ).equals( ver1 );
+		assert getAuditReader().find( LobSerializableTestEntity.class, id1, 2 ).equals( ver2 );
+	}
 }

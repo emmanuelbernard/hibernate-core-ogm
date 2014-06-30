@@ -22,53 +22,79 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.envers.test.tools;
+
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.hibernate.envers.enhanced.SequenceIdRevisionEntity;
+import org.hibernate.metamodel.spi.binding.AttributeBinding;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
+
 /**
  * @author Adam Warski (adam at warski dot org)
  */
 public class TestTools {
-    public static <T> Set<T> makeSet(T... objects) {
-        Set<T> ret = new HashSet<T>();
-        //noinspection ManualArrayToCollectionCopy
-        for (T o : objects) {
-            ret.add(o);
-        }
+	public static <T> Set<T> makeSet(T... objects) {
+		final Set<T> ret = new HashSet<T>();
+		//noinspection ManualArrayToCollectionCopy
+		for ( T o : objects ) {
+			ret.add( o );
+		}
+		return ret;
+	}
 
-        return ret;
-    }
+	public static <T> List<T> makeList(T... objects) {
+		return Arrays.asList( objects );
+	}
 
-    public static <T> List<T> makeList(T... objects) {
-        return Arrays.asList(objects);
-    }
+	public static Map<Object, Object> makeMap(Object... objects) {
+		final Map<Object, Object> ret = new HashMap<Object, Object>();
+		// The number of objects must be divisable by 2.
+		//noinspection ManualArrayToCollectionCopy
+		for ( int i = 0; i < objects.length; i += 2 ) {
+			ret.put( objects[i], objects[i + 1] );
+		}
+		return ret;
+	}
 
-    public static Map<Object, Object> makeMap(Object... objects) {
-        Map<Object, Object> ret = new HashMap<Object, Object>();
-        // The number of objects must be divisable by 2.
-        //noinspection ManualArrayToCollectionCopy
-        for (int i=0; i<objects.length; i+=2) {
-            ret.put(objects[i], objects[i+1]);
-        }
+	public static <T> boolean checkCollection(Collection<T> list, T... objects) {
+		if ( list.size() != objects.length ) {
+			return false;
+		}
+		for ( T obj : objects ) {
+			if ( !list.contains( obj ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
 
-        return ret;
-    }
+	public static List<Integer> extractRevisionNumbers(List queryResults) {
+		final List<Integer> result = new ArrayList<Integer>();
+		for ( Object queryResult : queryResults ) {
+			result.add( ((SequenceIdRevisionEntity) ((Object[]) queryResult)[1]).getId() );
+		}
+		return result;
+	}
 
-    public static <T> boolean checkList(List<T> list, T... objects) {
-        if (list.size() != objects.length) {
-            return false;
-        }
+	public static Set<String> extractModProperties(EntityBinding entityBinding) {
+		return extractModProperties( entityBinding, "_MOD" );
+	}
 
-        for (T obj : objects) {
-            if (!list.contains(obj)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
+	public static Set<String> extractModProperties(EntityBinding entityBinding, String suffix) {
+		final Set<String> result = new HashSet<String>();
+		for ( AttributeBinding property : entityBinding.attributeBindings() ) {
+			final String propertyName = property.getAttribute().getName();
+			if ( propertyName.endsWith( suffix ) ) {
+				result.add( propertyName );
+			}
+		}
+		return result;
+	}
 }

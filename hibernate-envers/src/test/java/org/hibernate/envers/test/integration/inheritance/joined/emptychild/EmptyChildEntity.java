@@ -23,7 +23,9 @@
  */
 
 package org.hibernate.envers.test.integration.inheritance.joined.emptychild;
+
 import javax.persistence.Entity;
+
 import org.hibernate.envers.Audited;
 
 /**
@@ -36,6 +38,6 @@ public class EmptyChildEntity extends ParentEntity {
 	}
 
 	public EmptyChildEntity(Integer id, String data) {
-		super(id, data);
+		super( id, data );
 	}
 }

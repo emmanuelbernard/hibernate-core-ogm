@@ -25,7 +25,9 @@ package org.hibernate.test.cache.infinispan.timestamp;
 
 import java.util.Properties;
 
+import org.hibernate.test.cache.infinispan.functional.SingleNodeTestCase;
 import org.infinispan.AdvancedCache;
+import org.infinispan.context.Flag;
 import org.infinispan.notifications.Listener;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryActivated;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryCreated;
@@ -38,17 +40,14 @@ import org.infinispan.notifications.cachelistener.annotation.CacheEntryRemoved;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryVisited;
 import org.infinispan.notifications.cachelistener.event.Event;
 
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.cache.infinispan.InfinispanRegionFactory;
+import org.hibernate.test.cache.infinispan.util.ClassLoaderAwareCache;
+import org.hibernate.cache.infinispan.timestamp.TimestampsRegionImpl;
 import org.hibernate.cache.spi.CacheDataDescription;
 import org.hibernate.cache.spi.Region;
 import org.hibernate.cache.spi.UpdateTimestampsCache;
-import org.hibernate.cache.infinispan.InfinispanRegionFactory;
-import org.hibernate.cache.infinispan.impl.ClassLoaderAwareCache;
-import org.hibernate.cache.infinispan.timestamp.TimestampsRegionImpl;
-import org.hibernate.cache.infinispan.util.CacheAdapter;
-import org.hibernate.cache.infinispan.util.CacheAdapterImpl;
-import org.hibernate.cache.infinispan.util.FlagAdapter;
 import org.hibernate.cfg.Configuration;
-import org.hibernate.service.ServiceRegistryBuilder;
 
 import org.hibernate.test.cache.infinispan.AbstractGeneralDataRegionTestCase;
 import org.hibernate.test.cache.infinispan.functional.classloader.Account;
@@ -75,14 +74,14 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
    }
 
    @Override
-   protected CacheAdapter getInfinispanCache(InfinispanRegionFactory regionFactory) {
-      return CacheAdapterImpl.newInstance(regionFactory.getCacheManager().getCache("timestamps"));
+   protected AdvancedCache getInfinispanCache(InfinispanRegionFactory regionFactory) {
+      return regionFactory.getCacheManager().getCache("timestamps").getAdvancedCache();
    }
 
    public void testClearTimestampsRegionInIsolated() throws Exception {
       Configuration cfg = createConfiguration();
       InfinispanRegionFactory regionFactory = CacheTestUtil.startRegionFactory(
-			  new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+			  new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 			  cfg,
 			  getCacheTestSupport()
 	  );
@@ -91,7 +90,7 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
 
       Configuration cfg2 = createConfiguration();
       InfinispanRegionFactory regionFactory2 = CacheTestUtil.startRegionFactory(
-			  new ServiceRegistryBuilder().applySettings( cfg.getProperties() ).buildServiceRegistry(),
+			  new StandardServiceRegistryBuilder().applySettings( cfg.getProperties() ).build(),
 			  cfg2,
 			  getCacheTestSupport()
 	  );
@@ -108,7 +107,7 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
 
       Account acct = new Account();
       acct.setAccountHolder(new AccountHolder());
-      region.getCacheAdapter().withFlags(FlagAdapter.FORCE_SYNCHRONOUS).put(acct, "boo");
+      region.getCache().withFlags(Flag.FORCE_SYNCHRONOUS).put(acct, "boo");
 
 //      region.put(acct, "boo");
 //
@@ -126,13 +125,9 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
       return CacheTestUtil.buildConfiguration("test", MockInfinispanRegionFactory.class, false, true);
    }
 
-   public static class MockInfinispanRegionFactory extends InfinispanRegionFactory {
+   public static class MockInfinispanRegionFactory extends SingleNodeTestCase.TestInfinispanRegionFactory {
 
       public MockInfinispanRegionFactory() {
-      }
-
-      public MockInfinispanRegionFactory(Properties props) {
-         super(props);
       }
 
 //      @Override
@@ -141,7 +136,7 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
 //      }
 
       @Override
-      protected ClassLoaderAwareCache createCacheWrapper(AdvancedCache cache) {
+      protected AdvancedCache createCacheWrapper(AdvancedCache cache) {
          return new ClassLoaderAwareCache(cache, Thread.currentThread().getContextClassLoader()) {
             @Override
             public void addListener(Object listener) {
@@ -150,20 +145,7 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
          };
       }
 
-      //      @Override
-//      protected EmbeddedCacheManager createCacheManager(Properties properties) throws CacheException {
-//         try {
-//            EmbeddedCacheManager manager = new DefaultCacheManager(InfinispanRegionFactory.DEF_INFINISPAN_CONFIG_RESOURCE);
-//            org.infinispan.config.Configuration ispnCfg = new org.infinispan.config.Configuration();
-//            ispnCfg.setCacheMode(org.infinispan.config.Configuration.CacheMode.REPL_SYNC);
-//            manager.defineConfiguration("timestamps", ispnCfg);
-//            return manager;
-//         } catch (IOException e) {
-//            throw new CacheException("Unable to create default cache manager", e);
-//         }
-//      }
-
-      @Listener      
+      @Listener
       public static class MockClassLoaderAwareListener extends ClassLoaderAwareCache.ClassLoaderAwareListener {
          MockClassLoaderAwareListener(Object listener, ClassLoaderAwareCache cache) {
             super(listener, cache);
@@ -185,7 +167,7 @@ public class TimestampsRegionImplTestCase extends AbstractGeneralDataRegionTestC
             SelectedClassnameClassLoader visible = new SelectedClassnameClassLoader(null, null, notFoundClasses, cl);
             Thread.currentThread().setContextClassLoader(visible);
             super.event(event);
-            Thread.currentThread().setContextClassLoader(cl);            
+            Thread.currentThread().setContextClassLoader(cl);
          }
       }
    }

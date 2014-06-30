@@ -23,9 +23,11 @@
  *
  */
 package org.hibernate.hql.internal.ast.tree;
-import org.hibernate.internal.CoreMessageLogger;
+
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ASTUtil;
+import org.hibernate.internal.CoreMessageLogger;
+
 import antlr.collections.AST;
 
 /**
@@ -35,42 +37,35 @@ import antlr.collections.AST;
  * @author Steve Ebersole
  */
 public abstract class AbstractRestrictableStatement extends AbstractStatement implements RestrictableStatement {
-
 	private FromClause fromClause;
 	private AST whereClause;
 
 	protected abstract int getWhereClauseParentTokenType();
 
-    protected abstract CoreMessageLogger getLog();
+	protected abstract CoreMessageLogger getLog();
 
-	/**
-	 * @see org.hibernate.hql.internal.ast.tree.RestrictableStatement#getFromClause
-	 */
+	@Override
 	public final FromClause getFromClause() {
 		if ( fromClause == null ) {
-			fromClause = ( FromClause ) ASTUtil.findTypeInChildren( this, HqlSqlTokenTypes.FROM );
+			fromClause = (FromClause) ASTUtil.findTypeInChildren( this, HqlSqlTokenTypes.FROM );
 		}
 		return fromClause;
 	}
 
-	/**
-	 * @see RestrictableStatement#hasWhereClause
-	 */
+	@Override
 	public final boolean hasWhereClause() {
 		AST whereClause = locateWhereClause();
 		return whereClause != null && whereClause.getNumberOfChildren() > 0;
 	}
 
-	/**
-	 * @see org.hibernate.hql.internal.ast.tree.RestrictableStatement#getWhereClause
-	 */
+	@Override
 	public final AST getWhereClause() {
 		if ( whereClause == null ) {
 			whereClause = locateWhereClause();
 			// If there is no WHERE node, make one.
 			if ( whereClause == null ) {
 				getLog().debug( "getWhereClause() : Creating a new WHERE clause..." );
-				whereClause = ASTUtil.create( getWalker().getASTFactory(), HqlSqlTokenTypes.WHERE, "WHERE" );
+				whereClause = getWalker().getASTFactory().create( HqlSqlTokenTypes.WHERE, "WHERE" );
 				// inject the WHERE after the parent
 				AST parent = ASTUtil.findTypeInChildren( this, getWhereClauseParentTokenType() );
 				whereClause.setNextSibling( parent.getNextSibling() );

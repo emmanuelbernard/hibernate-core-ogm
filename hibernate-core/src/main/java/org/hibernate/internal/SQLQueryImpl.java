@@ -30,7 +30,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import org.hibernate.FlushMode;
+
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
@@ -40,18 +40,18 @@ import org.hibernate.QueryException;
 import org.hibernate.SQLQuery;
 import org.hibernate.ScrollMode;
 import org.hibernate.ScrollableResults;
-import org.hibernate.engine.query.spi.ParameterMetadata;
-import org.hibernate.engine.spi.NamedSQLQueryDefinition;
-import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.ResultSetMappingDefinition;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.query.spi.ParameterMetadata;
+import org.hibernate.engine.query.spi.sql.NativeSQLQueryConstructorReturn;
 import org.hibernate.engine.query.spi.sql.NativeSQLQueryJoinReturn;
 import org.hibernate.engine.query.spi.sql.NativeSQLQueryReturn;
 import org.hibernate.engine.query.spi.sql.NativeSQLQueryRootReturn;
 import org.hibernate.engine.query.spi.sql.NativeSQLQueryScalarReturn;
 import org.hibernate.engine.query.spi.sql.NativeSQLQuerySpecification;
+import org.hibernate.engine.spi.NamedSQLQueryDefinition;
+import org.hibernate.engine.spi.QueryParameters;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.util.StringHelper;
-import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.type.Type;
 
 /**
@@ -69,6 +69,7 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 	private Collection<String> querySpaces;
 
 	private final boolean callable;
+	private final LockOptions lockOptions = new LockOptions();
 
 	/**
 	 * Constructs a SQLQueryImpl given a sql query defined in the mappings.
@@ -88,10 +89,10 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 						queryDef.getResultSetRef()
 					);
 			}
-			this.queryReturns = Arrays.asList( definition.getQueryReturns() );
+			this.queryReturns = new ArrayList<NativeSQLQueryReturn>(Arrays.asList( definition.getQueryReturns() ));
 		}
 		else if ( queryDef.getQueryReturns() != null && queryDef.getQueryReturns().length > 0 ) {
-			this.queryReturns = Arrays.asList( queryDef.getQueryReturns() );
+			this.queryReturns = new ArrayList<NativeSQLQueryReturn>(Arrays.asList( queryDef.getQueryReturns()));
 		}
 		else {
 			this.queryReturns = new ArrayList<NativeSQLQueryReturn>();
@@ -101,50 +102,34 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 		this.callable = queryDef.isCallable();
 	}
 
-	SQLQueryImpl(
-			final String sql,
-	        final String returnAliases[],
-	        final Class returnClasses[],
-	        final LockMode[] lockModes,
-	        final SessionImplementor session,
-	        final Collection<String> querySpaces,
-	        final FlushMode flushMode,
-	        ParameterMetadata parameterMetadata) {
-		// TODO : this constructor form is *only* used from constructor directly below us; can it go away?
-		super( sql, flushMode, session, parameterMetadata );
-		queryReturns = new ArrayList<NativeSQLQueryReturn>( returnAliases.length );
-		for ( int i=0; i<returnAliases.length; i++ ) {
-			NativeSQLQueryRootReturn ret = new NativeSQLQueryRootReturn(
-					returnAliases[i],
-					returnClasses[i].getName(),
-					lockModes==null ? LockMode.NONE : lockModes[i]
-			);
-			queryReturns.add(ret);
-		}
-		this.querySpaces = querySpaces;
-		this.callable = false;
-	}
-
-	SQLQueryImpl(
-			final String sql,
-	        final String returnAliases[],
-	        final Class returnClasses[],
-	        final SessionImplementor session,
-	        ParameterMetadata parameterMetadata) {
-		this( sql, returnAliases, returnClasses, null, session, null, null, parameterMetadata );
-	}
-
 	SQLQueryImpl(String sql, SessionImplementor session, ParameterMetadata parameterMetadata) {
+		this( sql, false, session, parameterMetadata );
+	}
+
+	SQLQueryImpl(String sql, boolean callable, SessionImplementor session, ParameterMetadata parameterMetadata) {
 		super( sql, null, session, parameterMetadata );
-		queryReturns = new ArrayList<NativeSQLQueryReturn>();
-		querySpaces = null;
-		callable = false;
+		this.queryReturns = new ArrayList<NativeSQLQueryReturn>();
+		this.querySpaces = null;
+		this.callable = callable;
 	}
 
-	private NativeSQLQueryReturn[] getQueryReturns() {
-		return queryReturns.toArray( new NativeSQLQueryReturn[queryReturns.size()] );
+	@Override
+	public List<NativeSQLQueryReturn>  getQueryReturns() {
+		prepareQueryReturnsIfNecessary();
+		return queryReturns;
 	}
 
+	@Override
+	public Collection<String> getSynchronizedQuerySpaces() {
+		return querySpaces;
+	}
+
+	@Override
+	public boolean isCallable() {
+		return callable;
+	}
+
+	@Override
 	public List list() throws HibernateException {
 		verifyParameters();
 		before();
@@ -163,7 +148,7 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 	private NativeSQLQuerySpecification generateQuerySpecification(Map namedParams) {
 		return new NativeSQLQuerySpecification(
 		        expandParameterLists(namedParams),
-		        getQueryReturns(),
+				queryReturns.toArray( new NativeSQLQueryReturn[queryReturns.size()] ),
 		        querySpaces
 		);
 	}
@@ -187,7 +172,7 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 	}
 
 	public ScrollableResults scroll() throws HibernateException {
-		return scroll(ScrollMode.SCROLL_INSENSITIVE);
+		return scroll( session.getFactory().getDialect().defaultScrollMode() );
 	}
 
 	public Iterator iterate() throws HibernateException {
@@ -206,7 +191,7 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
     protected void verifyParameters() {
 		// verifyParameters is called at the start of all execution type methods, so we use that here to perform
 		// some preparation work.
-		prepare();
+		prepareQueryReturnsIfNecessary();
 		verifyParameters( callable );
 		boolean noReturns = queryReturns==null || queryReturns.isEmpty();
 		if ( noReturns ) {
@@ -221,11 +206,15 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 						break;
 					}
 				}
+				else if ( NativeSQLQueryConstructorReturn.class.isInstance( queryReturn ) ) {
+					autoDiscoverTypes = true;
+					break;
+				}
 			}
 		}
 	}
 
-	private void prepare() {
+	private void prepareQueryReturnsIfNecessary() {
 		if ( queryReturnBuilders != null ) {
 			if ( ! queryReturnBuilders.isEmpty() ) {
 				if ( queryReturns != null ) {
@@ -262,8 +251,8 @@ public class SQLQueryImpl extends AbstractQueryImpl implements SQLQuery {
 
 	@Override
     public LockOptions getLockOptions() {
-		//we never need to apply locks to the SQL
-		return null;
+		//we never need to apply locks to the SQL, however the native-sql loader handles this specially
+		return lockOptions;
 	}
 
 	public SQLQuery addScalar(final String columnAlias, final Type type) {

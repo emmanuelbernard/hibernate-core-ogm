@@ -24,10 +24,9 @@
  */
 package org.hibernate.id.factory;
 import java.util.Properties;
+
 import org.hibernate.dialect.Dialect;
 import org.hibernate.id.IdentifierGenerator;
-import org.hibernate.service.Service;
-import org.hibernate.service.spi.ServiceRegistryAwareService;
 import org.hibernate.type.Type;
 
 /**
@@ -47,9 +46,11 @@ public interface IdentifierGeneratorFactory {
 	 * Allow injection of the dialect to use.
 	 *
 	 * @param dialect The dialect
+	 *
 	 * @deprecated The intention is that Dialect should be required to be specified up-front and it would then get
 	 * ctor injected.
 	 */
+	@Deprecated
 	public void setDialect(Dialect dialect);
 
 	/**

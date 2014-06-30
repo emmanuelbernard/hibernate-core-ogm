@@ -27,8 +27,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import javax.validation.groups.Default;
+
 import org.hibernate.HibernateException;
 import org.hibernate.internal.util.ReflectHelper;
 
@@ -44,14 +44,14 @@ public class GroupsPerOperation {
 
 	private Map<Operation, Class<?>[]> groupsPerOperation = new HashMap<Operation, Class<?>[]>(4);
 
-	public GroupsPerOperation(Properties properties) {
+	public GroupsPerOperation(Map properties) {
 		setGroupsForOperation( Operation.INSERT, properties );
 		setGroupsForOperation( Operation.UPDATE, properties );
 		setGroupsForOperation( Operation.DELETE, properties );
 		setGroupsForOperation( Operation.DDL, properties );
 	}
 
-	private void setGroupsForOperation(Operation operation, Properties properties) {
+	private void setGroupsForOperation(Operation operation, Map properties) {
 		Object property = properties.get( operation.getGroupPropertyName() );
 
 		Class<?>[] groups;

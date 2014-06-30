@@ -26,6 +26,8 @@ package org.hibernate.cache.spi.access;
 import org.hibernate.cache.CacheException;
 
 /**
+ * Base access strategy for all regions.
+ *
  * @author Gail Badner
  */
 public interface RegionAccessStrategy {
@@ -79,7 +81,7 @@ public interface RegionAccessStrategy {
 	 * We are going to attempt to update/delete the keyed object. This
 	 * method is used by "asynchronous" concurrency strategies.
 	 * <p/>
-	 * The returned object must be passed back to release(), to release the
+	 * The returned object must be passed back to {@link #unlockItem}, to release the
 	 * lock. Concurrency strategies which do not support client-visible
 	 * locks may silently return null.
 	 *

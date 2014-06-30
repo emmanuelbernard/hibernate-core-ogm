@@ -26,23 +26,24 @@ package org.hibernate.test.cache.infinispan.functional;
 import javax.transaction.Status;
 import javax.transaction.TransactionManager;
 
+import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
+import org.infinispan.manager.EmbeddedCacheManager;
+import org.infinispan.test.fwk.TestCacheManagerFactory;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
+import org.junit.Before;
 
-import org.hibernate.cache.spi.RegionFactory;
 import org.hibernate.cache.infinispan.InfinispanRegionFactory;
+import org.hibernate.cache.spi.RegionFactory;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
 import org.hibernate.engine.transaction.internal.jta.CMTTransactionFactory;
 import org.hibernate.engine.transaction.spi.TransactionFactory;
-import org.hibernate.service.jdbc.connections.spi.ConnectionProvider;
-import org.hibernate.service.jta.platform.spi.JtaPlatform;
-
-import org.junit.Before;
-
-import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
+import org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform;
 import org.hibernate.test.cache.infinispan.tm.JtaPlatformImpl;
+import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 
 /**
  * @author Galder Zamarreño
@@ -50,7 +51,7 @@ import org.hibernate.test.cache.infinispan.tm.JtaPlatformImpl;
  */
 public abstract class SingleNodeTestCase extends BaseCoreFunctionalTestCase {
 	private static final Log log = LogFactory.getLog( SingleNodeTestCase.class );
-	private TransactionManager tm;
+	protected TransactionManager tm;
 
 	@Before
 	public void prepare() {
@@ -88,7 +89,7 @@ public abstract class SingleNodeTestCase extends BaseCoreFunctionalTestCase {
 	}
 
 	protected Class<? extends RegionFactory> getCacheRegionFactory() {
-		return InfinispanRegionFactory.class;
+		return TestInfinispanRegionFactory.class;
 	}
 
 	protected Class<? extends TransactionFactory> getTransactionFactoryClass() {
@@ -149,5 +150,18 @@ public abstract class SingleNodeTestCase extends BaseCoreFunctionalTestCase {
 			tm.rollback();
 		}
 	}
+
+   public static class TestInfinispanRegionFactory extends InfinispanRegionFactory {
+
+      public TestInfinispanRegionFactory() {
+         super(); // For reflection-based instantiation
+      }
+
+      @Override
+      protected EmbeddedCacheManager createCacheManager(ConfigurationBuilderHolder holder) {
+         return TestCacheManagerFactory.createClusteredCacheManager(holder);
+      }
+
+   }
 
 }

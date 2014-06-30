@@ -22,15 +22,18 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.annotations;
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.Target;
+
 import static java.lang.annotation.ElementType.FIELD;
 import static java.lang.annotation.ElementType.METHOD;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
-import java.lang.annotation.Retention;
-import java.lang.annotation.Target;
 
 /**
- * Loader Annotation for overwriting Hibernate default FIND method
+ * Used to override how Hibernate performs load operations. naming a named query to use instead of
+ * its generated SELECT SQL.
  *
  * @author L�szl� Benke
  */
@@ -38,7 +41,7 @@ import java.lang.annotation.Target;
 @Retention( RUNTIME )
 public @interface Loader {
 	/**
-	 * namedQuery to use for loading
+	 * THe namedQuery to use for loading.
 	 */
 	String namedQuery() default "";
 }

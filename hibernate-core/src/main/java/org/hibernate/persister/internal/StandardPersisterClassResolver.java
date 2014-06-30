@@ -30,11 +30,10 @@ import org.hibernate.mapping.JoinedSubclass;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.RootClass;
 import org.hibernate.mapping.SingleTableSubclass;
-import org.hibernate.mapping.Subclass;
 import org.hibernate.mapping.UnionSubclass;
-import org.hibernate.metamodel.binding.CollectionElementNature;
-import org.hibernate.metamodel.binding.EntityBinding;
-import org.hibernate.metamodel.binding.PluralAttributeBinding;
+import org.hibernate.metamodel.spi.PluralAttributeElementNature;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
+import org.hibernate.metamodel.spi.binding.PluralAttributeBinding;
 import org.hibernate.persister.collection.BasicCollectionPersister;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.collection.OneToManyPersister;
@@ -73,7 +72,7 @@ public class StandardPersisterClassResolver implements PersisterClassResolver {
 			}
 			default: {
 				throw new UnknownPersisterException(
-						"Could not determine persister implementation for entity [" + metadata.getEntity().getName() + "]"
+						"Could not determine persister implementation for entity [" + metadata.getEntityName() + "]"
 				);
 			}
 
@@ -127,7 +126,7 @@ public class StandardPersisterClassResolver implements PersisterClassResolver {
 
 	@Override
 	public Class<? extends CollectionPersister> getCollectionPersisterClass(PluralAttributeBinding metadata) {
-		return metadata.getCollectionElement().getCollectionElementNature() == CollectionElementNature.ONE_TO_MANY
+		return metadata.getPluralAttributeElementBinding().getNature() == PluralAttributeElementNature.ONE_TO_MANY
 				? oneToManyPersister()
 				: basicCollectionPersister();
 	}

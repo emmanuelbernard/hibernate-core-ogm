@@ -24,51 +24,48 @@
 package org.hibernate.event.internal;
 
 import java.io.Serializable;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
+import org.hibernate.action.internal.CollectionRecreateAction;
+import org.hibernate.action.internal.CollectionRemoveAction;
+import org.hibernate.action.internal.CollectionUpdateAction;
+import org.hibernate.action.internal.QueuedOperationCollectionAction;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.internal.Cascade;
+import org.hibernate.engine.internal.CascadePoint;
 import org.hibernate.engine.internal.Collections;
+import org.hibernate.engine.spi.ActionQueue;
 import org.hibernate.engine.spi.CascadingAction;
+import org.hibernate.engine.spi.CascadingActions;
 import org.hibernate.engine.spi.CollectionEntry;
 import org.hibernate.engine.spi.CollectionKey;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.spi.Status;
+import org.hibernate.event.service.spi.EventListenerRegistry;
+import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.event.spi.FlushEntityEvent;
-import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.action.internal.CollectionRecreateAction;
-import org.hibernate.action.internal.CollectionRemoveAction;
-import org.hibernate.action.internal.CollectionUpdateAction;
-import org.hibernate.engine.spi.ActionQueue;
-import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.FlushEntityEventListener;
 import org.hibernate.event.spi.FlushEvent;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.EntityPrinter;
 import org.hibernate.internal.util.collections.IdentityMap;
 import org.hibernate.internal.util.collections.LazyIterator;
 import org.hibernate.persister.entity.EntityPersister;
-import org.hibernate.event.service.spi.EventListenerGroup;
-import org.hibernate.event.service.spi.EventListenerRegistry;
+
+import org.jboss.logging.Logger;
 
 /**
  * A convenience base class for listeners whose functionality results in flushing.
  *
- * @author Steve Eberole
+ * @author Steve Ebersole
  */
 public abstract class AbstractFlushingEventListener implements Serializable {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(
-			CoreMessageLogger.class,
-			AbstractFlushingEventListener.class.getName()
-	);
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, AbstractFlushingEventListener.class.getName() );
 
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// Pre-flushing section
@@ -84,26 +81,29 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 	 */
 	protected void flushEverythingToExecutions(FlushEvent event) throws HibernateException {
 
-        LOG.trace("Flushing session");
+		LOG.trace( "Flushing session" );
 
 		EventSource session = event.getSession();
 
 		final PersistenceContext persistenceContext = session.getPersistenceContext();
 		session.getInterceptor().preFlush( new LazyIterator( persistenceContext.getEntitiesByKey() ) );
 
-		prepareEntityFlushes(session);
+		prepareEntityFlushes( session, persistenceContext );
 		// we could move this inside if we wanted to
 		// tolerate collection initializations during
 		// collection dirty checking:
-		prepareCollectionFlushes(session);
+		prepareCollectionFlushes( persistenceContext );
 		// now, any collections that are initialized
 		// inside this block do not get updated - they
 		// are ignored until the next flush
 
-		persistenceContext.setFlushing(true);
+		persistenceContext.setFlushing( true );
 		try {
-			flushEntities(event);
-			flushCollections(session);
+			int entityCount = flushEntities( event, persistenceContext );
+			int collectionCount = flushCollections( session, persistenceContext );
+
+			event.setNumberOfEntitiesProcessed( entityCount );
+			event.setNumberOfCollectionsProcessed( collectionCount );
 		}
 		finally {
 			persistenceContext.setFlushing(false);
@@ -115,7 +115,7 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 
 	@SuppressWarnings( value = {"unchecked"} )
 	private void logFlushResults(FlushEvent event) {
-		if ( ! LOG.isDebugEnabled()) {
+		if ( !LOG.isDebugEnabled() ) {
 			return;
 		}
 		final EventSource session = event.getSession();
@@ -125,7 +125,7 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 				session.getActionQueue().numberOfInsertions(),
 				session.getActionQueue().numberOfUpdates(),
 				session.getActionQueue().numberOfDeletions(),
-				persistenceContext.getEntityEntries().size()
+				persistenceContext.getNumberOfManagedEntities()
 		);
 		LOG.debugf(
 				"Flushed: %s (re)creations, %s updates, %s removals to %s collections",
@@ -144,16 +144,14 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 	 * any newly referenced entity that must be passed to saveOrUpdate(),
 	 * and also apply orphan delete
 	 */
-	private void prepareEntityFlushes(EventSource session) throws HibernateException {
+	private void prepareEntityFlushes(EventSource session, PersistenceContext persistenceContext) throws HibernateException {
 
-        LOG.debugf( "Processing flush-time cascades" );
+		LOG.debug( "Processing flush-time cascades" );
 
-		final Map.Entry[] list = IdentityMap.concurrentEntries( session.getPersistenceContext().getEntityEntries() );
-		//safe from concurrent modification because of how entryList() is implemented on IdentityMap
-		final int size = list.length;
 		final Object anything = getAnything();
-		for ( int i=0; i<size; i++ ) {
-			Map.Entry me = list[i];
+		//safe from concurrent modification because of how concurrentEntries() is implemented on IdentityMap
+		for ( Map.Entry<Object,EntityEntry> me : persistenceContext.reentrantSafeEntityEntries() ) {
+//		for ( Map.Entry me : IdentityMap.concurrentEntries( persistenceContext.getEntityEntries() ) ) {
 			EntityEntry entry = (EntityEntry) me.getValue();
 			Status status = entry.getStatus();
 			if ( status == Status.MANAGED || status == Status.SAVING || status == Status.READ_ONLY ) {
@@ -166,8 +164,7 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 	throws HibernateException {
 		session.getPersistenceContext().incrementCascadeLevel();
 		try {
-			new Cascade( getCascadingAction(), Cascade.BEFORE_FLUSH, session )
-			.cascade( persister, object, anything );
+			new Cascade( getCascadingAction(), CascadePoint.BEFORE_FLUSH, session ).cascade( persister, object, anything );
 		}
 		finally {
 			session.getPersistenceContext().decrementCascadeLevel();
@@ -177,25 +174,23 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 	protected Object getAnything() { return null; }
 
 	protected CascadingAction getCascadingAction() {
-		return CascadingAction.SAVE_UPDATE;
+		return CascadingActions.SAVE_UPDATE;
 	}
 
 	/**
 	 * Initialize the flags of the CollectionEntry, including the
 	 * dirty check.
 	 */
-	private void prepareCollectionFlushes(SessionImplementor session) throws HibernateException {
+	private void prepareCollectionFlushes(PersistenceContext persistenceContext) throws HibernateException {
 
 		// Initialize dirty flags for arrays + collections with composite elements
 		// and reset reached, doupdate, etc.
 
-        LOG.debugf( "Dirty checking collections" );
+		LOG.debug( "Dirty checking collections" );
 
-		final List list = IdentityMap.entries( session.getPersistenceContext().getCollectionEntries() );
-		final int size = list.size();
-		for ( int i = 0; i < size; i++ ) {
-			Map.Entry e = ( Map.Entry ) list.get( i );
-			( (CollectionEntry) e.getValue() ).preFlush( (PersistentCollection) e.getKey() );
+		for ( Map.Entry<PersistentCollection,CollectionEntry> entry :
+				IdentityMap.concurrentEntries( (Map<PersistentCollection,CollectionEntry>) persistenceContext.getCollectionEntries() )) {
+			entry.getValue().preFlush( entry.getKey() );
 		}
 	}
 
@@ -204,78 +199,75 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 	 * 2. schedule any entity updates
 	 * 3. search out any reachable collections
 	 */
-	private void flushEntities(FlushEvent event) throws HibernateException {
+	private int flushEntities(final FlushEvent event, final PersistenceContext persistenceContext) throws HibernateException {
 
-        LOG.trace("Flushing entities and processing referenced collections");
+		LOG.trace( "Flushing entities and processing referenced collections" );
+
+		final EventSource source = event.getSession();
+		final Iterable<FlushEntityEventListener> flushListeners = source.getFactory().getServiceRegistry()
+				.getService( EventListenerRegistry.class )
+				.getEventListenerGroup( EventType.FLUSH_ENTITY )
+				.listeners();
 
 		// Among other things, updateReachables() will recursively load all
 		// collections that are moving roles. This might cause entities to
 		// be loaded.
 
 		// So this needs to be safe from concurrent modification problems.
-		// It is safe because of how IdentityMap implements entrySet()
 
-		final EventSource source = event.getSession();
+		final Map.Entry<Object,EntityEntry>[] entityEntries = persistenceContext.reentrantSafeEntityEntries();
+		final int count = entityEntries.length;
 
-		final Map.Entry[] list = IdentityMap.concurrentEntries( source.getPersistenceContext().getEntityEntries() );
-		final int size = list.length;
-		for ( int i = 0; i < size; i++ ) {
+		for ( Map.Entry<Object,EntityEntry> me : entityEntries ) {
 
 			// Update the status of the object and if necessary, schedule an update
 
-			Map.Entry me = list[i];
-			EntityEntry entry = (EntityEntry) me.getValue();
+			EntityEntry entry = me.getValue();
 			Status status = entry.getStatus();
 
 			if ( status != Status.LOADING && status != Status.GONE ) {
 				final FlushEntityEvent entityEvent = new FlushEntityEvent( source, me.getKey(), entry );
-				final EventListenerGroup<FlushEntityEventListener> listenerGroup = source
-						.getFactory()
-						.getServiceRegistry()
-						.getService( EventListenerRegistry.class )
-						.getEventListenerGroup( EventType.FLUSH_ENTITY );
-				for ( FlushEntityEventListener listener : listenerGroup.listeners() ) {
+				for ( FlushEntityEventListener listener : flushListeners ) {
 					listener.onFlushEntity( entityEvent );
 				}
 			}
 		}
 
 		source.getActionQueue().sortActions();
+
+		return count;
 	}
 
 	/**
 	 * process any unreferenced collections and then inspect all known collections,
 	 * scheduling creates/removes/updates
 	 */
-	private void flushCollections(EventSource session) throws HibernateException {
+	@SuppressWarnings("unchecked")
+	private int flushCollections(final EventSource session, final PersistenceContext persistenceContext) throws HibernateException {
+		LOG.trace( "Processing unreferenced collections" );
 
-                if (LOG.isTraceEnabled()) {
-                   LOG.trace("Processing unreferenced collections");
-                }
+		final Map.Entry<PersistentCollection,CollectionEntry>[] entries = IdentityMap.concurrentEntries(
+				(Map<PersistentCollection,CollectionEntry>) persistenceContext.getCollectionEntries()
+		);
 
-		List list = IdentityMap.entries( session.getPersistenceContext().getCollectionEntries() );
-		int size = list.size();
-		for ( int i = 0; i < size; i++ ) {
-			Map.Entry me = ( Map.Entry ) list.get( i );
-			CollectionEntry ce = (CollectionEntry) me.getValue();
+		final int count = entries.length;
+
+		for ( Map.Entry<PersistentCollection,CollectionEntry> me : entries ) {
+			CollectionEntry ce = me.getValue();
 			if ( !ce.isReached() && !ce.isIgnore() ) {
-				Collections.processUnreachableCollection( (PersistentCollection) me.getKey(), session );
+				Collections.processUnreachableCollection( me.getKey(), session );
 			}
 		}
 
 		// Schedule updates to collections:
 
-                if (LOG.isTraceEnabled()) {
-                   LOG.trace("Scheduling collection removes/(re)creates/updates");
-                }
+		LOG.trace( "Scheduling collection removes/(re)creates/updates" );
 
-		list = IdentityMap.entries( session.getPersistenceContext().getCollectionEntries() );
-		size = list.size();
 		ActionQueue actionQueue = session.getActionQueue();
-		for ( int i = 0; i < size; i++ ) {
-			Map.Entry me = (Map.Entry) list.get(i);
-			PersistentCollection coll = (PersistentCollection) me.getKey();
-			CollectionEntry ce = (CollectionEntry) me.getValue();
+		for ( Map.Entry<PersistentCollection,CollectionEntry> me :
+			IdentityMap.concurrentEntries( (Map<PersistentCollection,CollectionEntry>) persistenceContext.getCollectionEntries() )) {
+			PersistentCollection coll = me.getKey();
+			CollectionEntry ce = me.getValue();
 
 			if ( ce.isDorecreate() ) {
 				session.getInterceptor().onCollectionRecreate( coll, ce.getCurrentKey() );
@@ -312,38 +304,53 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 							)
 					);
 			}
+			if ( !coll.wasInitialized() && coll.hasQueuedOperations() ) {
+				actionQueue.addAction(
+						new QueuedOperationCollectionAction(
+								coll,
+								ce.getLoadedPersister(),
+								ce.getLoadedKey(),
+								session
+							)
+					);
+			}
 
 		}
 
 		actionQueue.sortCollectionActions();
 
+		return count;
 	}
 
 	/**
-	 * Execute all SQL and second-level cache updates, in a
-	 * special order so that foreign-key constraints cannot
-	 * be violated:
-	 * <ol>
+	 * Execute all SQL (and second-level cache updates) in a special order so that foreign-key constraints cannot
+	 * be violated: <ol>
 	 * <li> Inserts, in the order they were performed
 	 * <li> Updates
 	 * <li> Deletion of collection elements
 	 * <li> Insertion of collection elements
 	 * <li> Deletes, in the order they were performed
 	 * </ol>
+	 *
+	 * @param session The session being flushed
 	 */
-	protected void performExecutions(EventSource session) throws HibernateException {
+	protected void performExecutions(EventSource session) {
+		LOG.trace( "Executing flush" );
 
-        LOG.trace("Executing flush");
-
+		// IMPL NOTE : here we alter the flushing flag of the persistence context to allow
+		//		during-flush callbacks more leniency in regards to initializing proxies and
+		//		lazy collections during their processing.
+		// For more information, see HHH-2763
 		try {
 			session.getTransactionCoordinator().getJdbcCoordinator().flushBeginning();
-			// we need to lock the collection caches before
-			// executing entity inserts/updates in order to
-			// account for bidi associations
+			session.getPersistenceContext().setFlushing( true );
+			// we need to lock the collection caches before executing entity inserts/updates in order to
+			// account for bi-directional associations
 			session.getActionQueue().prepareActions();
 			session.getActionQueue().executeActions();
 		}
 		finally {
+			session.getPersistenceContext().setFlushing( false );
 			session.getTransactionCoordinator().getJdbcCoordinator().flushEnding();
 		}
 	}
@@ -360,18 +367,18 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 	 */
 	protected void postFlush(SessionImplementor session) throws HibernateException {
 
-        LOG.trace("Post flush");
+		LOG.trace( "Post flush" );
 
 		final PersistenceContext persistenceContext = session.getPersistenceContext();
 		persistenceContext.getCollectionsByKey().clear();
-		persistenceContext.getBatchFetchQueue()
-				.clearSubselects(); //the database has changed now, so the subselect results need to be invalidated
+		
+		// the database has changed now, so the subselect results need to be invalidated
+		// the batch fetching queues should also be cleared - especially the collection batch fetching one
+		persistenceContext.getBatchFetchQueue().clear();
 
-		Iterator iter = persistenceContext.getCollectionEntries().entrySet().iterator();
-		while ( iter.hasNext() ) {
-			Map.Entry me = (Map.Entry) iter.next();
-			CollectionEntry collectionEntry = (CollectionEntry) me.getValue();
-			PersistentCollection persistentCollection = (PersistentCollection) me.getKey();
+		for ( Map.Entry<PersistentCollection, CollectionEntry> me : IdentityMap.concurrentEntries( persistenceContext.getCollectionEntries() ) ) {
+			CollectionEntry collectionEntry = me.getValue();
+			PersistentCollection persistentCollection = me.getKey();
 			collectionEntry.postFlush(persistentCollection);
 			if ( collectionEntry.getLoadedPersister() == null ) {
 				//if the collection is dereferenced, remove from the session cache
@@ -389,7 +396,9 @@ public abstract class AbstractFlushingEventListener implements Serializable {
 			}
 		}
 
-		session.getInterceptor().postFlush( new LazyIterator( persistenceContext.getEntitiesByKey() ) );
+	}
 
+	protected void postPostFlush(SessionImplementor session) {
+		session.getInterceptor().postFlush( new LazyIterator( session.getPersistenceContext().getEntitiesByKey() ) );
 	}
 }

@@ -22,13 +22,14 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.engine.profile;
+
 import java.util.HashMap;
 import java.util.Map;
+
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.type.BagType;
 import org.hibernate.type.Type;
-import org.jboss.logging.Logger;
 
 /**
  * A 'fetch profile' allows a user to dynamically modify the fetching strategy used for particular associations at
@@ -39,21 +40,17 @@ import org.jboss.logging.Logger;
  * @author Steve Ebersole
  */
 public class FetchProfile {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, FetchProfile.class.getName());
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( FetchProfile.class );
 
 	private final String name;
 	private Map<String,Fetch> fetches = new HashMap<String,Fetch>();
 
-	private boolean containsJoinFetchedCollection = false;
-	private boolean containsJoinFetchedBag = false;
+	private boolean containsJoinFetchedCollection;
+	private boolean containsJoinFetchedBag;
 	private Fetch bagJoinFetch;
 
 	/**
-	 * A 'fetch profile' is uniquely named within a
-	 * {@link SessionFactoryImplementor SessionFactory}, thus it is also
-	 * uniquely and easily identifiable within that
-	 * {@link SessionFactoryImplementor SessionFactory}.
+	 * Constructs a FetchProfile, supplying its unique name (unique within the SessionFactory).
 	 *
 	 * @param name The name under which we are bound in the sessionFactory
 	 */
@@ -87,10 +84,11 @@ public class FetchProfile {
 	 *
 	 * @param fetch The fetch to add.
 	 */
-	public void addFetch(Fetch fetch) {
-		Type associationType = fetch.getAssociation().getOwner().getPropertyType( fetch.getAssociation().getAssociationPath() );
+	public void addFetch(final Fetch fetch) {
+		final String fetchAssociactionRole = fetch.getAssociation().getRole();
+		final Type associationType = fetch.getAssociation().getOwner().getPropertyType( fetch.getAssociation().getAssociationPath() );
 		if ( associationType.isCollectionType() ) {
-            LOG.trace("Handling request to add collection fetch [" + fetch.getAssociation().getRole() + "]");
+			LOG.tracev( "Handling request to add collection fetch [{0}]", fetchAssociactionRole );
 
 			// couple of things for which to account in the case of collection
 			// join fetches
@@ -99,8 +97,9 @@ public class FetchProfile {
 				// processed collection join fetches
 				if ( BagType.class.isInstance( associationType ) ) {
 					if ( containsJoinFetchedCollection ) {
-                        LOG.containsJoinFetchedCollection(fetch.getAssociation().getRole());
-						return; // EARLY EXIT!!!
+						LOG.containsJoinFetchedCollection( fetchAssociactionRole );
+						// EARLY EXIT!!!
+						return;
 					}
 				}
 
@@ -108,8 +107,10 @@ public class FetchProfile {
 				// fetch where we had already added a bag join fetch previously,
 				// we need to go back and ignore that previous bag join fetch.
 				if ( containsJoinFetchedBag ) {
-                    // just for safety...
-                    if (fetches.remove(bagJoinFetch.getAssociation().getRole()) != bagJoinFetch) LOG.unableToRemoveBagJoinFetch();
+					// just for safety...
+					if ( fetches.remove( bagJoinFetch.getAssociation().getRole() ) != bagJoinFetch ) {
+						LOG.unableToRemoveBagJoinFetch();
+					}
 					bagJoinFetch = null;
 					containsJoinFetchedBag = false;
 				}
@@ -117,7 +118,7 @@ public class FetchProfile {
 				containsJoinFetchedCollection = true;
 			}
 		}
-		fetches.put( fetch.getAssociation().getRole(), fetch );
+		fetches.put( fetchAssociactionRole, fetch );
 	}
 
 	/**
@@ -139,6 +140,13 @@ public class FetchProfile {
 		return fetches;
 	}
 
+	/**
+	 * Obtain the fetch associated with the given role.
+	 *
+	 * @param role The role identifying the fetch
+	 *
+	 * @return The fetch, or {@code null} if a matching one was not found
+	 */
 	public Fetch getFetchByRole(String role) {
 		return fetches.get( role );
 	}

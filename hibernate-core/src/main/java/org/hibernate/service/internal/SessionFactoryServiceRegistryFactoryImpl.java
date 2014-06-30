@@ -25,13 +25,13 @@ package org.hibernate.service.internal;
 
 import org.hibernate.cfg.Configuration;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.metamodel.source.MetadataImplementor;
+import org.hibernate.metamodel.spi.MetadataImplementor;
 import org.hibernate.service.Service;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
 import org.hibernate.service.spi.SessionFactoryServiceRegistryFactory;
 
 /**
- * Acts as a {@link Service} in the {@link StandardServiceRegistryImpl} whose function is as a factory for
+ * Acts as a {@link Service} in the {@link org.hibernate.boot.registry.internal.StandardServiceRegistryImpl} whose function is as a factory for
  * {@link SessionFactoryServiceRegistryImpl} implementations.
  *
  * @author Steve Ebersole

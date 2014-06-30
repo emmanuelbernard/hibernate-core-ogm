@@ -23,36 +23,31 @@
  */
 package org.hibernate.hql.internal.ast;
 
+import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import antlr.ANTLRException;
-import antlr.RecognitionException;
-import antlr.TokenStreamException;
-import antlr.collections.AST;
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.QueryParameters;
-import org.hibernate.engine.spi.RowSelection;
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.hql.internal.QueryExecutionRequestException;
-import org.hibernate.hql.spi.ParameterTranslations;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
 import org.hibernate.ScrollableResults;
+import org.hibernate.engine.query.spi.EntityGraphQueryHint;
+import org.hibernate.engine.spi.QueryParameters;
+import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.event.spi.EventSource;
-import org.hibernate.hql.spi.FilterTranslator;
+import org.hibernate.hql.internal.QueryExecutionRequestException;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.antlr.HqlTokenTypes;
 import org.hibernate.hql.internal.antlr.SqlTokenTypes;
 import org.hibernate.hql.internal.ast.exec.BasicExecutor;
+import org.hibernate.hql.internal.ast.exec.DeleteExecutor;
 import org.hibernate.hql.internal.ast.exec.MultiTableDeleteExecutor;
 import org.hibernate.hql.internal.ast.exec.MultiTableUpdateExecutor;
 import org.hibernate.hql.internal.ast.exec.StatementExecutor;
@@ -64,12 +59,23 @@ import org.hibernate.hql.internal.ast.tree.Statement;
 import org.hibernate.hql.internal.ast.util.ASTPrinter;
 import org.hibernate.hql.internal.ast.util.ASTUtil;
 import org.hibernate.hql.internal.ast.util.NodeTraverser;
+import org.hibernate.hql.spi.FilterTranslator;
+import org.hibernate.hql.spi.ParameterTranslations;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.IdentitySet;
 import org.hibernate.loader.hql.QueryLoader;
+import org.hibernate.param.ParameterSpecification;
 import org.hibernate.persister.entity.Queryable;
 import org.hibernate.type.Type;
+
+import org.jboss.logging.Logger;
+
+import antlr.ANTLRException;
+import antlr.RecognitionException;
+import antlr.TokenStreamException;
+import antlr.collections.AST;
 
 /**
  * A QueryTranslator that uses an Antlr-based parser.
@@ -77,8 +83,10 @@ import org.hibernate.type.Type;
  * @author Joshua Davis (pgmjsd@sourceforge.net)
  */
 public class QueryTranslatorImpl implements FilterTranslator {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, QueryTranslatorImpl.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			QueryTranslatorImpl.class.getName()
+	);
 
 	private SessionFactoryImplementor factory;
 
@@ -87,7 +95,8 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	private boolean shallowQuery;
 	private Map tokenReplacements;
 
-	private Map enabledFilters; //TODO:this is only needed during compilation .. can we eliminate the instvar?
+	//TODO:this is only needed during compilation .. can we eliminate the instvar?
+	private Map enabledFilters;
 
 	private boolean compiled;
 	private QueryLoader queryLoader;
@@ -97,7 +106,9 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	private String sql;
 
 	private ParameterTranslations paramTranslations;
-	private List collectedParameterSpecifications;
+	private List<ParameterSpecification> collectedParameterSpecifications;
+	
+	private EntityGraphQueryHint entityGraphQueryHint;
 
 
 	/**
@@ -110,15 +121,25 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	 */
 	public QueryTranslatorImpl(
 			String queryIdentifier,
-	        String query,
-	        Map enabledFilters,
-	        SessionFactoryImplementor factory) {
+			String query,
+			Map enabledFilters,
+			SessionFactoryImplementor factory) {
 		this.queryIdentifier = queryIdentifier;
 		this.hql = query;
 		this.compiled = false;
 		this.shallowQuery = false;
 		this.enabledFilters = enabledFilters;
 		this.factory = factory;
+	}
+	
+	public QueryTranslatorImpl(
+			String queryIdentifier,
+			String query,
+			Map enabledFilters,
+			SessionFactoryImplementor factory,
+			EntityGraphQueryHint entityGraphQueryHint) {
+		this( queryIdentifier, query, enabledFilters, factory );
+		this.entityGraphQueryHint = entityGraphQueryHint;
 	}
 
 	/**
@@ -130,9 +151,10 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	 * @throws QueryException   There was a problem parsing the query string.
 	 * @throws MappingException There was a problem querying defined mappings.
 	 */
+	@Override
 	public void compile(
-	        Map replacements,
-	        boolean shallow) throws QueryException, MappingException {
+			Map replacements,
+			boolean shallow) throws QueryException, MappingException {
 		doCompile( replacements, shallow, null );
 	}
 
@@ -146,10 +168,11 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	 * @throws QueryException   There was a problem parsing the query string.
 	 * @throws MappingException There was a problem querying defined mappings.
 	 */
+	@Override
 	public void compile(
-	        String collectionRole,
-	        Map replacements,
-	        boolean shallow) throws QueryException, MappingException {
+			String collectionRole,
+			Map replacements,
+			boolean shallow) throws QueryException, MappingException {
 		doCompile( replacements, shallow, collectionRole );
 	}
 
@@ -164,7 +187,7 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	private synchronized void doCompile(Map replacements, boolean shallow, String collectionRole) {
 		// If the query is already compiled, skip the compilation.
 		if ( compiled ) {
-            LOG.debugf("compile() : The query is already compiled, skipping...");
+			LOG.debug( "compile() : The query is already compiled, skipping..." );
 			return;
 		}
 
@@ -177,12 +200,12 @@ public class QueryTranslatorImpl implements FilterTranslator {
 
 		try {
 			// PHASE 1 : Parse the HQL into an AST.
-			HqlParser parser = parse( true );
+			final HqlParser parser = parse( true );
 
 			// PHASE 2 : Analyze the HQL AST, and produce an SQL AST.
-			HqlSqlWalker w = analyze( parser, collectionRole );
+			final HqlSqlWalker w = analyze( parser, collectionRole );
 
-			sqlAst = ( Statement ) w.getAST();
+			sqlAst = (Statement) w.getAST();
 
 			// at some point the generate phase needs to be moved out of here,
 			// because a single object-level DML might spawn multiple SQL DML
@@ -200,56 +223,62 @@ public class QueryTranslatorImpl implements FilterTranslator {
 			}
 			else {
 				// PHASE 3 : Generate the SQL.
-				generate( ( QueryNode ) sqlAst );
+				generate( (QueryNode) sqlAst );
 				queryLoader = new QueryLoader( this, factory, w.getSelectClause() );
 			}
 
 			compiled = true;
 		}
 		catch ( QueryException qe ) {
-			qe.setQueryString( hql );
-			throw qe;
+			if ( qe.getQueryString() == null ) {
+				throw qe.wrapWithQueryString( hql );
+			}
+			else {
+				throw qe;
+			}
 		}
 		catch ( RecognitionException e ) {
-            // we do not actually propagate ANTLRExceptions as a cause, so
+			// we do not actually propagate ANTLRExceptions as a cause, so
 			// log it here for diagnostic purposes
-            LOG.trace("Converted antlr.RecognitionException", e);
+			LOG.trace( "Converted antlr.RecognitionException", e );
 			throw QuerySyntaxException.convert( e, hql );
 		}
 		catch ( ANTLRException e ) {
-            // we do not actually propagate ANTLRExceptions as a cause, so
+			// we do not actually propagate ANTLRExceptions as a cause, so
 			// log it here for diagnostic purposes
-            LOG.trace("Converted antlr.ANTLRException", e);
+			LOG.trace( "Converted antlr.ANTLRException", e );
 			throw new QueryException( e.getMessage(), hql );
 		}
 
-		this.enabledFilters = null; //only needed during compilation phase...
+		//only needed during compilation phase...
+		this.enabledFilters = null;
 	}
 
 	private void generate(AST sqlAst) throws QueryException, RecognitionException {
 		if ( sql == null ) {
-			SqlGenerator gen = new SqlGenerator(factory);
+			final SqlGenerator gen = new SqlGenerator( factory );
 			gen.statement( sqlAst );
 			sql = gen.getSQL();
-            if (LOG.isDebugEnabled()) {
-                LOG.debugf("HQL: %s", hql);
-                LOG.debugf("SQL: %s", sql);
+			if ( LOG.isDebugEnabled() ) {
+				LOG.debugf( "HQL: %s", hql );
+				LOG.debugf( "SQL: %s", sql );
 			}
 			gen.getParseErrorHandler().throwQueryException();
 			collectedParameterSpecifications = gen.getCollectedParameters();
 		}
 	}
 
+	private static final ASTPrinter SQL_TOKEN_PRINTER = new ASTPrinter( SqlTokenTypes.class );
+
 	private HqlSqlWalker analyze(HqlParser parser, String collectionRole) throws QueryException, RecognitionException {
-		HqlSqlWalker w = new HqlSqlWalker( this, factory, parser, tokenReplacements, collectionRole );
-		AST hqlAst = parser.getAST();
+		final HqlSqlWalker w = new HqlSqlWalker( this, factory, parser, tokenReplacements, collectionRole );
+		final AST hqlAst = parser.getAST();
 
 		// Transform the tree.
 		w.statement( hqlAst );
 
-        if (LOG.isDebugEnabled()) {
-			ASTPrinter printer = new ASTPrinter( SqlTokenTypes.class );
-            LOG.debug( printer.showAsString( w.getAST(), "--- SQL AST ---" ) );
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debug( SQL_TOKEN_PRINTER.showAsString( w.getAST(), "--- SQL AST ---" ) );
 		}
 
 		w.getParseErrorHandler().throwQueryException();
@@ -259,16 +288,15 @@ public class QueryTranslatorImpl implements FilterTranslator {
 
 	private HqlParser parse(boolean filter) throws TokenStreamException, RecognitionException {
 		// Parse the query string into an HQL AST.
-		HqlParser parser = HqlParser.getInstance( hql );
+		final HqlParser parser = HqlParser.getInstance( hql );
 		parser.setFilter( filter );
 
-        LOG.debugf("parse() - HQL: %s", hql);
+		LOG.debugf( "parse() - HQL: %s", hql );
 		parser.statement();
 
-		AST hqlAst = parser.getAST();
+		final AST hqlAst = parser.getAST();
 
-		JavaConstantConverter converter = new JavaConstantConverter();
-		NodeTraverser walker = new NodeTraverser( converter );
+		final NodeTraverser walker = new NodeTraverser( new JavaConstantConverter() );
 		walker.traverseDepthFirst( hqlAst );
 
 		showHqlAst( hqlAst );
@@ -277,10 +305,11 @@ public class QueryTranslatorImpl implements FilterTranslator {
 		return parser;
 	}
 
+	private static final ASTPrinter HQL_TOKEN_PRINTER = new ASTPrinter( HqlTokenTypes.class );
+
 	void showHqlAst(AST hqlAst) {
-        if (LOG.isDebugEnabled()) {
-			ASTPrinter printer = new ASTPrinter( HqlTokenTypes.class );
-            LOG.debug( printer.showAsString( hqlAst, "--- HQL AST ---" ) );
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debug( HQL_TOKEN_PRINTER.showAsString( hqlAst, "--- HQL AST ---" ) );
 		}
 	}
 
@@ -295,7 +324,7 @@ public class QueryTranslatorImpl implements FilterTranslator {
 			throw new QueryExecutionRequestException( "Not supported for select queries", hql );
 		}
 	}
-
+	@Override
 	public String getQueryIdentifier() {
 		return queryIdentifier;
 	}
@@ -313,36 +342,39 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	 *
 	 * @return an array of <tt>Type</tt>s.
 	 */
+	@Override
 	public Type[] getReturnTypes() {
 		errorIfDML();
 		return getWalker().getReturnTypes();
 	}
-
+	@Override
 	public String[] getReturnAliases() {
 		errorIfDML();
 		return getWalker().getReturnAliases();
 	}
-
+	@Override
 	public String[][] getColumnNames() {
 		errorIfDML();
 		return getWalker().getSelectClause().getColumnNames();
 	}
-
-	public Set getQuerySpaces() {
+	@Override
+	public Set<Serializable> getQuerySpaces() {
 		return getWalker().getQuerySpaces();
 	}
 
+	@Override
 	public List list(SessionImplementor session, QueryParameters queryParameters)
 			throws HibernateException {
 		// Delegate to the QueryLoader...
 		errorIfDML();
-		QueryNode query = ( QueryNode ) sqlAst;
-		boolean hasLimit = queryParameters.getRowSelection() != null && queryParameters.getRowSelection().definesLimits();
-		boolean needsDistincting = ( query.getSelectClause().isDistinct() || hasLimit ) && containsCollectionFetches();
+
+		final QueryNode query = (QueryNode) sqlAst;
+		final boolean hasLimit = queryParameters.getRowSelection() != null && queryParameters.getRowSelection().definesLimits();
+		final boolean needsDistincting = ( query.getSelectClause().isDistinct() || hasLimit ) && containsCollectionFetches();
 
 		QueryParameters queryParametersToUse;
 		if ( hasLimit && containsCollectionFetches() ) {
-            LOG.firstOrMaxResultsSpecifiedWithCollectionFetch();
+			LOG.firstOrMaxResultsSpecifiedWithCollectionFetch();
 			RowSelection selection = new RowSelection();
 			selection.setFetchSize( queryParameters.getRowSelection().getFetchSize() );
 			selection.setTimeout( queryParameters.getRowSelection().getTimeout() );
@@ -359,15 +391,13 @@ public class QueryTranslatorImpl implements FilterTranslator {
 			// NOTE : firstRow is zero-based
 			int first = !hasLimit || queryParameters.getRowSelection().getFirstRow() == null
 						? 0
-						: queryParameters.getRowSelection().getFirstRow().intValue();
+						: queryParameters.getRowSelection().getFirstRow();
 			int max = !hasLimit || queryParameters.getRowSelection().getMaxRows() == null
 						? -1
-						: queryParameters.getRowSelection().getMaxRows().intValue();
-			int size = results.size();
+						: queryParameters.getRowSelection().getMaxRows();
 			List tmp = new ArrayList();
 			IdentitySet distinction = new IdentitySet();
-			for ( int i = 0; i < size; i++ ) {
-				final Object result = results.get( i );
+			for ( final Object result : results ) {
 				if ( !distinction.add( result ) ) {
 					continue;
 				}
@@ -390,6 +420,7 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	/**
 	 * Return the query results as an iterator
 	 */
+	@Override
 	public Iterator iterate(QueryParameters queryParameters, EventSource session)
 			throws HibernateException {
 		// Delegate to the QueryLoader...
@@ -400,13 +431,14 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	/**
 	 * Return the query results, as an instance of <tt>ScrollableResults</tt>
 	 */
+	@Override
 	public ScrollableResults scroll(QueryParameters queryParameters, SessionImplementor session)
 			throws HibernateException {
 		// Delegate to the QueryLoader...
 		errorIfDML();
 		return queryLoader.scroll( queryParameters, session );
 	}
-
+	@Override
 	public int executeUpdate(QueryParameters queryParameters, SessionImplementor session)
 			throws HibernateException {
 		errorIfSelect();
@@ -416,17 +448,16 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	/**
 	 * The SQL query string to be called; implemented by all subclasses
 	 */
+	@Override
 	public String getSQLString() {
 		return sql;
 	}
-
-	public List collectSqlStrings() {
-		ArrayList list = new ArrayList();
+	@Override
+	public List<String> collectSqlStrings() {
+		ArrayList<String> list = new ArrayList<String>();
 		if ( isManipulationStatement() ) {
 			String[] sqlStatements = statementExecutor.getSqlStatements();
-			for ( int i = 0; i < sqlStatements.length; i++ ) {
-				list.add( sqlStatements[i] );
-			}
+			Collections.addAll( list, sqlStatements );
 		}
 		else {
 			list.add( sql );
@@ -439,11 +470,11 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	public boolean isShallowQuery() {
 		return shallowQuery;
 	}
-
+	@Override
 	public String getQueryString() {
 		return hql;
 	}
-
+	@Override
 	public Map getEnabledFilters() {
 		return enabledFilters;
 	}
@@ -451,17 +482,17 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	public int[] getNamedParameterLocs(String name) {
 		return getWalker().getNamedParameterLocations( name );
 	}
-
+	@Override
 	public boolean containsCollectionFetches() {
 		errorIfDML();
-		List collectionFetches = ( ( QueryNode ) sqlAst ).getFromClause().getCollectionFetches();
+		List collectionFetches = ( (QueryNode) sqlAst ).getFromClause().getCollectionFetches();
 		return collectionFetches != null && collectionFetches.size() > 0;
 	}
-
+	@Override
 	public boolean isManipulationStatement() {
 		return sqlAst.needsExecutor();
 	}
-
+	@Override
 	public void validateScrollability() throws HibernateException {
 		// Impl Note: allows multiple collection fetches as long as the
 		// entire fecthed graph still "points back" to a single
@@ -469,7 +500,7 @@ public class QueryTranslatorImpl implements FilterTranslator {
 
 		errorIfDML();
 
-		QueryNode query = ( QueryNode ) sqlAst;
+		final QueryNode query = (QueryNode) sqlAst;
 
 		// If there are no collection fetches, then no further checks are needed
 		List collectionFetches = query.getFromClause().getCollectionFetches();
@@ -489,10 +520,9 @@ public class QueryTranslatorImpl implements FilterTranslator {
 		}
 
 		FromElement owner = null;
-		Iterator itr = query.getSelectClause().getFromElementsForLoad().iterator();
-		while ( itr.hasNext() ) {
+		for ( Object o : query.getSelectClause().getFromElementsForLoad() ) {
 			// should be the first, but just to be safe...
-			final FromElement fromElement = ( FromElement ) itr.next();
+			final FromElement fromElement = (FromElement) o;
 			if ( fromElement.getOrigin() == null ) {
 				owner = fromElement;
 				break;
@@ -512,8 +542,8 @@ public class QueryTranslatorImpl implements FilterTranslator {
 			// TODO : this is a bit dodgy, come up with a better way to check this (plus see above comment)
 			String [] idColNames = owner.getQueryable().getIdentifierColumnNames();
 			String expectedPrimaryOrderSeq = StringHelper.join(
-			        ", ",
-			        StringHelper.qualify( owner.getTableAlias(), idColNames )
+					", ",
+					StringHelper.qualify( owner.getTableAlias(), idColNames )
 			);
 			if (  !primaryOrdering.getText().startsWith( expectedPrimaryOrderSeq ) ) {
 				throw new HibernateException( "cannot scroll results with collection fetches which are not ordered primarily by the root entity's PK" );
@@ -522,20 +552,20 @@ public class QueryTranslatorImpl implements FilterTranslator {
 	}
 
 	private StatementExecutor buildAppropriateStatementExecutor(HqlSqlWalker walker) {
-		Statement statement = ( Statement ) walker.getAST();
+		final Statement statement = (Statement) walker.getAST();
 		if ( walker.getStatementType() == HqlSqlTokenTypes.DELETE ) {
-			FromElement fromElement = walker.getFinalFromClause().getFromElement();
-			Queryable persister = fromElement.getQueryable();
+			final FromElement fromElement = walker.getFinalFromClause().getFromElement();
+			final Queryable persister = fromElement.getQueryable();
 			if ( persister.isMultiTable() ) {
 				return new MultiTableDeleteExecutor( walker );
 			}
 			else {
-				return new BasicExecutor( walker, persister );
+				return new DeleteExecutor( walker, persister );
 			}
 		}
 		else if ( walker.getStatementType() == HqlSqlTokenTypes.UPDATE ) {
-			FromElement fromElement = walker.getFinalFromClause().getFromElement();
-			Queryable persister = fromElement.getQueryable();
+			final FromElement fromElement = walker.getFinalFromClause().getFromElement();
+			final Queryable persister = fromElement.getQueryable();
 			if ( persister.isMultiTable() ) {
 				// even here, if only properties mapped to the "base table" are referenced
 				// in the set and where clauses, this could be handled by the BasicDelegate.
@@ -547,22 +577,21 @@ public class QueryTranslatorImpl implements FilterTranslator {
 			}
 		}
 		else if ( walker.getStatementType() == HqlSqlTokenTypes.INSERT ) {
-			return new BasicExecutor( walker, ( ( InsertStatement ) statement ).getIntoClause().getQueryable() );
+			return new BasicExecutor( walker, ( (InsertStatement) statement ).getIntoClause().getQueryable() );
 		}
 		else {
 			throw new QueryException( "Unexpected statement type" );
 		}
 	}
-
+	@Override
 	public ParameterTranslations getParameterTranslations() {
 		if ( paramTranslations == null ) {
 			paramTranslations = new ParameterTranslationsImpl( getWalker().getParameters() );
-//			paramTranslations = new ParameterTranslationsImpl( collectedParameterSpecifications );
 		}
 		return paramTranslations;
 	}
 
-	public List getCollectedParameterSpecifications() {
+	public List<ParameterSpecification> getCollectedParameterSpecifications() {
 		return collectedParameterSpecifications;
 	}
 
@@ -574,27 +603,38 @@ public class QueryTranslatorImpl implements FilterTranslator {
 
 	public static class JavaConstantConverter implements NodeTraverser.VisitationStrategy {
 		private AST dotRoot;
+		@Override
 		public void visit(AST node) {
 			if ( dotRoot != null ) {
 				// we are already processing a dot-structure
-                if (ASTUtil.isSubtreeChild(dotRoot, node)) return;
-                // we are now at a new tree level
-                dotRoot = null;
+				if ( ASTUtil.isSubtreeChild( dotRoot, node ) ) {
+					return;
+				}
+				// we are now at a new tree level
+				dotRoot = null;
 			}
 
-			if ( dotRoot == null && node.getType() == HqlTokenTypes.DOT ) {
+			if ( node.getType() == HqlTokenTypes.DOT ) {
 				dotRoot = node;
 				handleDotStructure( dotRoot );
 			}
 		}
 		private void handleDotStructure(AST dotStructureRoot) {
-			String expression = ASTUtil.getPathText( dotStructureRoot );
-			Object constant = ReflectHelper.getConstantValue( expression );
+			final String expression = ASTUtil.getPathText( dotStructureRoot );
+			final Object constant = ReflectHelper.getConstantValue( expression );
 			if ( constant != null ) {
 				dotStructureRoot.setFirstChild( null );
 				dotStructureRoot.setType( HqlTokenTypes.JAVA_CONSTANT );
 				dotStructureRoot.setText( expression );
 			}
 		}
+	}
+
+	public EntityGraphQueryHint getEntityGraphQueryHint() {
+		return entityGraphQueryHint;
+	}
+
+	public void setEntityGraphQueryHint(EntityGraphQueryHint entityGraphQueryHint) {
+		this.entityGraphQueryHint = entityGraphQueryHint;
 	}
 }

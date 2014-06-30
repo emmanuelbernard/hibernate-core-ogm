@@ -27,11 +27,14 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+
 import org.hibernate.dialect.Dialect;
 
 /**
  * Annotation used to indicate that a test should be run only when run against the
  * indicated dialects.
+ *
+ * @see RequiresDialects
  *
  * @author Hardy Ferentschik
  */

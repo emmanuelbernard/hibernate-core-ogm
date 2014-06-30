@@ -24,7 +24,7 @@
 package org.hibernate.metamodel.source.internal;
 
 import org.hibernate.cache.spi.access.AccessType;
-import org.hibernate.metamodel.source.MappingDefaults;
+import org.hibernate.metamodel.source.spi.MappingDefaults;
 
 /**
  * Represents a "nested level" in the mapping defaults stack.
@@ -38,6 +38,7 @@ public class OverriddenMappingDefaults implements MappingDefaults {
 	private final String schemaName;
 	private final String catalogName;
 	private final String idColumnName;
+	private final String tenantIdColumnName;
 	private final String discriminatorColumnName;
 	private final String cascade;
 	private final String propertyAccess;
@@ -49,6 +50,7 @@ public class OverriddenMappingDefaults implements MappingDefaults {
 			String schemaName,
 			String catalogName,
 			String idColumnName,
+			String tenantIdColumnName,
 			String discriminatorColumnName,
 			String cascade,
 			String propertyAccess,
@@ -61,6 +63,7 @@ public class OverriddenMappingDefaults implements MappingDefaults {
 		this.schemaName = schemaName;
 		this.catalogName = catalogName;
 		this.idColumnName = idColumnName;
+		this.tenantIdColumnName = tenantIdColumnName;
 		this.discriminatorColumnName = discriminatorColumnName;
 		this.cascade = cascade;
 		this.propertyAccess = propertyAccess;
@@ -85,6 +88,11 @@ public class OverriddenMappingDefaults implements MappingDefaults {
 	@Override
 	public String getIdColumnName() {
 		return idColumnName == null ? overriddenValues.getIdColumnName() : idColumnName;
+	}
+
+	@Override
+	public String getTenantIdColumnName() {
+		return tenantIdColumnName == null ? overriddenValues.getTenantIdColumnName() : tenantIdColumnName;
 	}
 
 	@Override

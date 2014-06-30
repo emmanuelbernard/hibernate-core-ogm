@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,12 +20,13 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.hql.internal.ast.tree;
+
+import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
 
-import org.jboss.logging.Logger;
 import antlr.SemanticException;
 import antlr.collections.AST;
 
@@ -35,16 +36,17 @@ import antlr.collections.AST;
  * @author josh
  */
 public abstract class FromReferenceNode extends AbstractSelectExpression
-        implements ResolvableNode, DisplayableNode, InitializeableNode, PathNode {
+		implements ResolvableNode, DisplayableNode, InitializeableNode, PathNode {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, FromReferenceNode.class.getName());
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( FromReferenceNode.class );
 
 	private FromElement fromElement;
-	private boolean resolved = false;
+	private boolean resolved;
+
 	public static final int ROOT_LEVEL = 0;
 
 	@Override
-    public FromElement getFromElement() {
+	public FromElement getFromElement() {
 		return fromElement;
 	}
 
@@ -60,6 +62,7 @@ public abstract class FromReferenceNode extends AbstractSelectExpression
 	public void resolveFirstChild() throws SemanticException {
 	}
 
+	@Override
 	public String getPath() {
 		return getOriginalText();
 	}
@@ -70,11 +73,14 @@ public abstract class FromReferenceNode extends AbstractSelectExpression
 
 	public void setResolved() {
 		this.resolved = true;
-        LOG.debugf("Resolved : %s -> %s", this.getPath(), this.getText());
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf( "Resolved : %s -> %s", this.getPath(), this.getText() );
+		}
 	}
 
+	@Override
 	public String getDisplayText() {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		buf.append( "{" ).append( ( fromElement == null ) ? "no fromElement" : fromElement.getDisplayText() );
 		buf.append( "}" );
 		return buf.toString();
@@ -84,11 +90,12 @@ public abstract class FromReferenceNode extends AbstractSelectExpression
 		recursiveResolve( level, impliedAtRoot, classAlias, this );
 	}
 
-	public void recursiveResolve(int level, boolean impliedAtRoot, String classAlias, AST parent) throws SemanticException {
+	public void recursiveResolve(int level, boolean impliedAtRoot, String classAlias, AST parent)
+			throws SemanticException {
 		AST lhs = getFirstChild();
 		int nextLevel = level + 1;
 		if ( lhs != null ) {
-			FromReferenceNode n = ( FromReferenceNode ) lhs;
+			FromReferenceNode n = (FromReferenceNode) lhs;
 			n.recursiveResolve( nextLevel, impliedAtRoot, null, this );
 		}
 		resolveFirstChild();
@@ -100,18 +107,21 @@ public abstract class FromReferenceNode extends AbstractSelectExpression
 	}
 
 	@Override
-    public boolean isReturnableEntity() throws SemanticException {
+	public boolean isReturnableEntity() throws SemanticException {
 		return !isScalar() && fromElement.isEntity();
 	}
 
+	@Override
 	public void resolveInFunctionCall(boolean generateJoin, boolean implicitJoin) throws SemanticException {
 		resolve( generateJoin, implicitJoin );
 	}
 
+	@Override
 	public void resolve(boolean generateJoin, boolean implicitJoin) throws SemanticException {
 		resolve( generateJoin, implicitJoin, null );
 	}
 
+	@Override
 	public void resolve(boolean generateJoin, boolean implicitJoin, String classAlias) throws SemanticException {
 		resolve( generateJoin, implicitJoin, classAlias, null );
 	}
@@ -126,6 +136,17 @@ public abstract class FromReferenceNode extends AbstractSelectExpression
 	 */
 	public FromElement getImpliedJoin() {
 		return null;
+	}
+
+	@SuppressWarnings("SimplifiableIfStatement")
+	protected boolean isFromElementUpdateOrDeleteRoot(FromElement element) {
+		if ( element.getFromClause().getParentFromClause() != null ) {
+			// its not even a root...
+			return false;
+		}
+
+		return getWalker().getStatementType() == HqlSqlTokenTypes.DELETE
+				|| getWalker().getStatementType() == HqlSqlTokenTypes.UPDATE;
 	}
 
 }

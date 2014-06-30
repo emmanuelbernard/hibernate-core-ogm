@@ -25,37 +25,45 @@ package org.hibernate.persister.entity;
 
 import java.io.Serializable;
 import java.util.Map;
+import java.util.Set;
 
 import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.MappingException;
+import org.hibernate.bytecode.spi.EntityInstrumentationMetadata;
 import org.hibernate.cache.spi.OptimisticCacheSource;
 import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
+import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
+import org.hibernate.cache.spi.entry.CacheEntry;
 import org.hibernate.cache.spi.entry.CacheEntryStructure;
 import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.spi.ValueInclusion;
 import org.hibernate.id.IdentifierGenerator;
+import org.hibernate.internal.FilterAliasGenerator;
 import org.hibernate.metadata.ClassMetadata;
+import org.hibernate.persister.walking.spi.EntityDefinition;
 import org.hibernate.tuple.entity.EntityMetamodel;
 import org.hibernate.tuple.entity.EntityTuplizer;
 import org.hibernate.type.Type;
 import org.hibernate.type.VersionType;
 
 /**
- * Implementors define mapping and persistence logic for a particular
- * strategy of entity mapping.  An instance of entity persisters corresponds
- * to a given mapped entity.
+ * Contract describing mapping information and persistence logic for a particular strategy of entity mapping.  A given
+ * persister instance corresponds to a given mapped entity class.
  * <p/>
- * Implementors must be threadsafe (preferrably immutable) and must provide a constructor
- * matching the signature of: {@link org.hibernate.mapping.PersistentClass}, {@link org.hibernate.engine.spi.SessionFactoryImplementor}
+ * Implementations must be thread-safe (preferably immutable).
  *
  * @author Gavin King
+ * @author Steve Ebersole
+ *
+ * @see org.hibernate.persister.spi.PersisterFactory
+ * @see org.hibernate.persister.spi.PersisterClassResolver
  */
-public interface EntityPersister extends OptimisticCacheSource {
+public interface EntityPersister extends OptimisticCacheSource, EntityDefinition {
 
 	/**
 	 * The property name of the "special" identifier property in HQL
@@ -63,7 +71,14 @@ public interface EntityPersister extends OptimisticCacheSource {
 	public static final String ENTITY_ID = "id";
 
 	/**
-	 * Finish the initialization of this object.
+	 * Generate the entity definition for this object. This must be done for all
+	 * entity persisters before calling {@link #postInstantiate()}.
+	 */
+	public void generateEntityDefinition();
+
+	/**
+	 * Finish the initialization of this object. {@link #generateEntityDefinition()}
+	 * must be called for all entity persisters before calling this method.
 	 * <p/>
 	 * Called only once per {@link org.hibernate.SessionFactory} lifecycle,
 	 * after all entity persisters have been instantiated.
@@ -322,6 +337,12 @@ public interface EntityPersister extends OptimisticCacheSource {
 	public boolean hasLazyProperties();
 
 	/**
+	 * Load the id for the entity based on the natural id.
+	 */
+	public Serializable loadEntityIdByNaturalId(Object[] naturalIdValues, LockOptions lockOptions,
+			SessionImplementor session);
+
+	/**
 	 * Load an instance of the persistent class.
 	 */
 	public Object load(Serializable id, Object optionalObject, LockMode lockMode, SessionImplementor session)
@@ -397,12 +418,18 @@ public interface EntityPersister extends OptimisticCacheSource {
 
 	/**
 	 * Which of the properties of this class are database generated values on insert?
+	 *
+	 * @deprecated Replaced internally with InMemoryValueGenerationStrategy / InDatabaseValueGenerationStrategy
 	 */
+	@Deprecated
 	public ValueInclusion[] getPropertyInsertGenerationInclusions();
 
 	/**
 	 * Which of the properties of this class are database generated values on update?
+	 *
+	 * @deprecated Replaced internally with InMemoryValueGenerationStrategy / InDatabaseValueGenerationStrategy
 	 */
+	@Deprecated
 	public ValueInclusion[] getPropertyUpdateGenerationInclusions();
 
 	/**
@@ -467,6 +494,18 @@ public interface EntityPersister extends OptimisticCacheSource {
 	 */
 	public CacheEntryStructure getCacheEntryStructure();
 
+	public CacheEntry buildCacheEntry(Object entity, Object[] state, Object version, SessionImplementor session);
+
+	/**
+	 * Does this class have a natural id cache
+	 */
+	public boolean hasNaturalIdCache();
+	
+	/**
+	 * Get the NaturalId cache (optional operation)
+	 */
+	public NaturalIdRegionAccessStrategy getNaturalIdCacheAccessStrategy();
+
 	/**
 	 * Get the user-visible metadata for the class (optional operation)
 	 */
@@ -489,6 +528,8 @@ public interface EntityPersister extends OptimisticCacheSource {
 	 */
 	public Object[] getDatabaseSnapshot(Serializable id, SessionImplementor session)
 	throws HibernateException;
+
+	public Serializable getIdByUniqueKey(Serializable key, String uniquePropertyName, SessionImplementor session);
 
 	/**
 	 * Get the current version of the object, or return null if there is no row for
@@ -645,8 +686,8 @@ public interface EntityPersister extends OptimisticCacheSource {
 	 * Get the identifier of an instance (throw an exception if no identifier property)
 	 *
 	 * @deprecated Use {@link #getIdentifier(Object,SessionImplementor)} instead
-	 * @noinspection JavaDoc
 	 */
+	@SuppressWarnings( {"JavaDoc"})
 	public Serializable getIdentifier(Object object) throws HibernateException;
 
 	/**
@@ -727,4 +768,12 @@ public interface EntityPersister extends OptimisticCacheSource {
 
 	public EntityMode getEntityMode();
 	public EntityTuplizer getEntityTuplizer();
+
+	public EntityInstrumentationMetadata getInstrumentationMetadata();
+	
+	public FilterAliasGenerator getFilterAliasGenerator(final String rootAlias);
+
+	public int[] resolveAttributeIndexes(Set<String> properties);
+
+	public boolean canUseReferenceCacheEntries();
 }

@@ -23,10 +23,10 @@
  */
 package org.hibernate.engine.transaction.spi;
 
+import java.io.Serializable;
+
 import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.engine.jdbc.spi.JdbcConnectionAccess;
-
-import java.io.Serializable;
 
 /**
  * Access to services needed in the context of processing transaction requests.
@@ -112,7 +112,19 @@ public interface TransactionContext extends Serializable {
 
 	public void afterTransactionCompletion(TransactionImplementor hibernateTransaction, boolean successful);
 
-	public String onPrepareStatement(String sql); 
+	public String onPrepareStatement(String sql);
 
 	public JdbcConnectionAccess getJdbcConnectionAccess();
+
+	public void startPrepareStatement();
+
+	public void endPrepareStatement();
+
+	public void startStatementExecution();
+
+	public void endStatementExecution();
+
+	public void startBatchExecution();
+
+	public void endBatchExecution();
 }

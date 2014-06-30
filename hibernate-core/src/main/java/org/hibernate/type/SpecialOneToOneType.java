@@ -33,7 +33,7 @@ import org.hibernate.MappingException;
 import org.hibernate.engine.internal.ForeignKeys;
 import org.hibernate.engine.spi.Mapping;
 import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.metamodel.relational.Size;
+import org.hibernate.metamodel.spi.relational.Size;
 
 /**
  * A one-to-one association that maps to specific formula(s)
@@ -43,6 +43,10 @@ import org.hibernate.metamodel.relational.Size;
  */
 public class SpecialOneToOneType extends OneToOneType {
 	
+	/**
+	 * @deprecated Use {@link #SpecialOneToOneType(org.hibernate.type.TypeFactory.TypeScope, String, ForeignKeyDirection, boolean, String, boolean, boolean, String, String)} instead.
+	 */
+	@Deprecated
 	public SpecialOneToOneType(
 			TypeFactory.TypeScope scope,
 			String referencedEntityName,
@@ -52,14 +56,27 @@ public class SpecialOneToOneType extends OneToOneType {
 			boolean unwrapProxy,
 			String entityName,
 			String propertyName) {
+		this( scope, referencedEntityName, foreignKeyType, uniqueKeyPropertyName == null, uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName );
+	}
+	
+	public SpecialOneToOneType(
+			TypeFactory.TypeScope scope,
+			String referencedEntityName,
+			ForeignKeyDirection foreignKeyType,
+			boolean referenceToPrimaryKey, 
+			String uniqueKeyPropertyName,
+			boolean lazy,
+			boolean unwrapProxy,
+			String entityName,
+			String propertyName) {
 		super(
 				scope,
 				referencedEntityName, 
-				foreignKeyType, 
+				foreignKeyType,
+				referenceToPrimaryKey, 
 				uniqueKeyPropertyName, 
 				lazy,
 				unwrapProxy,
-				true, 
 				entityName, 
 				propertyName
 			);

@@ -22,12 +22,15 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.hql.internal.ast.tree;
-import org.hibernate.internal.CoreMessageLogger;
+
 import org.hibernate.dialect.function.SQLFunction;
 import org.hibernate.dialect.function.StandardSQLFunction;
 import org.hibernate.hql.internal.ast.util.ColumnHelper;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
+
 import antlr.SemanticException;
 import antlr.collections.AST;
 
@@ -38,7 +41,7 @@ import antlr.collections.AST;
  */
 public class AggregateNode extends AbstractSelectExpression implements SelectExpression, FunctionNode {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, AggregateNode.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, AggregateNode.class.getName() );
 
 	private SQLFunction sqlFunction;
 
@@ -55,7 +58,7 @@ public class AggregateNode extends AbstractSelectExpression implements SelectExp
 			final String name = getText();
 			sqlFunction = getSessionFactoryHelper().findSQLFunction( getText() );
 			if ( sqlFunction == null ) {
-                LOG.unableToResolveAggregateFunction(name);
+				LOG.unableToResolveAggregateFunction( name );
 				sqlFunction = new StandardSQLFunction( name );
 			}
 		}
@@ -77,7 +80,7 @@ public class AggregateNode extends AbstractSelectExpression implements SelectExp
 	}
 
 	@Override
-    public Type getDataType() {
+	public Type getDataType() {
 		// Get the function return value type, based on the type of the first argument.
 		return getSessionFactoryHelper().findFunctionReturnType( getText(), resolveFunction(), getFirstChild() );
 	}
@@ -87,7 +90,7 @@ public class AggregateNode extends AbstractSelectExpression implements SelectExp
 	}
 
 	@Override
-    public boolean isScalar() throws SemanticException {
+	public boolean isScalar() throws SemanticException {
 		// functions in a SELECT should always be considered scalar.
 		return true;
 	}

@@ -21,77 +21,80 @@
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
  */
-
 package org.hibernate.metamodel;
 
+import java.util.Collection;
 import java.util.Map;
-import javax.persistence.SharedCacheMode;
+import java.util.UUID;
+
+import javax.persistence.NamedStoredProcedureQuery;
 
 import org.hibernate.SessionFactory;
-import org.hibernate.cache.spi.access.AccessType;
-import org.hibernate.cfg.NamingStrategy;
+import org.hibernate.cfg.annotations.NamedEntityGraphDefinition;
 import org.hibernate.engine.ResultSetMappingDefinition;
 import org.hibernate.engine.spi.FilterDefinition;
 import org.hibernate.engine.spi.NamedQueryDefinition;
 import org.hibernate.engine.spi.NamedSQLQueryDefinition;
-import org.hibernate.metamodel.binding.EntityBinding;
-import org.hibernate.metamodel.binding.FetchProfile;
-import org.hibernate.metamodel.binding.IdGenerator;
-import org.hibernate.metamodel.binding.PluralAttributeBinding;
-import org.hibernate.metamodel.binding.TypeDef;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
+import org.hibernate.metamodel.spi.binding.FetchProfile;
+import org.hibernate.metamodel.spi.binding.IdentifierGeneratorDefinition;
+import org.hibernate.metamodel.spi.binding.PluralAttributeBinding;
+import org.hibernate.metamodel.spi.binding.SecondaryTable;
+import org.hibernate.metamodel.spi.binding.TypeDefinition;
+import org.hibernate.metamodel.spi.relational.Identifier;
 
 /**
  * @author Steve Ebersole
  */
 public interface Metadata {
 	/**
-	 * Exposes the options used to produce a {@link Metadata} instance.
+	 * Get the builder for {@link SessionFactory} instances based on this metamodel,
+	 *
+	 * @return The builder for {@link SessionFactory} instances.
 	 */
-	public static interface Options {
-		public MetadataSourceProcessingOrder getMetadataSourceProcessingOrder();
-		public NamingStrategy getNamingStrategy();
-		public SharedCacheMode getSharedCacheMode();
-		public AccessType getDefaultAccessType();
-		public boolean useNewIdentifierGenerators();
-        public boolean isGloballyQuotedIdentifiers();
-		public String getDefaultSchemaName();
-		public String getDefaultCatalogName();
-	}
+	SessionFactoryBuilder getSessionFactoryBuilder();
 
-	public Options getOptions();
+	/**
+	 * Short-hand form of building a {@link SessionFactory} through the builder without any additional
+	 * option overrides.
+	 *
+	 * @return THe built SessionFactory.
+	 */
+	SessionFactory buildSessionFactory();
 
-	public SessionFactoryBuilder getSessionFactoryBuilder();
+	/**
+	 * Gets the {@link UUID} for this metamodel.
+	 *
+	 * @return the UUID.
+	 */
+	UUID getUUID();
 
-	public SessionFactory buildSessionFactory();
-
-	public Iterable<EntityBinding> getEntityBindings();
-
-	public EntityBinding getEntityBinding(String entityName);
+	EntityBinding getEntityBinding(String entityName);
 
 	/**
 	 * Get the "root" entity binding
 	 * @param entityName
 	 * @return the "root entity binding; simply returns entityBinding if it is the root entity binding
 	 */
-	public EntityBinding getRootEntityBinding(String entityName);
+	EntityBinding getRootEntityBinding(String entityName);
+	IdentifierGeneratorDefinition getIdGenerator(String name);
+	boolean hasTypeDefinition(String name);
+	TypeDefinition getTypeDefinition(String name);
 
-	public Iterable<PluralAttributeBinding> getCollectionBindings();
+	Iterable<PluralAttributeBinding> getCollectionBindings();
+	Iterable<EntityBinding> getEntityBindings();
+	Iterable<TypeDefinition> getTypeDefinitions();
+	Iterable<FetchProfile> getFetchProfiles();
 
-	public TypeDef getTypeDefinition(String name);
+	Map<Identifier, SecondaryTable> getSecondaryTables();
+	Map<String, FilterDefinition> getFilterDefinitions();
+	Map<String, NamedEntityGraphDefinition> getNamedEntityGraphs();
 
-	public Iterable<TypeDef> getTypeDefinitions();
+	Map<String,String> getImports();
 
-	public Iterable<FilterDefinition> getFilterDefinitions();
-
-	public Iterable<NamedQueryDefinition> getNamedQueryDefinitions();
-
-	public Iterable<NamedSQLQueryDefinition> getNamedNativeQueryDefinitions();
-
-	public Iterable<ResultSetMappingDefinition> getResultSetMappingDefinitions();
-
-	public Iterable<Map.Entry<String, String>> getImports();
-
-	public Iterable<FetchProfile> getFetchProfiles();
-
-	public IdGenerator getIdGenerator(String name);
+	NamedSQLQueryDefinition getNamedNativeQuery(String name);
+	Iterable<NamedQueryDefinition> getNamedQueryDefinitions();
+	Iterable<NamedSQLQueryDefinition> getNamedNativeQueryDefinitions();
+	Collection<NamedStoredProcedureQueryDefinition> getNamedStoredProcedureQueryDefinitions();
+	Map<String, ResultSetMappingDefinition> getResultSetMappingDefinitions();
 }

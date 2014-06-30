@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+
 import org.hibernate.Criteria;
 import org.hibernate.FetchMode;
 import org.hibernate.LockOptions;
@@ -35,16 +36,16 @@ import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.CriteriaImpl;
+import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.loader.AbstractEntityJoinWalker;
 import org.hibernate.loader.PropertyPath;
+import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.Joinable;
 import org.hibernate.persister.entity.OuterJoinLoadable;
 import org.hibernate.persister.entity.Queryable;
-import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.sql.JoinType;
 import org.hibernate.type.AssociationType;
 import org.hibernate.type.Type;
-import org.hibernate.internal.util.collections.ArrayHelper;
 
 /**
  * A <tt>JoinWalker</tt> for <tt>Criteria</tt> queries.
@@ -65,9 +66,9 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 	//the user visible aliases, which are unknown to the superclass,
 	//these are not the actual "physical" SQL aliases
 	private final String[] userAliases;
-	private final List userAliasList = new ArrayList();
-	private final List resultTypeList = new ArrayList();
-	private final List includeInResultRowList = new ArrayList();
+	private final List<String> userAliasList = new ArrayList<String>();
+	private final List<Type> resultTypeList = new ArrayList<Type>();
+	private final List<Boolean> includeInResultRowList = new ArrayList<Boolean>();
 
 	public Type[] getResultTypes() {
 		return resultTypes;
@@ -129,7 +130,7 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 			includeInResultRow = ArrayHelper.toBooleanArray( includeInResultRowList );
 		}
 	}
-
+	@Override
 	protected JoinType getJoinType(
 			OuterJoinLoadable persister,
 			final PropertyPath path,
@@ -141,47 +142,72 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 			String[] lhsColumns,
 			final boolean nullable,
 			final int currentDepth) throws MappingException {
+		final JoinType resolvedJoinType;
 		if ( translator.isJoin( path.getFullPath() ) ) {
-			return translator.getJoinType( path.getFullPath() );
+			resolvedJoinType = translator.getJoinType( path.getFullPath() );
 		}
 		else {
 			if ( translator.hasProjection() ) {
-				return JoinType.NONE;
+				resolvedJoinType = JoinType.NONE;
 			}
 			else {
 				FetchMode fetchMode = translator.getRootCriteria().getFetchMode( path.getFullPath() );
 				if ( isDefaultFetchMode( fetchMode ) ) {
-					if ( isJoinFetchEnabledByProfile( persister, path, propertyNumber ) ) {
-						return getJoinType( nullable, currentDepth );
+					if ( persister != null ) {
+						if ( isJoinFetchEnabledByProfile( persister, path, propertyNumber ) ) {
+							if ( isDuplicateAssociation( lhsTable, lhsColumns, associationType ) ) {
+								resolvedJoinType = JoinType.NONE;
+							}
+							else if ( isTooDeep(currentDepth) || ( associationType.isCollectionType() && isTooManyCollections() ) ) {
+								resolvedJoinType = JoinType.NONE;
+							}
+							else {
+								resolvedJoinType = getJoinType( nullable, currentDepth );
+							}
+						}
+						else {
+							resolvedJoinType = super.getJoinType(
+									persister,
+									path,
+									propertyNumber,
+									associationType,
+									metadataFetchMode,
+									metadataCascadeStyle,
+									lhsTable,
+									lhsColumns,
+									nullable,
+									currentDepth
+							);
+						}
 					}
 					else {
-						return super.getJoinType(
-								persister,
-								path,
-								propertyNumber,
+						resolvedJoinType = super.getJoinType(
 								associationType,
 								metadataFetchMode,
-								metadataCascadeStyle,
+								path,
 								lhsTable,
 								lhsColumns,
 								nullable,
-								currentDepth
+								currentDepth,
+								metadataCascadeStyle
 						);
+
 					}
 				}
 				else {
 					if ( fetchMode == FetchMode.JOIN ) {
 						isDuplicateAssociation( lhsTable, lhsColumns, associationType ); //deliberately ignore return value!
-						return getJoinType( nullable, currentDepth );
+						resolvedJoinType = getJoinType( nullable, currentDepth );
 					}
 					else {
-						return JoinType.NONE;
+						resolvedJoinType = JoinType.NONE;
 					}
 				}
 			}
 		}
+		return resolvedJoinType;
 	}
-
+	@Override
 	protected JoinType getJoinType(
 			AssociationType associationType,
 			FetchMode config,
@@ -191,18 +217,17 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 			boolean nullable,
 			int currentDepth,
 			CascadeStyle cascadeStyle) throws MappingException {
-		return ( translator.isJoin( path.getFullPath() ) ?
-				translator.getJoinType( path.getFullPath() ) :
-				super.getJoinType(
-						associationType,
-						config,
-						path,
-						lhsTable,
-						lhsColumns,
-						nullable,
-						currentDepth,
-						cascadeStyle
-				)
+		return getJoinType(
+				null,
+				path,
+				-1,
+				associationType,
+				config,
+				cascadeStyle,
+				lhsTable,
+				lhsColumns,
+				nullable,
+				currentDepth
 		);
 	}
 
@@ -214,11 +239,12 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 	 * Use the discriminator, to narrow the select to instances
 	 * of the queried subclass, also applying any filters.
 	 */
+	@Override
 	protected String getWhereFragment() throws MappingException {
 		return super.getWhereFragment() +
 			( (Queryable) getPersister() ).filterFragment( getAlias(), getLoadQueryInfluencers().getEnabledFilters() );
 	}
-	
+	@Override
 	protected String generateTableAlias(int n, PropertyPath path, Joinable joinable) {
 		// TODO: deal with side-effects (changes to includeInResultRowList, userAliasList, resultTypeList)!!!
 
@@ -263,7 +289,7 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 
 		return sqlAlias;
 	}
-
+	@Override
 	protected String generateRootAlias(String tableName) {
 		return CriteriaQueryTranslator.ROOT_SQL_ALIAS;
 	}
@@ -271,15 +297,15 @@ public class CriteriaJoinWalker extends AbstractEntityJoinWalker {
 	public Set getQuerySpaces() {
 		return querySpaces;
 	}
-	
+	@Override
 	public String getComment() {
 		return "criteria query";
 	}
-
+	@Override
 	protected String getWithClause(PropertyPath path) {
 		return translator.getWithClause( path.getFullPath() );
 	}
-
+	@Override
 	protected boolean hasRestriction(PropertyPath path)	{
 		return translator.hasRestriction( path.getFullPath() );
 	}

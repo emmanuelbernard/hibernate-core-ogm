@@ -26,11 +26,11 @@ package org.hibernate.action.spi;
 import java.io.Serializable;
 
 import org.hibernate.HibernateException;
+import org.hibernate.engine.spi.SessionImplementor;
 
 /**
- * An operation which may be scheduled for later execution.
- * Usually, the operation is a database insert/update/delete,
- * together with required second-level cache management.
+ * An operation which may be scheduled for later execution.  Usually, the operation is a database
+ * insert/update/delete, together with required second-level cache management.
  * 
  * @author Gavin King
  * @author Steve Ebersole
@@ -51,7 +51,7 @@ public interface Executable {
 	public void beforeExecutions() throws HibernateException;
 
 	/**
-	 * Execute this action
+	 * Execute this action.
 	 *
 	 * @throws HibernateException Indicates a problem during execution.
 	 */
@@ -72,4 +72,11 @@ public interface Executable {
 	 * before-transaction-completion process
 	 */
 	public BeforeTransactionCompletionProcess getBeforeTransactionCompletionProcess();
+	
+	/**
+	 * Reconnect to session after deserialization
+	 *
+	 * @param session The session being deserialized
+	 */
+	public void afterDeserialize(SessionImplementor session);
 }

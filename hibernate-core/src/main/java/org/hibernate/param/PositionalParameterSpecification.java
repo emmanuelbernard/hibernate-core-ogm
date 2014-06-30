@@ -25,6 +25,7 @@
 package org.hibernate.param;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.type.Type;
@@ -34,7 +35,7 @@ import org.hibernate.type.Type;
  *
  * @author Steve Ebersole
  */
-public class PositionalParameterSpecification extends AbstractExplicitParameterSpecification implements ParameterSpecification {
+public class PositionalParameterSpecification extends AbstractExplicitParameterSpecification  {
 	private final int hqlPosition;
 
 	/**
@@ -59,6 +60,7 @@ public class PositionalParameterSpecification extends AbstractExplicitParameterS
 	 *
 	 * @return The number of sql bind positions "eaten" by this bind operation.
 	 */
+	@Override
 	public int bind(PreparedStatement statement, QueryParameters qp, SessionImplementor session, int position) throws SQLException {
 		Type type = qp.getPositionalParameterTypes()[hqlPosition];
 		Object value = qp.getPositionalParameterValues()[hqlPosition];
@@ -67,9 +69,7 @@ public class PositionalParameterSpecification extends AbstractExplicitParameterS
 		return type.getColumnSpan( session.getFactory() );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String renderDisplayInfo() {
 		return "ordinal=" + hqlPosition + ", expectedType=" + getExpectedType();
 	}

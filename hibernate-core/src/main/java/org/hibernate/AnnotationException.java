@@ -23,25 +23,40 @@
  */
 package org.hibernate;
 
+import org.hibernate.xml.spi.Origin;
+import org.hibernate.xml.spi.SourceType;
 
 /**
  * Annotation related exception.
- * The EJB3 EG will probably set a generic exception.
- * I'll then use this one.
  *
  * @author Emmanuel Bernard
+ * @author Steve Ebersole
  */
-public class AnnotationException extends MappingException {
-
-	public AnnotationException(String msg, Throwable root) {
-		super( msg, root );
+public class AnnotationException extends org.hibernate.metamodel.source.spi.MappingException {
+	/**
+	 * Constructs an AnnotationException using the given message and cause.
+	 *
+	 * @param msg The message explaining the reason for the exception.
+	 * @param cause The underlying cause.
+	 */
+	public AnnotationException(String msg, Throwable cause) {
+		this( msg, cause, new Origin( SourceType.ANNOTATION, "unknown" ) );
 	}
 
-	public AnnotationException(Throwable root) {
-		super( root );
+	/**
+	 * Constructs an AnnotationException using the given message.
+	 *
+	 * @param msg The message explaining the reason for the exception.
+	 */
+	public AnnotationException(String msg) {
+		this( msg, new Origin( SourceType.ANNOTATION, "unknown" ) );
 	}
 
-	public AnnotationException(String s) {
-		super( s );
+	public AnnotationException(String msg, Throwable cause, Origin origin) {
+		super( msg, cause, origin );
+	}
+
+	public AnnotationException(String msg, Origin origin) {
+		super( msg, origin );
 	}
 }

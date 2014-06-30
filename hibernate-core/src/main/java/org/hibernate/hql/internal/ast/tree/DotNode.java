@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2008, 2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,26 +20,27 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.hql.internal.ast.tree;
 
-import org.hibernate.engine.internal.JoinSequence;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.QueryException;
+import org.hibernate.engine.internal.JoinSequence;
 import org.hibernate.hql.internal.CollectionProperties;
 import org.hibernate.hql.internal.antlr.SqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ASTUtil;
 import org.hibernate.hql.internal.ast.util.ColumnHelper;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.persister.entity.Queryable;
 import org.hibernate.sql.JoinFragment;
 import org.hibernate.sql.JoinType;
 import org.hibernate.type.CollectionType;
 import org.hibernate.type.EntityType;
 import org.hibernate.type.Type;
-import org.jboss.logging.Logger;
+
 import antlr.SemanticException;
 import antlr.collections.AST;
 
@@ -50,17 +51,22 @@ import antlr.collections.AST;
  * @author Joshua Davis
  */
 public class DotNode extends FromReferenceNode implements DisplayableNode, SelectExpression {
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( DotNode.class );
 
 	///////////////////////////////////////////////////////////////////////////
 	// USED ONLY FOR REGRESSION TESTING!!!!
 	//
 	// todo : obviously get rid of all this junk ;)
 	///////////////////////////////////////////////////////////////////////////
-	public static boolean useThetaStyleImplicitJoins = false;
-	public static boolean REGRESSION_STYLE_JOIN_SUPPRESSION = false;
+	public static boolean useThetaStyleImplicitJoins;
+	public static boolean regressionStyleJoinSuppression;
+
 	public static interface IllegalCollectionDereferenceExceptionBuilder {
-		public QueryException buildIllegalCollectionDereferenceException(String collectionPropertyName, FromReferenceNode lhs);
+		public QueryException buildIllegalCollectionDereferenceException(
+				String collectionPropertyName,
+				FromReferenceNode lhs);
 	}
+
 	public static final IllegalCollectionDereferenceExceptionBuilder DEF_ILLEGAL_COLL_DEREF_EXCP_BUILDER = new IllegalCollectionDereferenceExceptionBuilder() {
 		public QueryException buildIllegalCollectionDereferenceException(String propertyName, FromReferenceNode lhs) {
 			String lhsPath = ASTUtil.getPathText( lhs );
@@ -70,15 +76,15 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	public static IllegalCollectionDereferenceExceptionBuilder ILLEGAL_COLL_DEREF_EXCP_BUILDER = DEF_ILLEGAL_COLL_DEREF_EXCP_BUILDER;
 	///////////////////////////////////////////////////////////////////////////
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, DotNode.class.getName());
-
-	private static final int DEREF_UNKNOWN = 0;
-	private static final int DEREF_ENTITY = 1;
-	private static final int DEREF_COMPONENT = 2;
-	private static final int DEREF_COLLECTION = 3;
-	private static final int DEREF_PRIMITIVE = 4;
-	private static final int DEREF_IDENTIFIER = 5;
-	private static final int DEREF_JAVA_CONSTANT = 6;
+	public static enum DereferenceType {
+		UNKNOWN,
+		ENTITY,
+		COMPONENT,
+		COLLECTION,
+		PRIMITIVE,
+		IDENTIFIER,
+		JAVA_CONSTANT
+	}
 
 	/**
 	 * The identifier that is the name of the property.
@@ -106,12 +112,12 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	/**
 	 * Fetch join or not.
 	 */
-	private boolean fetch = false;
+	private boolean fetch;
 
 	/**
-	 * The type of dereference that hapened (DEREF_xxx).
+	 * The type of dereference that hapened
 	 */
-	private int dereferenceType = DEREF_UNKNOWN;
+	private DereferenceType dereferenceType = DereferenceType.UNKNOWN;
 
 	private FromElement impliedJoin;
 
@@ -119,6 +125,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	 * Sets the join type for this '.' node structure.
 	 *
 	 * @param joinType The type of join to use.
+	 *
 	 * @see JoinFragment
 	 */
 	public void setJoinType(JoinType joinType) {
@@ -135,12 +142,12 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	}
 
 	@Override
-    public String getDisplayText() {
+	public String getDisplayText() {
 		StringBuilder buf = new StringBuilder();
 		FromElement fromElement = getFromElement();
 		buf.append( "{propertyName=" ).append( propertyName );
-		buf.append( ",dereferenceType=" ).append( getWalker().getASTPrinter().getTokenTypeName( dereferenceType ) );
-		buf.append( ",propertyPath=" ).append( propertyPath );
+		buf.append( ",dereferenceType=" ).append( dereferenceType.name() );
+		buf.append( ",getPropertyPath=" ).append( propertyPath );
 		buf.append( ",path=" ).append( getPath() );
 		if ( fromElement != null ) {
 			buf.append( ",tableAlias=" ).append( fromElement.getTableAlias() );
@@ -160,9 +167,9 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	 * @throws SemanticException
 	 */
 	@Override
-    public void resolveFirstChild() throws SemanticException {
-		FromReferenceNode lhs = ( FromReferenceNode ) getFirstChild();
-		SqlNode property = ( SqlNode ) lhs.getNextSibling();
+	public void resolveFirstChild() throws SemanticException {
+		FromReferenceNode lhs = (FromReferenceNode) getFirstChild();
+		SqlNode property = (SqlNode) lhs.getNextSibling();
 
 		// Set the attributes of the property reference expression.
 		String propName = property.getText();
@@ -174,23 +181,23 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		// Resolve the LHS fully, generate implicit joins.  Pass in the property name so that the resolver can
 		// discover foreign key (id) properties.
 		lhs.resolve( true, true, null, this );
-		setFromElement( lhs.getFromElement() );			// The 'from element' that the property is in.
+		setFromElement( lhs.getFromElement() );            // The 'from element' that the property is in.
 
 		checkSubclassOrSuperclassPropertyReference( lhs, propName );
 	}
 
 	@Override
-    public void resolveInFunctionCall(boolean generateJoin, boolean implicitJoin) throws SemanticException {
+	public void resolveInFunctionCall(boolean generateJoin, boolean implicitJoin) throws SemanticException {
 		if ( isResolved() ) {
 			return;
 		}
-		Type propertyType = prepareLhs();			// Prepare the left hand side and get the data type.
-		if ( propertyType!=null && propertyType.isCollectionType() ) {
-			resolveIndex(null);
+		Type propertyType = prepareLhs();            // Prepare the left hand side and get the data type.
+		if ( propertyType != null && propertyType.isCollectionType() ) {
+			resolveIndex( null );
 		}
 		else {
 			resolveFirstChild();
-			super.resolve(generateJoin, implicitJoin);
+			super.resolve( generateJoin, implicitJoin );
 		}
 	}
 
@@ -199,12 +206,12 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		if ( isResolved() ) {
 			return;
 		}
-		Type propertyType = prepareLhs();			// Prepare the left hand side and get the data type.
-		dereferenceCollection( ( CollectionType ) propertyType, true, true, null, parent );
+		Type propertyType = prepareLhs();            // Prepare the left hand side and get the data type.
+		dereferenceCollection( (CollectionType) propertyType, true, true, null, parent );
 	}
 
 	public void resolve(boolean generateJoin, boolean implicitJoin, String classAlias, AST parent)
-	throws SemanticException {
+			throws SemanticException {
 		// If this dot has already been resolved, stop now.
 		if ( isResolved() ) {
 			return;
@@ -231,20 +238,20 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		else if ( propertyType.isEntityType() ) {
 			// The property is another class..
 			checkLhsIsNotCollection();
-			dereferenceEntity( ( EntityType ) propertyType, implicitJoin, classAlias, generateJoin, parent );
+			dereferenceEntity( (EntityType) propertyType, implicitJoin, classAlias, generateJoin, parent );
 			initText();
 		}
 		else if ( propertyType.isCollectionType() ) {
 			// The property is a collection...
 			checkLhsIsNotCollection();
-			dereferenceCollection( ( CollectionType ) propertyType, implicitJoin, false, classAlias, parent );
+			dereferenceCollection( (CollectionType) propertyType, implicitJoin, false, classAlias, parent );
 		}
 		else {
 			// Otherwise, this is a primitive type.
-			if ( ! CollectionProperties.isAnyCollectionProperty( propertyName ) ) {
+			if ( !CollectionProperties.isAnyCollectionProperty( propertyName ) ) {
 				checkLhsIsNotCollection();
 			}
-			dereferenceType = DEREF_PRIMITIVE;
+			dereferenceType = DereferenceType.PRIMITIVE;
 			initText();
 		}
 		setResolved();
@@ -253,7 +260,10 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	private void initText() {
 		String[] cols = getColumns();
 		String text = StringHelper.join( ", ", cols );
-		if ( cols.length > 1 && getWalker().isComparativeExpressionClause() ) {
+		boolean countDistinct = getWalker().isInCountDistinct()
+				&& getWalker().getSessionFactoryHelper().getFactory().getDialect().requiresParensForTupleDistinctCounts();
+		if ( cols.length > 1 &&
+				( getWalker().isComparativeExpressionClause() || countDistinct ) ) {
 			text = "(" + text + ")";
 		}
 		setText( text );
@@ -265,53 +275,77 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		return getDataType();
 	}
 
-	private void dereferenceCollection(CollectionType collectionType, boolean implicitJoin, boolean indexed, String classAlias, AST parent)
-	throws SemanticException {
+	private void dereferenceCollection(
+			CollectionType collectionType,
+			boolean implicitJoin,
+			boolean indexed,
+			String classAlias,
+			AST parent)
+			throws SemanticException {
 
-		dereferenceType = DEREF_COLLECTION;
+		dereferenceType = DereferenceType.COLLECTION;
 		String role = collectionType.getRole();
 
 		//foo.bars.size (also handles deprecated stuff like foo.bars.maxelement for backwardness)
-		boolean isSizeProperty = getNextSibling()!=null &&
-			CollectionProperties.isAnyCollectionProperty( getNextSibling().getText() );
+		boolean isSizeProperty = getNextSibling() != null &&
+				CollectionProperties.isAnyCollectionProperty( getNextSibling().getText() );
 
-		if ( isSizeProperty ) indexed = true; //yuck!
+		if ( isSizeProperty ) {
+			indexed = true; //yuck!
+		}
 
 		QueryableCollection queryableCollection = getSessionFactoryHelper().requireQueryableCollection( role );
 		String propName = getPath();
 		FromClause currentFromClause = getWalker().getCurrentFromClause();
 
-		if ( getWalker().getStatementType() != SqlTokenTypes.SELECT && indexed && classAlias == null ) {
-			// should indicate that we are processing an INSERT/UPDATE/DELETE
-			// query with a subquery implied via a collection property
-			// function. Here, we need to use the table name itself as the
-			// qualification alias.
-			// TODO : verify this works for all databases...
-			// TODO : is this also the case in non-"indexed" scenarios?
-			String alias = getLhs().getFromElement().getQueryable().getTableName();
-			columns = getFromElement().toColumns( alias, propertyPath, false, true );
+		// determine whether we should use the table name or table alias to qualify the column names...
+		// we need to use the table-name when:
+		//		1) the top-level statement is not a SELECT
+		//		2) the LHS FromElement is *the* FromElement from the top-level statement
+		//
+		// there is a caveat here.. if the update/delete statement are "multi-table" we should continue to use
+		// the alias also, even if the FromElement is the root one...
+		//
+		// in all other cases, we should use the table alias
+		final FromElement lhsFromElement = getLhs().getFromElement();
+		if ( getWalker().getStatementType() != SqlTokenTypes.SELECT ) {
+			if ( isFromElementUpdateOrDeleteRoot( lhsFromElement ) ) {
+				// at this point we know we have the 2 conditions above,
+				// lets see if we have the mentioned "multi-table" caveat...
+				boolean useAlias = false;
+				if ( getWalker().getStatementType() != SqlTokenTypes.INSERT ) {
+					final Queryable persister = lhsFromElement.getQueryable();
+					if ( persister.isMultiTable() ) {
+						useAlias = true;
+					}
+				}
+				if ( !useAlias ) {
+					final String lhsTableName = lhsFromElement.getQueryable().getTableName();
+					columns = getFromElement().toColumns( lhsTableName, propertyPath, false, true );
+				}
+			}
 		}
 
-		//We do not look for an existing join on the same path, because
-		//it makes sense to join twice on the same collection role
+		// We do not look for an existing join on the same path, because
+		// it makes sense to join twice on the same collection role
 		FromElementFactory factory = new FromElementFactory(
-		        currentFromClause,
-		        getLhs().getFromElement(),
-		        propName,
+				currentFromClause,
+				getLhs().getFromElement(),
+				propName,
 				classAlias,
-		        getColumns(),
-		        implicitJoin
+				getColumns(),
+				implicitJoin
 		);
 		FromElement elem = factory.createCollection( queryableCollection, role, joinType, fetch, indexed );
 
-        LOG.debugf("dereferenceCollection() : Created new FROM element for %s : %s", propName, elem);
+		LOG.debugf( "dereferenceCollection() : Created new FROM element for %s : %s", propName, elem );
 
 		setImpliedJoin( elem );
-		setFromElement( elem );	// This 'dot' expression now refers to the resulting from element.
+		setFromElement( elem );    // This 'dot' expression now refers to the resulting from element.
 
 		if ( isSizeProperty ) {
-			elem.setText("");
-			elem.setUseWhereFragment(false);
+			elem.setText( "" );
+			elem.setUseWhereFragment( false );
 		}
 
 		if ( !implicitJoin ) {
@@ -320,10 +354,15 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 				getWalker().addQuerySpaces( entityPersister.getQuerySpaces() );
 			}
 		}
-		getWalker().addQuerySpaces( queryableCollection.getCollectionSpaces() );	// Always add the collection's query spaces.
+		getWalker().addQuerySpaces( queryableCollection.getCollectionSpaces() );    // Always add the collection's query spaces.
 	}
 
-	private void dereferenceEntity(EntityType entityType, boolean implicitJoin, String classAlias, boolean generateJoin, AST parent) throws SemanticException {
+	private void dereferenceEntity(
+			EntityType entityType,
+			boolean implicitJoin,
+			String classAlias,
+			boolean generateJoin,
+			AST parent) throws SemanticException {
 		checkForCorrelatedSubquery( "dereferenceEntity" );
 		// three general cases we check here as to whether to render a physical SQL join:
 		// 1) is our parent a DotNode as well?  If so, our property reference is
@@ -331,9 +370,9 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		// 2) is this a DML statement
 		// 3) we were asked to generate any needed joins (generateJoins==true) *OR*
 		//		we are currently processing a select or from clause
-		// (an additional check is the REGRESSION_STYLE_JOIN_SUPPRESSION check solely intended for the test suite)
+		// (an additional check is the regressionStyleJoinSuppression check solely intended for the test suite)
 		//
-		// The REGRESSION_STYLE_JOIN_SUPPRESSION is an additional check
+		// The regressionStyleJoinSuppression is an additional check
 		// intended solely for use within the test suite.  This forces the
 		// implicit join resolution to behave more like the classic parser.
 		// The underlying issue is that classic translator is simply wrong
@@ -353,15 +392,15 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			// our parent is another dot node, meaning we are being further dereferenced.
 			// thus we need to generate a join unless the parent refers to the associated
 			// entity's PK (because 'our' table would know the FK).
-			parentAsDotNode = ( DotNode ) parent;
+			parentAsDotNode = (DotNode) parent;
 			property = parentAsDotNode.propertyName;
 			joinIsNeeded = generateJoin && !isReferenceToPrimaryKey( parentAsDotNode.propertyName, entityType );
 		}
-		else if ( ! getWalker().isSelectStatement() ) {
+		else if ( !getWalker().isSelectStatement() ) {
 			// in non-select queries, the only time we should need to join is if we are in a subquery from clause
 			joinIsNeeded = getWalker().getCurrentStatementType() == SqlTokenTypes.SELECT && getWalker().isInFrom();
 		}
-		else if ( REGRESSION_STYLE_JOIN_SUPPRESSION ) {
+		else if ( regressionStyleJoinSuppression ) {
 			// this is the regression style determination which matches the logic of the classic translator
 			joinIsNeeded = generateJoin && ( !getWalker().isInSelect() || !getWalker().isShallowQuery() );
 		}
@@ -383,13 +422,17 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	}
 
 	private void dereferenceEntityJoin(String classAlias, EntityType propertyType, boolean impliedJoin, AST parent)
-	throws SemanticException {
-		dereferenceType = DEREF_ENTITY;
-        if (LOG.isDebugEnabled()) LOG.debugf("dereferenceEntityJoin() : generating join for %s in %s (%s) parent = %s",
-                                             propertyName,
-                                             getFromElement().getClassName(),
-                                             classAlias == null ? "<no alias>" : classAlias,
-                                             ASTUtil.getDebugString(parent));
+			throws SemanticException {
+		dereferenceType = DereferenceType.ENTITY;
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf(
+					"dereferenceEntityJoin() : generating join for %s in %s (%s) parent = %s",
+					propertyName,
+					getFromElement().getClassName(),
+					classAlias == null ? "<no alias>" : classAlias,
+					ASTUtil.getDebugString( parent )
+			);
+		}
 		// Create a new FROM node for the referenced class.
 		String associatedEntityName = propertyType.getAssociatedEntityName();
 		String tableAlias = getAliasGenerator().createName( associatedEntityName );
@@ -437,25 +480,27 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		// always (?) ok to reuse.
 		boolean useFoundFromElement = found && ( elem.isImplied() || areSame( classAlias, elem.getClassAlias() ) );
 
-		if ( ! useFoundFromElement ) {
+		if ( !useFoundFromElement ) {
 			// If this is an implied join in a from element, then use the impled join type which is part of the
 			// tree parser's state (set by the gramamar actions).
 			JoinSequence joinSequence = getSessionFactoryHelper()
-				.createJoinSequence( impliedJoin, propertyType, tableAlias, joinType, joinColumns );
+					.createJoinSequence( impliedJoin, propertyType, tableAlias, joinType, joinColumns );
 
 			// If the lhs of the join is a "component join", we need to go back to the
 			// first non-component-join as the origin to properly link aliases and
 			// join columns
 			FromElement lhsFromElement = getLhs().getFromElement();
-			while ( lhsFromElement != null &&  ComponentJoin.class.isInstance( lhsFromElement ) ) {
+			while ( lhsFromElement != null && ComponentJoin.class.isInstance( lhsFromElement ) ) {
 				lhsFromElement = lhsFromElement.getOrigin();
 			}
 			if ( lhsFromElement == null ) {
 				throw new QueryException( "Unable to locate appropriate lhs" );
 			}
 
+			String role = lhsFromElement.getClassName() + "." + propertyName;
+
 			FromElementFactory factory = new FromElementFactory(
-			        currentFromClause,
+					currentFromClause,
 					lhsFromElement,
 					joinPath,
 					classAlias,
@@ -468,7 +513,9 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 					joinSequence,
 					fetch,
 					getWalker().isInFrom(),
-					propertyType
+					propertyType,
+					role,
+					joinPath
 			);
 		}
 		else {
@@ -477,7 +524,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		}
 		setImpliedJoin( elem );
 		getWalker().addQuerySpaces( elem.getEntityPersister().getQuerySpaces() );
-		setFromElement( elem );	// This 'dot' expression now refers to the resulting from element.
+		setFromElement( elem );    // This 'dot' expression now refers to the resulting from element.
 	}
 
 	private boolean areSame(String alias1, String alias2) {
@@ -488,7 +535,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	private void setImpliedJoin(FromElement elem) {
 		this.impliedJoin = elem;
 		if ( getFirstChild().getType() == SqlTokenTypes.DOT ) {
-			DotNode dotLhs = ( DotNode ) getFirstChild();
+			DotNode dotLhs = (DotNode) getFirstChild();
 			if ( dotLhs.getImpliedJoin() != null ) {
 				this.impliedJoin = dotLhs.getImpliedJoin();
 			}
@@ -496,7 +543,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	}
 
 	@Override
-    public FromElement getImpliedJoin() {
+	public FromElement getImpliedJoin() {
 		return impliedJoin;
 	}
 
@@ -513,8 +560,9 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	 *
 	 * @param propertyName The name of the property to check.
 	 * @param owningType The type represeting the entity "owning" the property
+	 *
 	 * @return True if propertyName references the entity's (owningType->associatedEntity)
-	 * primary key; false otherwise.
+	 *         primary key; false otherwise.
 	 */
 	private boolean isReferenceToPrimaryKey(String propertyName, EntityType owningType) {
 		EntityPersister persister = getSessionFactoryHelper()
@@ -524,22 +572,26 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			// only the identifier property field name can be a reference to the associated entity's PK...
 			return propertyName.equals( persister.getIdentifierPropertyName() ) && owningType.isReferenceToPrimaryKey();
 		}
-        // here, we have two possibilities:
-        // 1) the property-name matches the explicitly identifier property name
-        // 2) the property-name matches the implicit 'id' property name
-        // the referenced node text is the special 'id'
-        if (EntityPersister.ENTITY_ID.equals(propertyName)) return owningType.isReferenceToPrimaryKey();
-        String keyPropertyName = getSessionFactoryHelper().getIdentifierOrUniqueKeyPropertyName(owningType);
-        return keyPropertyName != null && keyPropertyName.equals(propertyName) && owningType.isReferenceToPrimaryKey();
+		// here, we have two possibilities:
+		// 1) the property-name matches the explicitly identifier property name
+		// 2) the property-name matches the implicit 'id' property name
+		// the referenced node text is the special 'id'
+		if ( EntityPersister.ENTITY_ID.equals( propertyName ) ) {
+			return owningType.isReferenceToPrimaryKey();
+		}
+		String keyPropertyName = getSessionFactoryHelper().getIdentifierOrUniqueKeyPropertyName( owningType );
+		return keyPropertyName != null && keyPropertyName.equals( propertyName ) && owningType.isReferenceToPrimaryKey();
 	}
 
 	private void checkForCorrelatedSubquery(String methodName) {
-        if (isCorrelatedSubselect()) LOG.debugf("%s() : correlated subquery", methodName);
+		if ( isCorrelatedSubselect() ) {
+			LOG.debugf( "%s() : correlated subquery", methodName );
+		}
 	}
 
 	private boolean isCorrelatedSubselect() {
 		return getWalker().isSubQuery() &&
-			getFromElement().getFromClause() != getWalker().getCurrentFromClause();
+				getFromElement().getFromClause() != getWalker().getCurrentFromClause();
 	}
 
 	private void checkLhsIsNotCollection() throws SemanticException {
@@ -547,23 +599,28 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			throw ILLEGAL_COLL_DEREF_EXCP_BUILDER.buildIllegalCollectionDereferenceException( propertyName, getLhs() );
 		}
 	}
+
 	private void dereferenceComponent(AST parent) {
-		dereferenceType = DEREF_COMPONENT;
+		dereferenceType = DereferenceType.COMPONENT;
 		setPropertyNameAndPath( parent );
 	}
 
 	private void dereferenceEntityIdentifier(String propertyName, DotNode dotParent) {
 		// special shortcut for id properties, skip the join!
 		// this must only occur at the _end_ of a path expression
-        LOG.debugf("dereferenceShortcut() : property %s in %s does not require a join.",
-                   propertyName,
-                   getFromElement().getClassName());
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf(
+					"dereferenceShortcut() : property %s in %s does not require a join.",
+					propertyName,
+					getFromElement().getClassName()
+			);
+		}
 
 		initText();
 		setPropertyNameAndPath( dotParent ); // Set the unresolved path in this node and the parent.
 		// Set the text for the parent.
 		if ( dotParent != null ) {
-			dotParent.dereferenceType = DEREF_IDENTIFIER;
+			dotParent.dereferenceType = DereferenceType.IDENTIFIER;
 			dotParent.setText( getText() );
 			dotParent.columns = getColumns();
 		}
@@ -571,24 +628,29 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 
 	private void setPropertyNameAndPath(AST parent) {
 		if ( isDotNode( parent ) ) {
-			DotNode dotNode = ( DotNode ) parent;
+			DotNode dotNode = (DotNode) parent;
 			AST lhs = dotNode.getFirstChild();
 			AST rhs = lhs.getNextSibling();
 			propertyName = rhs.getText();
 			propertyPath = propertyPath + "." + propertyName; // Append the new property name onto the unresolved path.
 			dotNode.propertyPath = propertyPath;
-            LOG.debugf("Unresolved property path is now '%s'", dotNode.propertyPath);
-        } else LOG.debugf("Terminal propertyPath = [%s]", propertyPath);
+			LOG.debugf( "Unresolved property path is now '%s'", dotNode.propertyPath );
+		}
+		else {
+			LOG.debugf( "Terminal getPropertyPath = [%s]", propertyPath );
+		}
 	}
 
 	@Override
-    public Type getDataType() {
+	public Type getDataType() {
 		if ( super.getDataType() == null ) {
 			FromElement fromElement = getLhs().getFromElement();
-            if (fromElement == null) return null;
+			if ( fromElement == null ) {
+				return null;
+			}
 			// If the lhs is a collection, use CollectionPropertyMapping
 			Type propertyType = fromElement.getPropertyType( propertyName, propertyPath );
-            LOG.debugf("getDataType() : %s -> %s", propertyPath, propertyType);
+			LOG.debugf( "getDataType() : %s -> %s", propertyPath, propertyType );
 			super.setDataType( propertyType );
 		}
 		return super.getDataType();
@@ -603,7 +665,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	}
 
 	public FromReferenceNode getLhs() {
-		FromReferenceNode lhs = ( ( FromReferenceNode ) getFirstChild() );
+		FromReferenceNode lhs = ( (FromReferenceNode) getFirstChild() );
 		if ( lhs == null ) {
 			throw new IllegalStateException( "DOT node with no left-hand-side!" );
 		}
@@ -616,14 +678,14 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	 * @return the full path of the node.
 	 */
 	@Override
-    public String getPath() {
+	public String getPath() {
 		if ( path == null ) {
 			FromReferenceNode lhs = getLhs();
 			if ( lhs == null ) {
 				path = getText();
 			}
 			else {
-				SqlNode rhs = ( SqlNode ) lhs.getNextSibling();
+				SqlNode rhs = (SqlNode) lhs.getNextSibling();
 				path = lhs.getPath() + "." + rhs.getOriginalText();
 			}
 		}
@@ -646,16 +708,16 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	 */
 	public void resolveSelectExpression() throws SemanticException {
 		if ( getWalker().isShallowQuery() || getWalker().getCurrentFromClause().isSubQuery() ) {
-			resolve(false, true);
+			resolve( false, true );
 		}
 		else {
-			resolve(true, false);
+			resolve( true, false );
 			Type type = getDataType();
 			if ( type.isEntityType() ) {
 				FromElement fromElement = getFromElement();
 				fromElement.setIncludeSubclasses( true ); // Tell the destination fromElement to 'includeSubclasses'.
 				if ( useThetaStyleImplicitJoins ) {
-					fromElement.getJoinSequence().setUseThetaStyle( true );	// Use theta style (for regression)
+					fromElement.getJoinSequence().setUseThetaStyle( true );    // Use theta style (for regression)
 					// Move the node up, after the origin node.
 					FromElement origin = fromElement.getOrigin();
 					if ( origin != null ) {
@@ -668,13 +730,13 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		FromReferenceNode lhs = getLhs();
 		while ( lhs != null ) {
 			checkSubclassOrSuperclassPropertyReference( lhs, lhs.getNextSibling().getText() );
-			lhs = ( FromReferenceNode ) lhs.getFirstChild();
+			lhs = (FromReferenceNode) lhs.getFirstChild();
 		}
 	}
 
 	public void setResolvedConstant(String text) {
 		path = text;
-		dereferenceType = DEREF_JAVA_CONSTANT;
+		dereferenceType = DereferenceType.JAVA_CONSTANT;
 		setResolved(); // Don't resolve the node again.
 	}
 

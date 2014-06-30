@@ -23,12 +23,14 @@
  *
  */
 package org.hibernate.persister.collection;
+
 import java.io.Serializable;
+
 import org.hibernate.FlushMode;
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.AbstractQueryImpl;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.loader.collection.CollectionInitializer;
 
 import org.jboss.logging.Logger;

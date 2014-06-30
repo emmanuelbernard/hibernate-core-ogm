@@ -23,24 +23,31 @@
  *
  */
 package org.hibernate.tuple.component;
+
 import java.io.Serializable;
 import java.lang.reflect.Method;
+
 import org.hibernate.AssertionFailure;
+import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.bytecode.spi.BasicProxyFactory;
 import org.hibernate.bytecode.spi.ReflectionOptimizer;
 import org.hibernate.cfg.Environment;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.mapping.Component;
-import org.hibernate.mapping.Property;
+import org.hibernate.metamodel.spi.binding.AttributeBinding;
+import org.hibernate.metamodel.spi.binding.EmbeddableBinding;
+import org.hibernate.metamodel.spi.binding.EntityIdentifier;
 import org.hibernate.property.BackrefPropertyAccessor;
 import org.hibernate.property.Getter;
 import org.hibernate.property.PropertyAccessor;
 import org.hibernate.property.PropertyAccessorFactory;
 import org.hibernate.property.Setter;
+import org.hibernate.service.ServiceRegistry;
 import org.hibernate.tuple.Instantiator;
 import org.hibernate.tuple.PojoInstantiator;
-import org.hibernate.internal.util.ReflectHelper;
 
 /**
  * A {@link ComponentTuplizer} specific to the pojo entity mode.
@@ -54,21 +61,41 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 	private final Getter parentGetter;
 	private final Setter parentSetter;
 
-	public PojoComponentTuplizer(Component component) {
-		super( component );
+	public PojoComponentTuplizer(
+			ServiceRegistry serviceRegistry,
+			EmbeddableBinding component,
+			boolean isIdentifierMapper) {
+		super( serviceRegistry, component, isIdentifierMapper );
 
-		this.componentClass = component.getComponentClass();
-
-		String[] getterNames = new String[propertySpan];
-		String[] setterNames = new String[propertySpan];
-		Class[] propTypes = new Class[propertySpan];
-		for ( int i = 0; i < propertySpan; i++ ) {
-			getterNames[i] = getters[i].getMethodName();
-			setterNames[i] = setters[i].getMethodName();
-			propTypes[i] = getters[i].getReturnType();
+		final ClassLoaderService cls = serviceRegistry.getService( ClassLoaderService.class );
+		if ( isIdentifierMapper ) {
+			final EntityIdentifier idInfo = component.seekEntityBinding()
+					.getHierarchyDetails()
+					.getEntityIdentifier();
+			final EntityIdentifier.NonAggregatedCompositeIdentifierBinding idBinding =
+					(EntityIdentifier.NonAggregatedCompositeIdentifierBinding) idInfo.getEntityIdentifierBinding();
+			final EntityIdentifier.IdClassMetadata idClassMetadata = idBinding.getIdClassMetadata();
+			this.componentClass = cls.classForName(
+					idClassMetadata.getIdClassType().getName().toString()
+			);
+		}
+		else {
+			this.componentClass = cls.classForName(
+					component.getAttributeContainer().getDescriptor().getName().toString()
+			);
 		}
 
-		final String parentPropertyName = component.getParentProperty();
+		String[] getterNames = new String[ propertySpan() ];
+		String[] setterNames = new String[ propertySpan() ];
+		Class[] propTypes = new Class[ propertySpan() ];
+		for ( int i = 0; i < propertySpan(); i++ ) {
+			getterNames[i] = getters()[i].getMethodName();
+			setterNames[i] = setters()[i].getMethodName();
+			propTypes[i] = getters()[i].getReturnType();
+		}
+
+		final String parentPropertyName =
+				component.getParentReference() == null ? null : component.getParentReference().getName();
 		if ( parentPropertyName == null ) {
 			parentSetter = null;
 			parentGetter = null;
@@ -79,7 +106,7 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 			parentGetter = pa.getGetter( componentClass, parentPropertyName );
 		}
 
-		if ( hasCustomAccessors || !Environment.useReflectionOptimizer() ) {
+		if ( hasCustomAccessors() || !Environment.useReflectionOptimizer() ) {
 			optimizer = null;
 		}
 		else {
@@ -97,9 +124,9 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 
 	public Object[] getPropertyValues(Object component) throws HibernateException {
 		if ( component == BackrefPropertyAccessor.UNKNOWN ) {
-			return new Object[propertySpan];
+			return new Object[propertySpan()];
 		}
-		if ( optimizer != null && optimizer.getAccessOptimizer() != null ) {
+		else if ( optimizer != null && optimizer.getAccessOptimizer() != null ) {
 			return optimizer.getAccessOptimizer().getPropertyValues( component );
 		}
 		else {
@@ -125,8 +152,8 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 	}
 
 	public boolean isMethodOf(Method method) {
-		for ( int i = 0; i < propertySpan; i++ ) {
-			final Method getterMethod = getters[i].getMethod();
+		for ( int i = 0; i < propertySpan(); i++ ) {
+			final Method getterMethod = getters()[i].getMethod();
 			if ( getterMethod != null && getterMethod.equals( method ) ) {
 				return true;
 			}
@@ -138,24 +165,129 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 		parentSetter.set( component, parent, factory );
 	}
 
-	protected Instantiator buildInstantiator(Component component) {
-		if ( component.isEmbedded() && ReflectHelper.isAbstractClass( component.getComponentClass() ) ) {
-			return new ProxiedInstantiator( component );
+	@Override
+	protected Instantiator buildInstantiator(
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper) {
+		final Class clazz = classForName(
+				embeddableBinding.getAttributeContainer().getDescriptor().getName().toString()
+		);
+
+		if ( !embeddableBinding.isAggregated() && ReflectHelper.isAbstractClass( clazz ) ) {
+			return new ProxiedInstantiator( clazz );
 		}
+
 		if ( optimizer == null ) {
-			return new PojoInstantiator( component, null );
+			return new PojoInstantiator(
+					serviceRegistry(),
+					embeddableBinding,
+					isIdentifierMapper,
+					null
+			);
 		}
 		else {
-			return new PojoInstantiator( component, optimizer.getInstantiationOptimizer() );
+			return new PojoInstantiator(
+					serviceRegistry(),
+					embeddableBinding,
+					isIdentifierMapper,
+					optimizer.getInstantiationOptimizer()
+			);
 		}
 	}
 
-	protected Getter buildGetter(Component component, Property prop) {
-		return prop.getGetter( component.getComponentClass() );
+	@Override
+	protected Getter buildGetter(
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper,
+			AttributeBinding attributeBinding) {
+		// TODO: when compositeAttributeBinding is wrapped for an identifier mapper
+		//       there will be no need for PropertyFactory.getIdentifierMapperGetter()
+		//       and PropertyFactory.getIdentifierMapperSetter
+
+		// this.componentClass is not set yet because of ctor calls - yucky bad design
+
+		if ( isIdentifierMapper ) {
+			// (steve w/ metamodel) : utterly confused here.  What exactly is the
+			//		thing we are trying to accomplish here?  it *seems* like we
+			// 		are trying to build a getter for the id class (isIdentifierMapper == true),
+			// 		so why do we pass in the composite representing	the virtual,
+			// 		non-aggregated id?  why not just pass in the IdClass composite?
+			// 		so confusing :)
+
+			final EntityIdentifier idInfo = embeddableBinding.seekEntityBinding()
+					.getHierarchyDetails()
+					.getEntityIdentifier();
+			final EntityIdentifier.NonAggregatedCompositeIdentifierBinding idBinding =
+					(EntityIdentifier.NonAggregatedCompositeIdentifierBinding) idInfo.getEntityIdentifierBinding();
+			final EntityIdentifier.IdClassMetadata idClassMetadata = idBinding.getIdClassMetadata();
+
+			final Class componentClass = classForName(
+					idClassMetadata.getIdClassType().getName().toString()
+			);
+			return getGetter(
+					componentClass,
+					attributeBinding.getAttribute().getName(),
+					PropertyAccessorFactory.getPropertyAccessor(
+							idClassMetadata.getAccessStrategy( attributeBinding.getAttribute().getName() )
+					)
+			);
+		}
+		else {
+			final Class clazz = classForName(
+					embeddableBinding.getAttributeContainer().getDescriptor().getName().toString()
+			);
+			return getGetter(
+					clazz,
+					attributeBinding.getAttribute().getName(),
+					PropertyAccessorFactory.getPropertyAccessor( attributeBinding, EntityMode.POJO )
+			);
+		}
 	}
 
-	protected Setter buildSetter(Component component, Property prop) {
-		return prop.getSetter( component.getComponentClass() );
+	@Override
+	protected Setter buildSetter(
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper,
+			AttributeBinding attributeBinding) {
+		if ( isIdentifierMapper ) {
+			// see discussion about confusing in #buildGetter
+
+			final EntityIdentifier idInfo = embeddableBinding.seekEntityBinding()
+					.getHierarchyDetails()
+					.getEntityIdentifier();
+			final EntityIdentifier.NonAggregatedCompositeIdentifierBinding idBinding =
+					(EntityIdentifier.NonAggregatedCompositeIdentifierBinding) idInfo.getEntityIdentifierBinding();
+			final EntityIdentifier.IdClassMetadata idClassMetadata = idBinding.getIdClassMetadata();
+
+			final Class componentClass = classForName(
+					idClassMetadata.getIdClassType().getName().toString()
+			);
+			return getSetter(
+					componentClass,
+					attributeBinding.getAttribute().getName(),
+					PropertyAccessorFactory.getPropertyAccessor(
+							idClassMetadata.getAccessStrategy( attributeBinding.getAttribute().getName() )
+					)
+			);
+		}
+		else {
+			final Class clazz = classForName(
+					embeddableBinding.getAttributeContainer().getDescriptor().getName().toString()
+			);
+			return getSetter(
+					clazz,
+					attributeBinding.getAttribute().getName(),
+					PropertyAccessorFactory.getPropertyAccessor( attributeBinding, EntityMode.POJO )
+			);
+		}
+	}
+
+	private Getter getGetter(Class clazz, String name, PropertyAccessor propertyAccessor) {
+		return propertyAccessor.getGetter( clazz, name );
+	}
+
+	private Setter getSetter(Class clazz, String name, PropertyAccessor propertyAccessor) {
+		return propertyAccessor.getSetter(clazz, name);
 	}
 
 	private static class ProxiedInstantiator implements Instantiator {
@@ -163,7 +295,11 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 		private final BasicProxyFactory factory;
 
 		public ProxiedInstantiator(Component component) {
-			proxiedClass = component.getComponentClass();
+			this( component.getComponentClass() );
+		}
+
+		private ProxiedInstantiator(Class<?> proxiedClass) {
+			this.proxiedClass = proxiedClass;
 			if ( proxiedClass.isInterface() ) {
 				factory = Environment.getBytecodeProvider()
 						.getProxyFactoryFactory()
@@ -175,6 +311,7 @@ public class PojoComponentTuplizer extends AbstractComponentTuplizer {
 						.buildBasicProxyFactory( proxiedClass, null );
 			}
 		}
+
 
 		public Object instantiate(Serializable id) {
 			throw new AssertionFailure( "ProxiedInstantiator can only be used to instantiate component" );

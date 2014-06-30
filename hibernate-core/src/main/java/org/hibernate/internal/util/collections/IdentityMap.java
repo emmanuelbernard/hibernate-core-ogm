@@ -25,13 +25,10 @@
 package org.hibernate.internal.util.collections;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -40,22 +37,10 @@ import java.util.Set;
  * rather than <tt>equals()</tt>.
  */
 public final class IdentityMap<K,V> implements Map<K,V> {
-
 	private final Map<IdentityKey<K>,V> map;
 	@SuppressWarnings( {"unchecked"})
 	private transient Entry<IdentityKey<K>,V>[] entryArray = new Entry[0];
-	private transient boolean dirty = false;
-
-	/**
-	 * Return a new instance of this class, with an undefined
-	 * iteration order.
-	 *
-	 * @param size The size of the map
-	 * @return Map
-	 */
-	public static <K,V> IdentityMap<K,V> instantiate(int size) {
-		return new IdentityMap<K,V>( new HashMap<IdentityKey<K>,V>( size ) );
-	}
+	private transient boolean dirty;
 
 	/**
 	 * Return a new instance of this class, with iteration
@@ -86,87 +71,28 @@ public final class IdentityMap<K,V> implements Map<K,V> {
 	 * @param map The map of entries
 	 * @return Collection
 	 */
-	public static Map.Entry[] concurrentEntries(Map map) {
-		return ( (IdentityMap) map ).entryArray();
+	public static <K,V> Map.Entry<K,V>[] concurrentEntries(Map<K,V> map) {
+		return ( (IdentityMap<K,V>) map ).entryArray();
 	}
 
-	public static List entries(Map map) {
-		return ( (IdentityMap) map ).entryList();
+	public Iterator<K> keyIterator() {
+		return new KeyIterator<K>( map.keySet().iterator() );
 	}
 
-	public static Iterator keyIterator(Map map) {
-		return ( (IdentityMap) map ).keyIterator();
-	}
-
-	public Iterator keyIterator() {
-		return new KeyIterator( map.keySet().iterator() );
-	}
-
-	public static final class IdentityMapEntry<K,V> implements java.util.Map.Entry<K,V> {
-		private K key;
-		private V value;
-
-		IdentityMapEntry(K key, V value) {
-			this.key=key;
-			this.value=value;
-		}
-
-		public K getKey() {
-			return key;
-		}
-
-		public V getValue() {
-			return value;
-		}
-
-		public V setValue(V value) {
-			V result = this.value;
-			this.value = value;
-			return result;
-		}
-	}
-
-	public static final class IdentityKey<K> implements Serializable {
-		private K key;
-
-		IdentityKey(K key) {
-			this.key=key;
-		}
-
-		@SuppressWarnings( {"EqualsWhichDoesntCheckParameterClass"})
-		@Override
-        public boolean equals(Object other) {
-			return key == ( (IdentityKey) other ).key;
-		}
-
-		@Override
-        public int hashCode() {
-			return System.identityHashCode(key);
-		}
-
-		@Override
-        public String toString() {
-			return key.toString();
-		}
-
-		public K getRealKey() {
-			return key;
-		}
-	}
-
+	@Override
 	public int size() {
 		return map.size();
 	}
 
+	@Override
 	public boolean isEmpty() {
 		return map.isEmpty();
 	}
 
 	@Override
-	@SuppressWarnings( {"unchecked"})
+	@SuppressWarnings({ "unchecked" })
 	public boolean containsKey(Object key) {
-		IdentityKey k = new IdentityKey(key);
-		return map.containsKey(k);
+		return map.containsKey( new IdentityKey( key ) );
 	}
 
 	@Override
@@ -227,14 +153,6 @@ public final class IdentityMap<K,V> implements Map<K,V> {
 		return set;
 	}
 
-	public List<Entry<K,V>> entryList() {
-		ArrayList<Entry<K,V>> list = new ArrayList<Entry<K,V>>( map.size() );
-		for ( Entry<IdentityKey<K>, V> entry : map.entrySet() ) {
-			list.add( new IdentityMapEntry<K,V>( entry.getKey().getRealKey(), entry.getValue() ) );
-		}
-		return list;
-	}
-
 	@SuppressWarnings( {"unchecked"})
 	public Map.Entry[] entryArray() {
 		if (dirty) {
@@ -250,40 +168,9 @@ public final class IdentityMap<K,V> implements Map<K,V> {
 		return entryArray;
 	}
 
-	/**
-	 * Workaround for a JDK 1.4.1 bug where <tt>IdentityHashMap</tt>s are not
-	 * correctly deserialized.
-	 *
-	 * @param map The map to serialize
-	 * @return Object
-	 */
-	public static Object serialize(Map map) {
-		return ( (IdentityMap) map ).map;
-	}
-
-	/**
-	 * Workaround for a JDK 1.4.1 bug where <tt>IdentityHashMap</tt>s are not
-	 * correctly deserialized.
-	 *
-	 * @param o the serialized map data
-	 * @return The deserialized map
-	 */
-	@SuppressWarnings( {"unchecked"})
-	public static <K,V> Map<K,V> deserialize(Object o) {
-		return new IdentityMap<K,V>( (Map<IdentityKey<K>,V>) o );
-	}
-	
 	@Override
     public String toString() {
 		return map.toString();
-	}
-
-	public static <K,V> IdentityMap<V,K> invert(IdentityMap<K,V> map) {
-		IdentityMap<V,K> result = instantiate( map.size() );
-		for ( Entry<K, V> entry : map.entrySet() ) {
-			result.put( entry.getValue(), entry.getKey() );
-		}
-		return result;
 	}
 
 	static final class KeyIterator<K> implements Iterator<K> {
@@ -305,6 +192,78 @@ public final class IdentityMap<K,V> implements Map<K,V> {
 			throw new UnsupportedOperationException();
 		}
 
+	}
+		public static final class IdentityMapEntry<K,V> implements java.util.Map.Entry<K,V> {
+		private final K key;
+		private V value;
+
+		IdentityMapEntry(final K key, final V value) {
+			this.key=key;
+			this.value=value;
+		}
+
+		public K getKey() {
+			return key;
+		}
+
+		public V getValue() {
+			return value;
+		}
+
+		public V setValue(final V value) {
+			V result = this.value;
+			this.value = value;
+			return result;
+		}
+	}
+
+	/**
+	 * We need to base the identity on {@link System#identityHashCode(Object)} but
+	 * attempt to lazily initialize and cache this value: being a native invocation
+	 * it is an expensive value to retrieve.
+	 */
+	public static final class IdentityKey<K> implements Serializable {
+
+		private final K key;
+		private int hash;
+
+		IdentityKey(K key) {
+			this.key = key;
+		}
+
+		@SuppressWarnings( {"EqualsWhichDoesntCheckParameterClass"})
+		@Override
+		public boolean equals(Object other) {
+			return key == ( (IdentityKey) other ).key;
+		}
+
+		@Override
+		public int hashCode() {
+			if ( this.hash == 0 ) {
+				//We consider "zero" as non-initialized value
+				final int newHash = System.identityHashCode( key );
+				if ( newHash == 0 ) {
+					//So make sure we don't store zeros as it would trigger initialization again:
+					//any value is fine as long as we're deterministic.
+					this.hash = -1;
+					return -1;
+				}
+				else {
+					this.hash = newHash;
+					return newHash;
+				}
+			}
+			return hash;
+		}
+
+		@Override
+		public String toString() {
+			return key.toString();
+		}
+
+		public K getRealKey() {
+			return key;
+		}
 	}
 
 }

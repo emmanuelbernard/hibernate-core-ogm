@@ -25,6 +25,7 @@ package org.hibernate.cache.spi;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
@@ -54,7 +55,7 @@ public class QueryKey implements Serializable {
 	private final String tenantIdentifier;
 	private final Set filterKeys;
 
-	// the user provided resulttransformer, not the one used with "select new". Here to avoid mangling
+	// the explicit user-provided result transformer, not the one used with "select new". Here to avoid mangling
 	// transformed/non-transformed results.
 	private final CacheableResultTransformer customTransformer;
 
@@ -71,8 +72,7 @@ public class QueryKey implements Serializable {
 	 * @param queryParameters The query parameters
 	 * @param filterKeys The keys of any enabled filters.
 	 * @param session The current session.
-	 * @param customTransformer The result transformer; should be
-	 *            null if data is not transformed before being cached.
+	 * @param customTransformer The result transformer; should be null if data is not transformed before being cached.
 	 *
 	 * @return The generate query cache key.
 	 */
@@ -174,8 +174,23 @@ public class QueryKey implements Serializable {
 		this.hashCode = generateHashCode();
 	}
 
+	/**
+	 * Provides access to the explicitly user-provided result transformer.
+	 *
+	 * @return The result transformer.
+	 */
 	public CacheableResultTransformer getResultTransformer() {
 		return customTransformer;
+	}
+
+	/**
+	 * Provide (unmodifiable) access to the named parameters that are part of this query.
+	 *
+	 * @return The (unmodifiable) map of named parameters
+	 */
+	@SuppressWarnings("unchecked")
+	public Map getNamedParameters() {
+		return Collections.unmodifiableMap( namedParameters );
 	}
 
 	/**
@@ -206,15 +221,13 @@ public class QueryKey implements Serializable {
 		return result;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-    public boolean equals(Object other) {
+	public boolean equals(Object other) {
 		if ( !( other instanceof QueryKey ) ) {
 			return false;
 		}
-		QueryKey that = ( QueryKey ) other;
+
+		final QueryKey that = (QueryKey) other;
 		if ( !sqlQueryString.equals( that.sqlQueryString ) ) {
 			return false;
 		}
@@ -251,20 +264,14 @@ public class QueryKey implements Serializable {
 				&& EqualsHelper.equals( tenantIdentifier, that.tenantIdentifier );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-    public int hashCode() {
+	public int hashCode() {
 		return hashCode;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-    public String toString() {
-		StringBuilder buffer = new StringBuilder( "sql: " ).append( sqlQueryString );
+	public String toString() {
+		final StringBuilder buffer = new StringBuilder( "sql: " ).append( sqlQueryString );
 		if ( positionalParameterValues != null ) {
 			buffer.append( "; parameters: " );
 			for ( Object positionalParameterValue : positionalParameterValues ) {

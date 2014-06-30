@@ -24,6 +24,7 @@
  */
 package org.hibernate.loader.entity;
 import java.io.Serializable;
+
 import org.hibernate.HibernateException;
 import org.hibernate.LockOptions;
 import org.hibernate.engine.spi.SessionImplementor;
@@ -40,8 +41,9 @@ public interface UniqueEntityLoader {
 	 * load the entity state into the given (uninitialized) object.
 	 *
 	 * @deprecated use {@link #load(java.io.Serializable, Object, SessionImplementor, LockOptions)} instead.
-	 * @noinspection JavaDoc
 	 */
+	@SuppressWarnings( {"JavaDoc"})
+	@Deprecated
 	public Object load(Serializable id, Object optionalObject, SessionImplementor session) throws HibernateException;
 
 	/**

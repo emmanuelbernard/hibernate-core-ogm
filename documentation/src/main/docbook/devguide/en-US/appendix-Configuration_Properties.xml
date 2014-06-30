@@ -1,10 +1,57 @@
 <?xml version='1.0' encoding='utf-8' ?>
-<!DOCTYPE appendix PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd" [
-<!ENTITY % BOOK_ENTITIES SYSTEM "Hibernate_Development_Guide.ent">
-%BOOK_ENTITIES;
-]>
-<appendix id="appendix-Configuration_Properties">
-  <title>Configuration properties</title>
+
+<appendix xmlns="http://docbook.org/ns/docbook"
+         xmlns:xlink="http://www.w3.org/1999/xlink">
+
+    <title>Configuration properties</title>
+
+    <section xml:id="config-strategy">
+        <title>Strategy configurations</title>
+        <para>
+            Many configuration settings define pluggable strategies that Hibernate uses for various purposes.
+            The configuration of many of these strategy type settings accept definition in various forms.  The
+            documentation of such configuration settings refer here.  The types of forms available in such cases
+            include:
+        </para>
+        <variablelist>
+            <varlistentry>
+                <term>short name (if defined)</term>
+                <listitem>
+                    <para>
+                        Certain built-in strategy implementations have a corresponding short name.
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>strategy instance</term>
+                <listitem>
+                    <para>
+                        An instance of the strategy implementation to use can be specified
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>strategy Class reference</term>
+                <listitem>
+                    <para>
+                        A <classname>java.lang.Class</classname> reference of the strategy implementation to use can
+                        be specified
+                    </para>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>strategy Class name</term>
+                <listitem>
+                    <para>
+                        The class name (<classname>java.lang.String</classname>) of the strategy implementation to
+                        use can be specified
+                    </para>
+                </listitem>
+            </varlistentry>
+        </variablelist>
+    </section>
+
+
   <section>
     <title>General Configuration</title>
     <informaltable>
@@ -68,16 +115,21 @@
           </row>
           <row>
             <entry>hibernate.default_entity_mode</entry>
-            <entry><para>One of <literal>dynamic-map</literal>, <literal>dom4j</literal>,
-            <literal>pojo</literal></para></entry>
+            <entry><para><literal>dynamic-map</literal> or <literal>pojo</literal></para></entry>
             <entry>Default mode for entity representation for all sessions opened from this
-            <classname>SessionFactory</classname></entry>
+            <classname>SessionFactory</classname>, defaults to <literal>pojo</literal>.</entry>
           </row>
           <row>
             <entry>hibernate.order_updates</entry>
             <entry><para><literal>true</literal> or <literal>false</literal></para></entry>
             <entry>Forces Hibernate to order SQL updates by the primary key value of the items being updated. This
             reduces the likelihood of transaction deadlocks in highly-concurrent systems.</entry>
+          </row>
+          <row>
+            <entry>hibernate.order_by.default_null_ordering</entry>
+            <entry><para><literal>none</literal>, <literal>first</literal> or <literal>last</literal></para></entry>
+            <entry>Defines precedence of null values in <literal>ORDER BY</literal> clause. Defaults to
+            <literal>none</literal> which varies between RDBMS implementation.</entry>
           </row>
           <row>
             <entry>hibernate.generate_statistics</entry>
@@ -210,6 +262,22 @@
             <entry><para><literal>true</literal> or <literal>false</literal></para></entry>
             <entry>Forces Hibernate to store data in the second-level cache in a more human-readable format.</entry>
           </row>
+          <row>
+            <entry>hibernate.cache.auto_evict_collection_cache</entry>
+            <entry><para><literal>true</literal> or <literal>false</literal> (default: false)</para></entry>
+            <entry>Enables the automatic eviction of a bi-directional association's collection cache when an element 
+            in the ManyToOne collection is added/updated/removed without properly managing the change on the OneToMany 
+            side.</entry>
+          </row>
+            <row>
+                <entry>hibernate.cache.use_reference_entries</entry>
+                <entry><para><literal>true</literal> or <literal>false</literal></para></entry>
+                <entry>Optimizes second-level cache operation to store immutable entities  (aka "reference")  which do
+                    not have associations into cache directly, this case, lots of disasseble and deep copy operations
+                can be avoid.
+                    Default value of this property is <literal>false</literal>.
+                </entry>
+            </row>
         </tbody>
       </tgroup>
     </table>
@@ -230,9 +298,16 @@
         <tbody>
           <row>
             <entry>hibernate.transaction.factory_class</entry>
-            <entry>A fully-qualified classname</entry>
-            <entry>The classname of a <classname>TransactionFactory</classname> to use with Hibernate Transaction API. The
-            default is <classname>JDBCTransactionFactory</classname>).</entry>
+            <entry>
+                <para><property>jdbc</property> or <property></property></para>
+            </entry>
+            <entry>
+                <para>
+                    Names the <interfacename>org.hibernate.engine.transaction.spi.TransactionFactory</interfacename>
+                    strategy implementation to use.  See <xref linkend="config-strategy"/> and
+                    <xref linkend="services-TransactionFactory"/>
+                </para>
+            </entry>
           </row>
           <row>
             <entry>jta.UserTransaction</entry>
@@ -305,13 +380,6 @@
             created. With <command>create-drop</command>, the database schema is dropped when the
             <classname>SessionFactory</classname> is closed explicitly.</entry>
           </row>
-          <row>          
-            <entry>cglib.use_reflection_optimizer</entry>
-            <entry><para><literal>true</literal> or <literal>false</literal></para></entry>
-            <entry>If enabled, Hibernate uses CGLIB instead of runtime reflection. This is a system-level
-            property. Reflection is useful for troubleshooting. Hibernate always requires CGLIB even if you disable the
-            optimizer. You cannot set this property in hibernate.cfg.xml.</entry>
-          </row>
         </tbody>
       </tgroup>
     </table>
@@ -359,8 +427,8 @@
     </table>
     <note>
       <para>
-        For information on specific configuration of Proxool, refer to the Proxool documentation available from <ulink
-        url="http://proxool.sourceforge.net/" />.
+        For information on specific configuration of Proxool, refer to the Proxool documentation available from
+          <link xlink:href="http://proxool.sourceforge.net/" />.
       </para>
     </note>
   </section>

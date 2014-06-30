@@ -22,12 +22,14 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.annotations;
-import static java.lang.annotation.ElementType.FIELD;
-import static java.lang.annotation.ElementType.METHOD;
-import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 import javax.persistence.Column;
+
+import static java.lang.annotation.ElementType.FIELD;
+import static java.lang.annotation.ElementType.METHOD;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Support an array of columns. Useful for component user types mappings
@@ -37,5 +39,8 @@ import javax.persistence.Column;
 @Target({METHOD, FIELD})
 @Retention(RUNTIME)
 public @interface Columns {
+	/**
+	 * The aggregated columns.
+	 */
 	Column[] columns();
 }

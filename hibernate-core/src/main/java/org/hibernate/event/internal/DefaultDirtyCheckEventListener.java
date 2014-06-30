@@ -23,12 +23,12 @@
  */
 package org.hibernate.event.internal;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
 import org.hibernate.event.spi.DirtyCheckEvent;
 import org.hibernate.event.spi.DirtyCheckEventListener;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * Defines the default dirty-check event listener used by hibernate for
@@ -39,14 +39,14 @@ import org.hibernate.internal.CoreMessageLogger;
  */
 public class DefaultDirtyCheckEventListener extends AbstractFlushingEventListener implements DirtyCheckEventListener {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class,
-                                                                       DefaultDirtyCheckEventListener.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, DefaultDirtyCheckEventListener.class.getName() );
 
-    /** Handle the given dirty-check event.
-     *
-     * @param event The dirty-check event to be handled.
-     * @throws HibernateException
-     */
+	/**
+	 * Handle the given dirty-check event.
+	 * 
+	 * @param event The dirty-check event to be handled.
+	 * @throws HibernateException
+	 */
 	public void onDirtyCheck(DirtyCheckEvent event) throws HibernateException {
 
 		int oldSize = event.getSession().getActionQueue().numberOfCollectionRemovals();
@@ -54,8 +54,10 @@ public class DefaultDirtyCheckEventListener extends AbstractFlushingEventListene
 		try {
 			flushEverythingToExecutions(event);
 			boolean wasNeeded = event.getSession().getActionQueue().hasAnyQueuedActions();
-            if (wasNeeded) LOG.debugf("Session dirty");
-            else LOG.debugf("Session not dirty");
+			if ( wasNeeded )
+				LOG.debug( "Session dirty" );
+			else
+				LOG.debug( "Session not dirty" );
 			event.setDirty( wasNeeded );
 		}
 		finally {

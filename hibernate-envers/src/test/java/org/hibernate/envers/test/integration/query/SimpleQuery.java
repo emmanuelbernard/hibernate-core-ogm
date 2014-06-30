@@ -23,305 +23,441 @@
  */
 package org.hibernate.envers.test.integration.query;
 
-import org.hibernate.ejb.Ejb3Configuration;
-import org.hibernate.envers.DefaultRevisionEntity;
-import org.hibernate.envers.RevisionType;
-import org.hibernate.envers.query.AuditEntity;
-import org.hibernate.envers.test.AbstractEntityTest;
-import org.hibernate.envers.test.Priority;
-import org.hibernate.envers.test.entities.StrIntTestEntity;
-import org.hibernate.envers.test.tools.TestTools;
-import org.junit.Assert;
-import org.junit.Test;
-
-import javax.persistence.EntityManager;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+
+import javax.persistence.EntityManager;
+
+import org.hibernate.criterion.MatchMode;
+import org.hibernate.envers.RevisionType;
+import org.hibernate.envers.enhanced.SequenceIdRevisionEntity;
+import org.hibernate.envers.query.AuditEntity;
+import org.hibernate.envers.test.BaseEnversJPAFunctionalTestCase;
+import org.hibernate.envers.test.Priority;
+import org.hibernate.envers.test.entities.StrIntTestEntity;
+import org.hibernate.envers.test.entities.ids.EmbId;
+import org.hibernate.envers.test.entities.ids.EmbIdTestEntity;
+import org.hibernate.envers.test.entities.ids.MulId;
+import org.hibernate.envers.test.entities.ids.MulIdTestEntity;
+import org.hibernate.envers.test.tools.TestTools;
+import org.hibernate.testing.FailureExpectedWithNewMetamodel;
+import org.hibernate.testing.TestForIssue;
+import org.junit.Assert;
+import org.junit.Test;
 
 /**
  * @author Adam Warski (adam at warski dot org)
  * @author Lukasz Antoniak (lukasz dot antoniak at gmail dot com)
  */
 @SuppressWarnings({"unchecked"})
-public class SimpleQuery extends AbstractEntityTest {
-    private Integer id1;
-    private Integer id2;
-    private Integer id3;
+public class SimpleQuery extends BaseEnversJPAFunctionalTestCase {
+	private Integer id1;
+	private Integer id2;
+	private Integer id3;
+	private MulId mulId1;
+	private EmbId embId1;
 
-    public void configure(Ejb3Configuration cfg) {
-        cfg.addAnnotatedClass(StrIntTestEntity.class);
-    }
+	@Override
+	protected Class<?>[] getAnnotatedClasses() {
+		return new Class[] { StrIntTestEntity.class, MulIdTestEntity.class, EmbIdTestEntity.class, EmbId.class };
+	}
 
-    @Test
-    @Priority(10)
-    public void initData() {
-        // Revision 1
-        EntityManager em = getEntityManager();
-        em.getTransaction().begin();
+	@Test
+	@Priority(10)
+	public void initData() {
+		// Revision 1
+		EntityManager em = getEntityManager();
+		em.getTransaction().begin();
 
-        StrIntTestEntity site1 = new StrIntTestEntity("a", 10);
-        StrIntTestEntity site2 = new StrIntTestEntity("a", 10);
-        StrIntTestEntity site3 = new StrIntTestEntity("b", 5);
+		StrIntTestEntity site1 = new StrIntTestEntity( "a", 10 );
+		StrIntTestEntity site2 = new StrIntTestEntity( "a", 10 );
+		StrIntTestEntity site3 = new StrIntTestEntity( "b", 5 );
 
-        em.persist(site1);
-        em.persist(site2);
-        em.persist(site3);
+		em.persist( site1 );
+		em.persist( site2 );
+		em.persist( site3 );
 
-        id1 = site1.getId();
-        id2 = site2.getId();
-        id3 = site3.getId();
+		id1 = site1.getId();
+		id2 = site2.getId();
+		id3 = site3.getId();
 
-        em.getTransaction().commit();
+		em.getTransaction().commit();
 
-        // Revision 2
-        em.getTransaction().begin();
+		// Revision 2
+		em.getTransaction().begin();
 
-        site1 = em.find(StrIntTestEntity.class, id1);
-        site2 = em.find(StrIntTestEntity.class, id2);
+		mulId1 = new MulId( 1, 2 );
+		em.persist( new MulIdTestEntity( mulId1.getId1(), mulId1.getId2(), "data" ) );
 
-        site1.setStr1("c");
-        site2.setNumber(20);
+		embId1 = new EmbId( 3, 4 );
+		em.persist( new EmbIdTestEntity( embId1, "something" ) );
 
-        em.getTransaction().commit();
+		site1 = em.find( StrIntTestEntity.class, id1 );
+		site2 = em.find( StrIntTestEntity.class, id2 );
 
-        // Revision 3
-        em.getTransaction().begin();
+		site1.setStr1( "aBc" );
+		site2.setNumber( 20 );
 
-        site3 = em.find(StrIntTestEntity.class, id3);
+		em.getTransaction().commit();
 
-        site3.setStr1("a");
+		// Revision 3
+		em.getTransaction().begin();
 
-        em.getTransaction().commit();
+		site3 = em.find( StrIntTestEntity.class, id3 );
 
-        // Revision 4
-        em.getTransaction().begin();
+		site3.setStr1( "a" );
 
-        site1 = em.find(StrIntTestEntity.class, id1);
+		em.getTransaction().commit();
 
-        em.remove(site1);
+		// Revision 4
+		em.getTransaction().begin();
 
-        em.getTransaction().commit();
-    }
+		site1 = em.find( StrIntTestEntity.class, id1 );
 
-    @Test
-    public void testEntitiesIdQuery() {
-        StrIntTestEntity ver2 = (StrIntTestEntity) getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 2)
-                .add(AuditEntity.id().eq(id2))
-                .getSingleResult();
+		em.remove( site1 );
 
-        assert ver2.equals(new StrIntTestEntity("a", 20, id2));
-    }
+		em.getTransaction().commit();
+	}
 
-    @Test
-    public void testEntitiesPropertyEqualsQuery() {
-        List ver1 = getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 1)
-                .add(AuditEntity.property("str1").eq("a"))
-                .getResultList();
+	@Test
+	public void testEntitiesIdQuery() {
+		StrIntTestEntity ver2 = (StrIntTestEntity) getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 2 )
+				.add( AuditEntity.id().eq( id2 ) )
+				.getSingleResult();
 
-        List ver2 = getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 2)
-                .add(AuditEntity.property("str1").eq("a"))
-                .getResultList();
+		assert ver2.equals( new StrIntTestEntity( "a", 20, id2 ) );
+	}
 
-        List ver3 = getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 3)
-                .add(AuditEntity.property("str1").eq("a"))
-                .getResultList();
+	@Test
+	public void testEntitiesPropertyEqualsQuery() {
+		List ver1 = getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 1 )
+				.add( AuditEntity.property( "str1" ).eq( "a" ) )
+				.getResultList();
 
-        assert new HashSet(ver1).equals(TestTools.makeSet(new StrIntTestEntity("a", 10, id1),
-                new StrIntTestEntity("a", 10, id2)));
-        assert new HashSet(ver2).equals(TestTools.makeSet(new StrIntTestEntity("a", 20, id2)));
-        assert new HashSet(ver3).equals(TestTools.makeSet(new StrIntTestEntity("a", 20, id2),
-                new StrIntTestEntity("a", 5, id3)));
-    }
+		List ver2 = getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 2 )
+				.add( AuditEntity.property( "str1" ).eq( "a" ) )
+				.getResultList();
 
-    @Test
-    public void testEntitiesPropertyLeQuery() {
-        List ver1 = getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 1)
-                .add(AuditEntity.property("number").le(10))
-                .getResultList();
+		List ver3 = getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 3 )
+				.add( AuditEntity.property( "str1" ).eq( "a" ) )
+				.getResultList();
 
-        List ver2 = getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 2)
-                .add(AuditEntity.property("number").le(10))
-                .getResultList();
+		assert new HashSet( ver1 ).equals(
+				TestTools.makeSet(
+						new StrIntTestEntity( "a", 10, id1 ),
+						new StrIntTestEntity( "a", 10, id2 )
+				)
+		);
+		assert new HashSet( ver2 ).equals( TestTools.makeSet( new StrIntTestEntity( "a", 20, id2 ) ) );
+		assert new HashSet( ver3 ).equals(
+				TestTools.makeSet(
+						new StrIntTestEntity( "a", 20, id2 ),
+						new StrIntTestEntity( "a", 5, id3 )
+				)
+		);
+	}
 
-        List ver3 = getAuditReader().createQuery()
-                .forEntitiesAtRevision(StrIntTestEntity.class, 3)
-                .add(AuditEntity.property("number").le(10))
-                .getResultList();
+	@Test
+	public void testEntitiesPropertyLeQuery() {
+		List ver1 = getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 1 )
+				.add( AuditEntity.property( "number" ).le( 10 ) )
+				.getResultList();
 
-        assert new HashSet(ver1).equals(TestTools.makeSet(new StrIntTestEntity("a", 10, id1),
-                new StrIntTestEntity("a", 10, id2), new StrIntTestEntity("b", 5, id3)));
-        assert new HashSet(ver2).equals(TestTools.makeSet(new StrIntTestEntity("c", 10, id1),
-                new StrIntTestEntity("b", 5, id3)));
-        assert new HashSet(ver3).equals(TestTools.makeSet(new StrIntTestEntity("c", 10, id1),
-                new StrIntTestEntity("a", 5, id3)));
-    }
+		List ver2 = getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 2 )
+				.add( AuditEntity.property( "number" ).le( 10 ) )
+				.getResultList();
 
-    @Test
-    public void testRevisionsPropertyEqQuery() {
-        List revs_id1 = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .addProjection(AuditEntity.revisionNumber())
-                .add(AuditEntity.property("str1").le("a"))
-                .add(AuditEntity.id().eq(id1))
-                .getResultList();
+		List ver3 = getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 3 )
+				.add( AuditEntity.property( "number" ).le( 10 ) )
+				.getResultList();
 
-        List revs_id2 = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .addProjection(AuditEntity.revisionNumber())
-                .add(AuditEntity.property("str1").le("a"))
-                .add(AuditEntity.id().eq(id2))
-                .getResultList();
+		assert new HashSet( ver1 ).equals(
+				TestTools.makeSet(
+						new StrIntTestEntity( "a", 10, id1 ),
+						new StrIntTestEntity( "a", 10, id2 ), new StrIntTestEntity( "b", 5, id3 )
+				)
+		);
+		assert new HashSet( ver2 ).equals(
+				TestTools.makeSet(
+						new StrIntTestEntity( "aBc", 10, id1 ),
+						new StrIntTestEntity( "b", 5, id3 )
+				)
+		);
+		assert new HashSet( ver3 ).equals(
+				TestTools.makeSet(
+						new StrIntTestEntity( "aBc", 10, id1 ),
+						new StrIntTestEntity( "a", 5, id3 )
+				)
+		);
+	}
 
-        List revs_id3 = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .addProjection(AuditEntity.revisionNumber())
-                .add(AuditEntity.property("str1").le("a"))
-                .add(AuditEntity.id().eq(id3))
-                .getResultList();
+	@Test
+	public void testRevisionsPropertyEqQuery() {
+		List revs_id1 = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.addProjection( AuditEntity.revisionNumber() )
+				.add( AuditEntity.property( "str1" ).le( "a" ) )
+				.add( AuditEntity.id().eq( id1 ) )
+				.getResultList();
 
-        assert Arrays.asList(1).equals(revs_id1);
-        assert Arrays.asList(1, 2).equals(revs_id2);
-        assert Arrays.asList(3).equals(revs_id3);
-    }
+		List revs_id2 = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.addProjection( AuditEntity.revisionNumber() )
+				.add( AuditEntity.property( "str1" ).le( "a" ) )
+				.add( AuditEntity.id().eq( id2 ) )
+				.getResultList();
 
-    @Test
-    public void testSelectEntitiesQuery() {
-        List result = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, true, false)
-                .add(AuditEntity.id().eq(id1))
-                .getResultList();
+		List revs_id3 = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.addProjection( AuditEntity.revisionNumber() )
+				.add( AuditEntity.property( "str1" ).le( "a" ) )
+				.add( AuditEntity.id().eq( id3 ) )
+				.getResultList();
 
-        assert result.size() == 2;
+		assert Arrays.asList( 1 ).equals( revs_id1 );
+		assert Arrays.asList( 1, 2 ).equals( revs_id2 );
+		assert Arrays.asList( 3 ).equals( revs_id3 );
+	}
 
-        assert result.get(0).equals(new StrIntTestEntity("a", 10, id1));
-        assert result.get(1).equals(new StrIntTestEntity("c", 10, id1));
-    }
+	@Test
+	public void testSelectEntitiesQuery() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, true, false )
+				.add( AuditEntity.id().eq( id1 ) )
+				.getResultList();
 
-    @Test
-    public void testSelectEntitiesAndRevisionsQuery() {
-        List result = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .add(AuditEntity.id().eq(id1))
-                .getResultList();
+		assert result.size() == 2;
 
-        assert result.size() == 3;
+		assert result.get( 0 ).equals( new StrIntTestEntity( "a", 10, id1 ) );
+		assert result.get( 1 ).equals( new StrIntTestEntity( "aBc", 10, id1 ) );
+	}
 
-        assert ((Object []) result.get(0))[0].equals(new StrIntTestEntity("a", 10, id1));
-        assert ((Object []) result.get(1))[0].equals(new StrIntTestEntity("c", 10, id1));
-        assert ((Object []) result.get(2))[0].equals(new StrIntTestEntity(null, null, id1));
+	@Test
+	public void testSelectEntitiesAndRevisionsQuery() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.add( AuditEntity.id().eq( id1 ) )
+				.getResultList();
 
-        assert ((DefaultRevisionEntity) ((Object []) result.get(0))[1]).getId() == 1;
-        assert ((DefaultRevisionEntity) ((Object []) result.get(1))[1]).getId() == 2;
-        assert ((DefaultRevisionEntity) ((Object []) result.get(2))[1]).getId() == 4;
+		assert result.size() == 3;
 
-        assert ((Object []) result.get(0))[2].equals(RevisionType.ADD);
-        assert ((Object []) result.get(1))[2].equals(RevisionType.MOD);
-        assert ((Object []) result.get(2))[2].equals(RevisionType.DEL);
-    }
+		assert ((Object[]) result.get( 0 ))[0].equals( new StrIntTestEntity( "a", 10, id1 ) );
+		assert ((Object[]) result.get( 1 ))[0].equals( new StrIntTestEntity( "aBc", 10, id1 ) );
+		assert ((Object[]) result.get( 2 ))[0].equals( new StrIntTestEntity( null, null, id1 ) );
 
-    @Test
-    public void testSelectRevisionTypeQuery() {
-        List result = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .addProjection(AuditEntity.revisionType())
-                .add(AuditEntity.id().eq(id1))
-                .getResultList();
+		assert ((SequenceIdRevisionEntity) ((Object[]) result.get( 0 ))[1]).getId() == 1;
+		assert ((SequenceIdRevisionEntity) ((Object[]) result.get( 1 ))[1]).getId() == 2;
+		assert ((SequenceIdRevisionEntity) ((Object[]) result.get( 2 ))[1]).getId() == 4;
 
-        assert result.size() == 3;
+		assert ((Object[]) result.get( 0 ))[2].equals( RevisionType.ADD );
+		assert ((Object[]) result.get( 1 ))[2].equals( RevisionType.MOD );
+		assert ((Object[]) result.get( 2 ))[2].equals( RevisionType.DEL );
+	}
 
-        assert result.get(0).equals(RevisionType.ADD);
-        assert result.get(1).equals(RevisionType.MOD);
-        assert result.get(2).equals(RevisionType.DEL);
-    }
+	@Test
+	public void testSelectRevisionTypeQuery() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.addProjection( AuditEntity.revisionType() )
+				.add( AuditEntity.id().eq( id1 ) )
+				.getResultList();
 
-    @Test
-    public void testEmptyRevisionOfEntityQuery() {
-        List result = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .getResultList();
+		assert result.size() == 3;
 
-        assert result.size() == 7;
-    }
+		assert result.get( 0 ).equals( RevisionType.ADD );
+		assert result.get( 1 ).equals( RevisionType.MOD );
+		assert result.get( 2 ).equals( RevisionType.DEL );
+	}
 
-    @Test
-    public void testEmptyConjunctionRevisionOfEntityQuery() {
-        List result = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .add(AuditEntity.conjunction())
-                .getResultList();
+	@Test
+	public void testEmptyRevisionOfEntityQuery() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.getResultList();
 
-        assert result.size() == 7;
-    }
+		assert result.size() == 7;
+	}
 
-    @Test
-    public void testEmptyDisjunctionRevisionOfEntityQuery() {
-        List result = getAuditReader().createQuery()
-                .forRevisionsOfEntity(StrIntTestEntity.class, false, true)
-                .add(AuditEntity.disjunction())
-                .getResultList();
+	@Test
+	public void testEmptyConjunctionRevisionOfEntityQuery() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.add( AuditEntity.conjunction() )
+				.getResultList();
 
-        assert result.size() == 0;
-    }
+		assert result.size() == 7;
+	}
 
-    @Test
-    public void testEntitiesAddedAtRevision() {
-        StrIntTestEntity site1 = new StrIntTestEntity("a", 10, id1);
-        StrIntTestEntity site2 = new StrIntTestEntity("a", 10, id2);
-        StrIntTestEntity site3 = new StrIntTestEntity("b", 5, id3);
+	@Test
+	public void testEmptyDisjunctionRevisionOfEntityQuery() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, false, true )
+				.add( AuditEntity.disjunction() )
+				.getResultList();
 
-        List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, StrIntTestEntity.class.getName(), 1).getResultList();
-        RevisionType revisionType = (RevisionType) getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 1)
-                                                                   .addProjection(AuditEntity.revisionType()).add(AuditEntity.id().eq(id1))
-                                                                   .getSingleResult();
+		assert result.size() == 0;
+	}
 
-        Assert.assertTrue(TestTools.checkList(result, site1, site2, site3));
-        Assert.assertEquals(revisionType, RevisionType.ADD);
-    }
+	@Test
+	public void testEntitiesAddedAtRevision() {
+		StrIntTestEntity site1 = new StrIntTestEntity( "a", 10, id1 );
+		StrIntTestEntity site2 = new StrIntTestEntity( "a", 10, id2 );
+		StrIntTestEntity site3 = new StrIntTestEntity( "b", 5, id3 );
 
-    @Test
-    public void testEntitiesChangedAtRevision() {
-        StrIntTestEntity site1 = new StrIntTestEntity("c", 10, id1);
-        StrIntTestEntity site2 = new StrIntTestEntity("a", 20, id2);
+		List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision(
+				StrIntTestEntity.class,
+				StrIntTestEntity.class.getName(),
+				1
+		).getResultList();
+		RevisionType revisionType = (RevisionType) getAuditReader().createQuery().forEntitiesModifiedAtRevision(
+				StrIntTestEntity.class,
+				1
+		)
+				.addProjection( AuditEntity.revisionType() ).add( AuditEntity.id().eq( id1 ) )
+				.getSingleResult();
 
-        List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 2).getResultList();
-        RevisionType revisionType = (RevisionType) getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 2)
-                                                                   .addProjection(AuditEntity.revisionType()).add(AuditEntity.id().eq(id1))
-                                                                   .getSingleResult();
+		Assert.assertTrue( TestTools.checkCollection( result, site1, site2, site3 ) );
+		Assert.assertEquals( revisionType, RevisionType.ADD );
+	}
 
-        Assert.assertTrue(TestTools.checkList(result, site1, site2));
-        Assert.assertEquals(revisionType, RevisionType.MOD);
-    }
+	@Test
+	public void testEntitiesChangedAtRevision() {
+		StrIntTestEntity site1 = new StrIntTestEntity( "aBc", 10, id1 );
+		StrIntTestEntity site2 = new StrIntTestEntity( "a", 20, id2 );
 
-    @Test
-    public void testEntitiesRemovedAtRevision() {
-        StrIntTestEntity site1 = new StrIntTestEntity(null, null, id1);
+		List result = getAuditReader().createQuery()
+				.forEntitiesModifiedAtRevision( StrIntTestEntity.class, 2 )
+				.getResultList();
+		RevisionType revisionType = (RevisionType) getAuditReader().createQuery().forEntitiesModifiedAtRevision(
+				StrIntTestEntity.class,
+				2
+		)
+				.addProjection( AuditEntity.revisionType() ).add( AuditEntity.id().eq( id1 ) )
+				.getSingleResult();
 
-        List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 4).getResultList();
-        RevisionType revisionType = (RevisionType) getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 4)
-                                                                   .addProjection(AuditEntity.revisionType()).add(AuditEntity.id().eq(id1))
-                                                                   .getSingleResult();
-        
-        Assert.assertTrue(TestTools.checkList(result, site1));
-        Assert.assertEquals(revisionType, RevisionType.DEL);
-    }
+		Assert.assertTrue( TestTools.checkCollection( result, site1, site2 ) );
+		Assert.assertEquals( revisionType, RevisionType.MOD );
+	}
 
-    @Test
-    public void testEntityNotModifiedAtRevision() {
-        List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 3)
-                                                    .add(AuditEntity.id().eq(id1)).getResultList();
-        Assert.assertTrue(result.isEmpty());
-    }
+	@Test
+	public void testEntitiesRemovedAtRevision() {
+		StrIntTestEntity site1 = new StrIntTestEntity( null, null, id1 );
 
-    @Test
-    public void testNoEntitiesModifiedAtRevision() {
-        List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision(StrIntTestEntity.class, 5).getResultList();
-        Assert.assertTrue(result.isEmpty());
-    }
+		List result = getAuditReader().createQuery()
+				.forEntitiesModifiedAtRevision( StrIntTestEntity.class, 4 )
+				.getResultList();
+		RevisionType revisionType = (RevisionType) getAuditReader().createQuery().forEntitiesModifiedAtRevision(
+				StrIntTestEntity.class,
+				4
+		)
+				.addProjection( AuditEntity.revisionType() ).add( AuditEntity.id().eq( id1 ) )
+				.getSingleResult();
+
+		Assert.assertTrue( TestTools.checkCollection( result, site1 ) );
+		Assert.assertEquals( revisionType, RevisionType.DEL );
+	}
+
+	@Test
+	public void testEntityNotModifiedAtRevision() {
+		List result = getAuditReader().createQuery().forEntitiesModifiedAtRevision( StrIntTestEntity.class, 3 )
+				.add( AuditEntity.id().eq( id1 ) ).getResultList();
+		Assert.assertTrue( result.isEmpty() );
+	}
+
+	@Test
+	public void testNoEntitiesModifiedAtRevision() {
+		List result = getAuditReader().createQuery()
+				.forEntitiesModifiedAtRevision( StrIntTestEntity.class, 5 )
+				.getResultList();
+		Assert.assertTrue( result.isEmpty() );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-7800")
+	public void testBetweenInsideDisjunction() {
+		List result = getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, true, true )
+				.add(
+						AuditEntity.disjunction()
+								.add( AuditEntity.property( "number" ).between( 0, 5 ) )
+								.add( AuditEntity.property( "number" ).between( 20, 100 ) )
+				)
+				.getResultList();
+
+		for ( Object o : result ) {
+			StrIntTestEntity entity = (StrIntTestEntity) o;
+			int number = entity.getNumber();
+			Assert.assertTrue( (number >= 0 && number <= 5) || (number >= 20 && number <= 100) );
+		}
+	}
+	
+	@Test
+	@TestForIssue(jiraKey = "HHH-8495")
+	public void testIlike() {
+		StrIntTestEntity site1 = new StrIntTestEntity( "aBc", 10, id1 );
+		
+		StrIntTestEntity result = (StrIntTestEntity) getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, true, true )
+				.add( AuditEntity.property( "str1" ).ilike( "abc" ) )
+				.getSingleResult();
+		
+		Assert.assertEquals( site1, result );
+	}
+	
+	@Test
+	@TestForIssue(jiraKey = "HHH-8495")
+	public void testIlikeWithMatchMode() {
+		StrIntTestEntity site1 = new StrIntTestEntity( "aBc", 10, id1 );
+		
+		StrIntTestEntity result = (StrIntTestEntity) getAuditReader().createQuery()
+				.forRevisionsOfEntity( StrIntTestEntity.class, true, true )
+				.add( AuditEntity.property( "str1" ).ilike( "BC", MatchMode.ANYWHERE ) )
+				.getSingleResult();
+		
+		Assert.assertEquals( site1, result );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-8567")
+	public void testIdPropertyRestriction() {
+		StrIntTestEntity ver2 = (StrIntTestEntity) getAuditReader().createQuery()
+				.forEntitiesAtRevision( StrIntTestEntity.class, 2 )
+				.add( AuditEntity.property( "id" ).eq( id2 ) )
+				.getSingleResult();
+
+		Assert.assertEquals( new StrIntTestEntity( "a", 20, id2 ), ver2 );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-8567")
+	@FailureExpectedWithNewMetamodel( message = "Revision query with restriction on @IdClass attributes is broken." )
+	public void testMultipleIdPropertyRestriction() {
+		MulIdTestEntity ver2 = (MulIdTestEntity) getAuditReader().createQuery()
+				.forEntitiesAtRevision( MulIdTestEntity.class, 2 )
+				.add( AuditEntity.property( "id1" ).eq( mulId1.getId1() ) )
+				.add( AuditEntity.property( "id2" ).eq( mulId1.getId2() ) )
+				.getSingleResult();
+
+		Assert.assertEquals( new MulIdTestEntity( mulId1.getId1(), mulId1.getId2(), "data" ), ver2 );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-8567")
+	public void testEmbeddedIdPropertyRestriction() {
+		EmbIdTestEntity ver2 = (EmbIdTestEntity) getAuditReader().createQuery()
+				.forEntitiesAtRevision( EmbIdTestEntity.class, 2 )
+				.add( AuditEntity.property( "id.x" ).eq( embId1.getX() ) )
+				.add( AuditEntity.property( "id.y" ).eq( embId1.getY() ) )
+				.getSingleResult();
+
+		Assert.assertEquals( new EmbIdTestEntity( embId1, "something" ), ver2 );
+	}
 }

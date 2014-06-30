@@ -24,20 +24,25 @@
 package org.hibernate.event.spi;
 
 import java.io.Serializable;
+
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.secure.spi.PermissionCheckEntityInformation;
+
 
 /**
  * Represents a <tt>pre-delete</tt> event, which occurs just prior to
  * performing the deletion of an entity from the database.
- * 
+ *
  * @author Gavin King
  * @author Steve Ebersole
  */
-public class PreDeleteEvent extends AbstractPreDatabaseOperationEvent {
+public class PreDeleteEvent
+		extends AbstractPreDatabaseOperationEvent
+		implements PermissionCheckEntityInformation {
+
 	private Object[] deletedState;
 
 	/**
-	 *
 	 * Constructs an event containing the pertinent information.
 	 *
 	 * @param entity The entity to be deleted.
@@ -52,7 +57,7 @@ public class PreDeleteEvent extends AbstractPreDatabaseOperationEvent {
 			Object[] deletedState,
 			EntityPersister persister,
 			EventSource source) {
-	    super( source, entity, id, persister );
+		super( source, entity, id, persister );
 		this.deletedState = deletedState;
 	}
 

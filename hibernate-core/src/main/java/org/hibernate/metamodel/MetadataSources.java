@@ -26,8 +26,10 @@ package org.hibernate.metamodel;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -36,56 +38,96 @@ import java.util.List;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 
+import javax.persistence.AttributeConverter;
+import javax.xml.transform.dom.DOMSource;
+
+import org.hibernate.boot.registry.BootstrapServiceRegistry;
+import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
+import org.hibernate.boot.registry.StandardServiceRegistry;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.internal.util.SerializationHelper;
+import org.hibernate.internal.util.StringHelper;
+import org.hibernate.metamodel.internal.ClassLoaderAccessImpl;
+import org.hibernate.metamodel.internal.JandexInitManager;
+import org.hibernate.metamodel.internal.MetadataBuilderImpl;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbConverter;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbEmbeddable;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbEntity;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbEntityListener;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbEntityListeners;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbEntityMappings;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbMappedSuperclass;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbPersistenceUnitDefaults;
+import org.hibernate.metamodel.source.internal.jaxb.JaxbPersistenceUnitMetadata;
+import org.hibernate.metamodel.source.spi.MappingException;
+import org.hibernate.metamodel.source.spi.MappingNotFoundException;
+import org.hibernate.metamodel.spi.ClassLoaderAccess;
+import org.hibernate.service.ServiceRegistry;
+import org.hibernate.type.SerializationException;
+import org.hibernate.xml.internal.jaxb.UnifiedMappingBinder;
+import org.hibernate.xml.spi.BindResult;
+import org.hibernate.xml.spi.Origin;
+import org.hibernate.xml.spi.SourceType;
+import org.jboss.jandex.DotName;
+import org.jboss.jandex.IndexView;
 import org.jboss.logging.Logger;
 import org.w3c.dom.Document;
-import org.xml.sax.EntityResolver;
-
-import org.hibernate.cfg.EJB3DTDEntityResolver;
-import org.hibernate.cfg.EJB3NamingStrategy;
-import org.hibernate.cfg.NamingStrategy;
-import org.hibernate.internal.jaxb.JaxbRoot;
-import org.hibernate.internal.jaxb.Origin;
-import org.hibernate.internal.jaxb.SourceType;
-import org.hibernate.metamodel.source.MappingException;
-import org.hibernate.metamodel.source.MappingNotFoundException;
-import org.hibernate.metamodel.source.internal.JaxbHelper;
-import org.hibernate.metamodel.source.internal.MetadataBuilderImpl;
-import org.hibernate.service.ServiceRegistry;
-import org.hibernate.service.classloading.spi.ClassLoaderService;
 
 /**
+ * Entry point into working with sources of metadata information ({@code hbm.xml}, annotations).   Tell Hibernate
+ * about sources and then call {@link #buildMetadata()}.
+ *
  * @author Steve Ebersole
+ * @author Brett Meyer
  */
 public class MetadataSources {
-	private static final Logger LOG = Logger.getLogger( MetadataSources.class );
-
-	private List<JaxbRoot> jaxbRootList = new ArrayList<JaxbRoot>();
-	private LinkedHashSet<Class<?>> annotatedClasses = new LinkedHashSet<Class<?>>();
-	private LinkedHashSet<String> annotatedPackages = new LinkedHashSet<String>();
-
-	private final JaxbHelper jaxbHelper;
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( MetadataSources.class );
 
 	private final ServiceRegistry serviceRegistry;
-	private final EntityResolver entityResolver;
-	private final NamingStrategy namingStrategy;
+	private List<BindResult> bindResultList = new ArrayList<BindResult>();
+	private LinkedHashSet<Class<?>> annotatedClasses = new LinkedHashSet<Class<?>>();
+	private LinkedHashSet<String> annotatedClassNames = new LinkedHashSet<String>();
+	private LinkedHashSet<String> annotatedPackages = new LinkedHashSet<String>();
 
-	private final MetadataBuilderImpl metadataBuilder;
+	private List<Class<? extends AttributeConverter>> converterClasses;
 
+	public MetadataSources() {
+		this( new BootstrapServiceRegistryBuilder().build() );
+	}
+
+	/**
+	 * Create a metadata sources using the specified service registry.
+	 *
+	 * @param serviceRegistry The service registry to use.
+	 */
 	public MetadataSources(ServiceRegistry serviceRegistry) {
-		this( serviceRegistry, EJB3DTDEntityResolver.INSTANCE, EJB3NamingStrategy.INSTANCE );
-	}
-
-	public MetadataSources(ServiceRegistry serviceRegistry, EntityResolver entityResolver, NamingStrategy namingStrategy) {
+		// service registry really should be either BootstrapServiceRegistry or StandardServiceRegistry type...
+		if ( ! isExpectedServiceRegistryType( serviceRegistry ) ) {
+			LOG.debugf(
+					"Unexpected ServiceRegistry type [%s] encountered during building of MetadataSources; may cause " +
+							"problems later attempting to construct MetadataBuilder",
+					serviceRegistry.getClass().getName()
+			);
+		}
 		this.serviceRegistry = serviceRegistry;
-		this.entityResolver = entityResolver;
-		this.namingStrategy = namingStrategy;
-
-		this.jaxbHelper = new JaxbHelper( this );
-		this.metadataBuilder = new MetadataBuilderImpl( this );
 	}
 
-	public List<JaxbRoot> getJaxbRootList() {
-		return jaxbRootList;
+	protected static boolean isExpectedServiceRegistryType(ServiceRegistry serviceRegistry) {
+		return BootstrapServiceRegistry.class.isInstance( serviceRegistry )
+				|| StandardServiceRegistry.class.isInstance( serviceRegistry );
+	}
+	
+	public void buildBindResults(ClassLoaderAccess classLoaderAccess) {
+		final UnifiedMappingBinder jaxbProcessor = new UnifiedMappingBinder( classLoaderAccess );
+		for ( BindResult bindResult : bindResultList ) {
+			bindResult.bind( jaxbProcessor );
+		}
+	}
+
+	public List<BindResult> getBindResultList() {
+		return bindResultList;
 	}
 
 	public Iterable<String> getAnnotatedPackages() {
@@ -96,20 +138,45 @@ public class MetadataSources {
 		return annotatedClasses;
 	}
 
+	public Iterable<String> getAnnotatedClassNames() {
+		return annotatedClassNames;
+	}
+
 	public ServiceRegistry getServiceRegistry() {
 		return serviceRegistry;
 	}
 
-	public NamingStrategy getNamingStrategy() {
-		return namingStrategy;
-	}
-
+	/**
+	 * Get a builder for metadata where non-default options can be specified.
+	 *
+	 * @return The built metadata.
+	 */
 	public MetadataBuilder getMetadataBuilder() {
-		return metadataBuilder;
+		return new MetadataBuilderImpl( this );
 	}
 
+	/**
+	 * Get a builder for metadata where non-default options can be specified.
+	 *
+	 * @return The built metadata.
+	 */
+	public MetadataBuilder getMetadataBuilder(StandardServiceRegistry serviceRegistry) {
+		return new MetadataBuilderImpl( this, serviceRegistry );
+	}
+
+	/**
+	 * Short-hand form of calling {@link #getMetadataBuilder()} and using its
+	 * {@link org.hibernate.metamodel.MetadataBuilder#build()} method in cases where the application wants
+	 * to accept the defaults.
+	 *
+	 * @return The built metadata.
+	 */
 	public Metadata buildMetadata() {
-		return getMetadataBuilder().buildMetadata();
+		return getMetadataBuilder().build();
+	}
+
+	public Metadata buildMetadata(StandardServiceRegistry serviceRegistry) {
+		return getMetadataBuilder( serviceRegistry ).build();
 	}
 
 	/**
@@ -121,6 +188,18 @@ public class MetadataSources {
 	 */
 	public MetadataSources addAnnotatedClass(Class annotatedClass) {
 		annotatedClasses.add( annotatedClass );
+		return this;
+	}
+
+	/**
+	 * Read metadata from the annotations attached to the given class.
+	 *
+	 * @param annotatedClassName The name of a class containing annotations
+	 *
+	 * @return this (for method chaining)
+	 */
+	public MetadataSources addAnnotatedClassName(String annotatedClassName) {
+		annotatedClassNames.add( annotatedClassName );
 		return this;
 	}
 
@@ -166,22 +245,10 @@ public class MetadataSources {
 		return serviceRegistry.getService( ClassLoaderService.class );
 	}
 
-	private JaxbRoot add(InputStream inputStream, Origin origin, boolean close) {
-		try {
-			JaxbRoot jaxbRoot = jaxbHelper.unmarshal( inputStream, origin );
-			jaxbRootList.add( jaxbRoot );
-			return jaxbRoot;
-		}
-		finally {
-			if ( close ) {
-				try {
-					inputStream.close();
-				}
-				catch ( IOException ignore ) {
-					LOG.trace( "Was unable to close input stream" );
-				}
-			}
-		}
+	private BindResult add(InputStream inputStream, Origin origin, boolean close) {
+		BindResult bindResult = new BindResult( inputStream, origin, close );
+		bindResultList.add( bindResult );
+		return bindResult;
 	}
 
 	/**
@@ -191,7 +258,10 @@ public class MetadataSources {
 	 * @param entityClass The mapped class. Cannot be {@code null} null.
 	 *
 	 * @return this (for method chaining purposes)
+	 *
+	 * @deprecated hbm.xml is a legacy mapping format now considered deprecated.
 	 */
+	@Deprecated
 	public MetadataSources addClass(Class entityClass) {
 		if ( entityClass == null ) {
 			throw new IllegalArgumentException( "The specified class cannot be null" );
@@ -199,6 +269,21 @@ public class MetadataSources {
 		LOG.debugf( "adding resource mappings from class convention : %s", entityClass.getName() );
 		final String mappingResourceName = entityClass.getName().replace( '.', '/' ) + ".hbm.xml";
 		addResource( mappingResourceName );
+		return this;
+	}
+
+	/**
+	 * Adds an AttributeConverter by class.
+	 *
+	 * @param converterClass The AttributeConverter class.
+	 *
+	 * @return this (for method chaining purposes)
+	 */
+	public MetadataSources addAttributeConverter(Class<? extends AttributeConverter> converterClass) {
+		if ( converterClasses == null ) {
+			converterClasses = new ArrayList<Class<? extends AttributeConverter>>();
+		}
+		converterClasses.add( converterClass );
 		return this;
 	}
 
@@ -245,7 +330,7 @@ public class MetadataSources {
 	 * @see #addCacheableFile(java.io.File)
 	 */
 	public MetadataSources addCacheableFile(String path) {
-		return this; // todo : implement method body
+		return addCacheableFile( new File( path ) );
 	}
 
 	/**
@@ -262,7 +347,72 @@ public class MetadataSources {
 	 * @return this (for method chaining purposes)
 	 */
 	public MetadataSources addCacheableFile(File file) {
-		return this; // todo : implement method body
+		Origin origin = new Origin( SourceType.FILE, file.getAbsolutePath() );
+		File cachedFile = determineCachedDomFile( file );
+
+		try {
+			return addCacheableFileStrictly( file );
+		}
+		catch ( SerializationException e ) {
+			LOG.unableToDeserializeCache( cachedFile.getName(), e );
+		}
+		catch ( FileNotFoundException e ) {
+			LOG.cachedFileNotFound( cachedFile.getName(), e );
+		}
+		
+		final FileInputStream inputStream;
+		try {
+			inputStream = new FileInputStream( file );
+		}
+		catch ( FileNotFoundException e ) {
+			throw new MappingNotFoundException( origin );
+		}
+
+		LOG.readingMappingsFromFile( file.getPath() );
+		BindResult metadataXml = add( inputStream, origin, true );
+
+		try {
+			LOG.debugf( "Writing cache file for: %s to: %s", file, cachedFile );
+			SerializationHelper.serialize( ( Serializable ) metadataXml, new FileOutputStream( cachedFile ) );
+		}
+		catch ( Exception e ) {
+			LOG.unableToWriteCachedFile( cachedFile.getName(), e.getMessage() );
+		}
+
+		return this;
+	}
+
+	/**
+	 * <b>INTENDED FOR TESTSUITE USE ONLY!</b>
+	 * <p/>
+	 * Much like {@link #addCacheableFile(File)} except that here we will fail immediately if
+	 * the cache version cannot be found or used for whatever reason
+	 *
+	 * @param file The xml file, not the bin!
+	 *
+	 * @return The dom "deserialized" from the cached file.
+	 *
+	 * @throws SerializationException Indicates a problem deserializing the cached dom tree
+	 * @throws FileNotFoundException Indicates that the cached file was not found or was not usable.
+	 */
+	public MetadataSources addCacheableFileStrictly(File file) throws SerializationException, FileNotFoundException {
+		File cachedFile = determineCachedDomFile( file );
+		
+		final boolean useCachedFile = file.exists()
+				&& cachedFile.exists()
+				&& file.lastModified() < cachedFile.lastModified();
+
+		if ( ! useCachedFile ) {
+			throw new FileNotFoundException( "Cached file could not be found or could not be used" );
+		}
+
+		LOG.readingCachedMappings( cachedFile );
+		bindResultList.add( (BindResult) SerializationHelper.deserialize( new FileInputStream( cachedFile ) ) );
+		return this;
+	}
+
+	private File determineCachedDomFile(File xmlFile) {
+		return new File( xmlFile.getAbsolutePath() + ".bin" );
 	}
 
 	/**
@@ -273,7 +423,7 @@ public class MetadataSources {
 	 * @return this (for method chaining purposes)
 	 */
 	public MetadataSources addInputStream(InputStream xmlInputStream) {
-		add( xmlInputStream, new Origin( SourceType.INPUT_STREAM, "<unknown>" ), false );
+		add( xmlInputStream, new Origin( SourceType.INPUT_STREAM, Origin.UNKNOWN_FILE_PATH ), false );
 		return this;
 	}
 
@@ -305,10 +455,10 @@ public class MetadataSources {
 	 *
 	 * @return this (for method chaining purposes)
 	 */
+	@Deprecated
 	public MetadataSources addDocument(Document document) {
-		final Origin origin = new Origin( SourceType.DOM, "<unknown>" );
-		JaxbRoot jaxbRoot = jaxbHelper.unmarshal( document, origin );
-		jaxbRootList.add( jaxbRoot );
+		final Origin origin = new Origin( SourceType.DOM, Origin.UNKNOWN_FILE_PATH );
+		bindResultList.add( new BindResult( new DOMSource( document ), origin ) );
 		return this;
 	}
 
@@ -369,14 +519,160 @@ public class MetadataSources {
 	 */
 	public MetadataSources addDirectory(File dir) {
 		File[] files = dir.listFiles();
-		for ( File file : files ) {
-			if ( file.isDirectory() ) {
-				addDirectory( file );
-			}
-			else if ( file.getName().endsWith( ".hbm.xml" ) ) {
-				addFile( file );
+		if ( files != null && files.length > 0 ) {
+			for ( File file : files ) {
+				if ( file.isDirectory() ) {
+					addDirectory( file );
+				}
+				else if ( file.getName().endsWith( ".hbm.xml" ) ) {
+					addFile( file );
+				}
 			}
 		}
 		return this;
+	}
+
+	/**
+	 * @deprecated Use {@link #indexKnownClasses} instead
+	 */
+	@Deprecated
+	public IndexView buildJandexView() {
+		return buildJandexView( false );
+	}
+
+	/**
+	 * Create a Jandex IndexView from scratch given the sources information contained here.
+	 *
+	 * @param autoIndexMemberTypes Should the types of class members automatically be added to the built index?
+	 *
+	 * @return The built Jandex Index
+	 *
+	 * @deprecated Use {@link #indexKnownClasses} instead
+	 */
+	@Deprecated
+	public IndexView buildJandexView(boolean autoIndexMemberTypes) {
+		JandexInitManager jandexInitManager = new JandexInitManager(
+				null,
+				new ClassLoaderAccessImpl(
+						null,
+						getServiceRegistry().getService( ClassLoaderService.class )
+				),
+				autoIndexMemberTypes
+		);
+		JandexIndexBuilder.process( jandexInitManager, this );
+		return jandexInitManager.buildIndex();
+	}
+
+	public void indexKnownClasses(JandexInitManager jandexInitManager) {
+		JandexIndexBuilder.process( jandexInitManager, this );
+	}
+
+	public static class JandexIndexBuilder {
+		private static final Logger log = Logger.getLogger( JandexIndexBuilder.class );
+
+		private final JandexInitManager jandexInitManager;
+
+		private JandexIndexBuilder(JandexInitManager jandexInitManager) {
+			this.jandexInitManager = jandexInitManager;
+		}
+
+		public static void process(JandexInitManager jandexInitManager, MetadataSources sources) {
+			new JandexIndexBuilder( jandexInitManager ).process( sources );
+		}
+
+		private void process(MetadataSources sources) {
+			// start off with any already-loaded Class references...
+			for ( Class<?> clazz : sources.getAnnotatedClasses() ) {
+				jandexInitManager.indexLoadedClass( clazz );
+			}
+
+			if ( sources.converterClasses != null ) {
+				for ( Class<? extends AttributeConverter> converterClass : sources.converterClasses ) {
+					jandexInitManager.indexLoadedClass( converterClass );
+				}
+			}
+
+			for ( String className : sources.getAnnotatedClassNames() ) {
+				jandexInitManager.indexClassName( DotName.createSimple( className ) );
+			}
+
+			// add package-info from the configured packages
+			for ( String packageName : sources.getAnnotatedPackages() ) {
+				// older code seemed to simply ignore packages that did not have package-info,
+				// so do same
+				try {
+					jandexInitManager.indexResource( packageName.replace( '.', '/' ) + "/package-info.class" );
+				}
+				catch (Exception e) {
+					log.debugf( "Skipping package [%s] which caused error indexing : %s", packageName, e.getMessage() );
+				}
+			}
+
+			// the classes referenced in any orm.xml bindings (unless it is "metadata complete")
+			for ( BindResult bindResult : sources.bindResultList ) {
+				if ( JaxbEntityMappings.class.isInstance( bindResult.getRoot() ) ) {
+					final JaxbEntityMappings ormXmlRoot = (JaxbEntityMappings) bindResult.getRoot();
+					if ( !isMappingMetadataComplete( ormXmlRoot ) ) {
+						indexOrmXmlReferences( ormXmlRoot );
+					}
+				}
+			}
+		}
+
+		private DotName toDotName(String className, String packageName) {
+			if ( StringHelper.isNotEmpty( packageName ) ) {
+				if ( !className.contains( "." ) ) {
+					return DotName.createSimple( packageName + '.' + className );
+				}
+			}
+
+			return DotName.createSimple( className );
+		}
+
+		private boolean isMappingMetadataComplete(JaxbEntityMappings ormXmlRoot) {
+			return ormXmlRoot.getPersistenceUnitMetadata() != null
+					&& ormXmlRoot.getPersistenceUnitMetadata().getXmlMappingMetadataComplete() != null;
+		}
+
+		private void indexOrmXmlReferences(JaxbEntityMappings ormXmlRoot) {
+			final String packageName = ormXmlRoot.getPackage();
+
+			final JaxbPersistenceUnitMetadata puMetadata = ormXmlRoot.getPersistenceUnitMetadata();
+			if ( puMetadata != null ) {
+				final JaxbPersistenceUnitDefaults puDefaults = puMetadata.getPersistenceUnitDefaults();
+				if ( puDefaults != null ) {
+					indexEntityListeners( puDefaults.getEntityListeners(), packageName );
+				}
+			}
+
+			for ( JaxbConverter jaxbConverter : ormXmlRoot.getConverter() ) {
+				jandexInitManager.indexClassName( toDotName( jaxbConverter.getClazz(), packageName ) );
+			}
+
+			for ( JaxbEmbeddable jaxbEmbeddable : ormXmlRoot.getEmbeddable() ) {
+				jandexInitManager.indexClassName( toDotName( jaxbEmbeddable.getClazz(), packageName ) );
+			}
+
+			for ( JaxbMappedSuperclass jaxbMappedSuperclass : ormXmlRoot.getMappedSuperclass() ) {
+				jandexInitManager.indexClassName( toDotName( jaxbMappedSuperclass.getClazz(), packageName ) );
+			}
+
+			for ( JaxbEntity jaxbEntity : ormXmlRoot.getEntity() ) {
+				jandexInitManager.indexClassName( toDotName( jaxbEntity.getClazz(), packageName ) );
+				indexEntityListeners( jaxbEntity.getEntityListeners(), packageName );
+			}
+		}
+
+		private void indexEntityListeners(JaxbEntityListeners listeners, String packageName) {
+			if ( listeners == null ) {
+				return;
+			}
+
+			for ( JaxbEntityListener listener : listeners.getEntityListener() ) {
+				if ( StringHelper.isNotEmpty( listener.getClazz() ) ) {
+					jandexInitManager.indexClassName( toDotName( listener.getClazz(), packageName ) );
+				}
+			}
+		}
 	}
 }

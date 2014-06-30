@@ -25,10 +25,10 @@ package org.hibernate;
 
 import java.util.Map;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.cfg.Environment;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * Describes the methods for multi-tenancy understood by Hibernate.
@@ -36,7 +36,6 @@ import org.hibernate.internal.CoreMessageLogger;
  * @author Steve Ebersole
  */
 public enum MultiTenancyStrategy {
-
 	/**
 	 * Multi-tenancy implemented by use of discriminator columns.
 	 */
@@ -50,13 +49,33 @@ public enum MultiTenancyStrategy {
 	 */
 	DATABASE,
 	/**
-	 * No multi-tenancy
+	 * No multi-tenancy.
 	 */
 	NONE;
+
 	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
 			CoreMessageLogger.class,
 			MultiTenancyStrategy.class.getName()
 	);
+
+	/**
+	 * Does this strategy indicate a requirement for the specialized
+	 * {@link org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider}, rather than the
+	 * traditional {@link org.hibernate.engine.jdbc.connections.spi.ConnectionProvider}?
+	 *
+	 * @return {@code true} indicates a MultiTenantConnectionProvider is required; {@code false} indicates it is not.
+	 */
+	public boolean requiresMultiTenantConnectionProvider() {
+		return this == DATABASE || this == SCHEMA;
+	}
+
+	/**
+	 * Extract the MultiTenancyStrategy from the setting map.
+	 *
+	 * @param properties The map of settings.
+	 *
+	 * @return The selected strategy.  {@link #NONE} is always the default.
+	 */
 	public static MultiTenancyStrategy determineMultiTenancyStrategy(Map properties) {
 		final Object strategy = properties.get( Environment.MULTI_TENANT );
 		if ( strategy == null ) {

@@ -24,13 +24,17 @@
 package org.hibernate.cfg;
 
 import java.util.Map;
+
 import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.EntityMode;
 import org.hibernate.MultiTenancyStrategy;
+import org.hibernate.NullPrecedence;
 import org.hibernate.cache.spi.QueryCacheFactory;
 import org.hibernate.cache.spi.RegionFactory;
+import org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform;
+import org.hibernate.hql.spi.MultiTableBulkIdStrategy;
 import org.hibernate.hql.spi.QueryTranslatorFactory;
-import org.hibernate.service.jta.platform.spi.JtaPlatform;
+import org.hibernate.loader.BatchFetchStyle;
 import org.hibernate.tuple.entity.EntityTuplizerFactory;
 
 /**
@@ -50,6 +54,7 @@ public final class Settings {
 	private String defaultCatalogName;
 	private Integer jdbcFetchSize;
 	private String sessionFactoryName;
+	private boolean sessionFactoryNameAlsoJndiName;
 	private boolean autoCreateSchema;
 	private boolean autoDropSchema;
 	private boolean autoUpdateSchema;
@@ -57,6 +62,7 @@ public final class Settings {
 	private boolean queryCacheEnabled;
 	private boolean structuredCacheEntriesEnabled;
 	private boolean secondLevelCacheEnabled;
+	private boolean autoEvictCollectionCache;
 	private String cacheRegionPrefix;
 	private boolean minimalPutsEnabled;
 	private boolean commentsEnabled;
@@ -79,12 +85,22 @@ public final class Settings {
 	private boolean namedQueryStartupCheckingEnabled;
 	private EntityTuplizerFactory entityTuplizerFactory;
 	private boolean checkNullability;
+	private NullPrecedence defaultNullPrecedence;
+	private boolean initializeLazyStateOutsideTransactions;
 //	private ComponentTuplizerFactory componentTuplizerFactory; todo : HHH-3517 and HHH-1907
 //	private BytecodeProvider bytecodeProvider;
 	private String importFiles;
 	private MultiTenancyStrategy multiTenancyStrategy;
 
 	private JtaPlatform jtaPlatform;
+
+	private MultiTableBulkIdStrategy multiTableBulkIdStrategy;
+	private BatchFetchStyle batchFetchStyle;
+	private boolean directReferenceCacheEntriesEnabled;
+	
+	private boolean jtaTrackByThread;
+	private BaselineSessionEventsListenerBuilder baselineSessionEventsListenerBuilder;
+
 
 	/**
 	 * Package protected constructor
@@ -144,6 +160,10 @@ public final class Settings {
 
 	public String getSessionFactoryName() {
 		return sessionFactoryName;
+	}
+
+	public boolean isSessionFactoryNameAlsoJndiName() {
+		return sessionFactoryNameAlsoJndiName;
 	}
 
 	public boolean isAutoCreateSchema() {
@@ -226,6 +246,10 @@ public final class Settings {
 		return structuredCacheEntriesEnabled;
 	}
 
+	public boolean isDirectReferenceCacheEntriesEnabled() {
+		return directReferenceCacheEntriesEnabled;
+	}
+
 	public EntityMode getDefaultEntityMode() {
 		return defaultEntityMode;
 	}
@@ -257,6 +281,10 @@ public final class Settings {
 //	public ComponentTuplizerFactory getComponentTuplizerFactory() {
 //		return componentTuplizerFactory;
 //	}
+
+	public NullPrecedence getDefaultNullPrecedence() {
+		return defaultNullPrecedence;
+	}
 
 	// package protected setters ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -302,6 +330,10 @@ public final class Settings {
 
 	void setSessionFactoryName(String string) {
 		sessionFactoryName = string;
+	}
+
+	void setSessionFactoryNameAlsoJndiName(boolean sessionFactoryNameAlsoJndiName) {
+		this.sessionFactoryNameAlsoJndiName = sessionFactoryNameAlsoJndiName;
 	}
 
 	void setAutoCreateSchema(boolean b) {
@@ -447,5 +479,61 @@ public final class Settings {
 
 	void setMultiTenancyStrategy(MultiTenancyStrategy multiTenancyStrategy) {
 		this.multiTenancyStrategy = multiTenancyStrategy;
+	}
+
+	public boolean isInitializeLazyStateOutsideTransactionsEnabled() {
+		return initializeLazyStateOutsideTransactions;
+	}
+
+	void setInitializeLazyStateOutsideTransactions(boolean initializeLazyStateOutsideTransactions) {
+		this.initializeLazyStateOutsideTransactions = initializeLazyStateOutsideTransactions;
+	}
+
+	public MultiTableBulkIdStrategy getMultiTableBulkIdStrategy() {
+		return multiTableBulkIdStrategy;
+	}
+
+	void setMultiTableBulkIdStrategy(MultiTableBulkIdStrategy multiTableBulkIdStrategy) {
+		this.multiTableBulkIdStrategy = multiTableBulkIdStrategy;
+	}
+
+	public BatchFetchStyle getBatchFetchStyle() {
+		return batchFetchStyle;
+	}
+
+	void setBatchFetchStyle(BatchFetchStyle batchFetchStyle) {
+		this.batchFetchStyle = batchFetchStyle;
+	}
+
+	public void setDirectReferenceCacheEntriesEnabled(boolean directReferenceCacheEntriesEnabled) {
+		this.directReferenceCacheEntriesEnabled = directReferenceCacheEntriesEnabled;
+	}
+
+	void setDefaultNullPrecedence(NullPrecedence defaultNullPrecedence) {
+		this.defaultNullPrecedence = defaultNullPrecedence;
+	}
+
+	public boolean isJtaTrackByThread() {
+		return jtaTrackByThread;
+	}
+
+	public void setJtaTrackByThread(boolean jtaTrackByThread) {
+		this.jtaTrackByThread = jtaTrackByThread;
+	}
+
+	public boolean isAutoEvictCollectionCache() {
+		return autoEvictCollectionCache;
+	}
+
+	public void setAutoEvictCollectionCache(boolean autoEvictCollectionCache) {
+		this.autoEvictCollectionCache = autoEvictCollectionCache;
+	}
+
+	public void setBaselineSessionEventsListenerBuilder(BaselineSessionEventsListenerBuilder baselineSessionEventsListenerBuilder) {
+		this.baselineSessionEventsListenerBuilder = baselineSessionEventsListenerBuilder;
+	}
+
+	public BaselineSessionEventsListenerBuilder getBaselineSessionEventsListenerBuilder() {
+		return baselineSessionEventsListenerBuilder;
 	}
 }

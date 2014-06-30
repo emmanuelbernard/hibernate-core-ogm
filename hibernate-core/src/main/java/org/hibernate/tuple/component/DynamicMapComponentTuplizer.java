@@ -24,12 +24,14 @@
  */
 package org.hibernate.tuple.component;
 import java.util.Map;
-import org.hibernate.mapping.Component;
-import org.hibernate.mapping.Property;
+
+import org.hibernate.metamodel.spi.binding.AttributeBinding;
+import org.hibernate.metamodel.spi.binding.EmbeddableBinding;
 import org.hibernate.property.Getter;
 import org.hibernate.property.PropertyAccessor;
 import org.hibernate.property.PropertyAccessorFactory;
 import org.hibernate.property.Setter;
+import org.hibernate.service.ServiceRegistry;
 import org.hibernate.tuple.DynamicMapInstantiator;
 import org.hibernate.tuple.Instantiator;
 
@@ -40,29 +42,43 @@ import org.hibernate.tuple.Instantiator;
  * @author Steve Ebersole
  */
 public class DynamicMapComponentTuplizer extends AbstractComponentTuplizer {
+	public DynamicMapComponentTuplizer(
+			ServiceRegistry serviceRegistry,
+			EmbeddableBinding component,
+			boolean isIdentifierMapper) {
+		super( serviceRegistry, component, isIdentifierMapper );
+	}
 
+	@Override
 	public Class getMappedClass() {
 		return Map.class;
 	}
 
-	protected Instantiator buildInstantiator(Component component) {
-		return new DynamicMapInstantiator();
-	}
-
-	public DynamicMapComponentTuplizer(Component component) {
-		super(component);
-	}
-
-	private PropertyAccessor buildPropertyAccessor(Property property) {
+	private PropertyAccessor buildPropertyAccessor() {
 		return PropertyAccessorFactory.getDynamicMapPropertyAccessor();
 	}
 
-	protected Getter buildGetter(Component component, Property prop) {
-		return buildPropertyAccessor(prop).getGetter( null, prop.getName() );
+	@Override
+	protected Instantiator buildInstantiator(
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper) {
+		return new DynamicMapInstantiator();
 	}
 
-	protected Setter buildSetter(Component component, Property prop) {
-		return buildPropertyAccessor(prop).getSetter( null, prop.getName() );
+	@Override
+	protected Getter buildGetter(
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper,
+			AttributeBinding attributeBinding) {
+		return buildPropertyAccessor().getGetter( null, attributeBinding.getAttribute().getName() );
+	}
+
+	@Override
+	protected Setter buildSetter(
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper,
+			AttributeBinding attributeBinding) {
+		return buildPropertyAccessor().getSetter( null, attributeBinding.getAttribute().getName() );
 	}
 
 }

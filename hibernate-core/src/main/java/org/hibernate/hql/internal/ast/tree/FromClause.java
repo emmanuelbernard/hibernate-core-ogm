@@ -23,6 +23,7 @@
  *
  */
 package org.hibernate.hql.internal.ast.tree;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -31,11 +32,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ASTIterator;
 import org.hibernate.hql.internal.ast.util.ASTUtil;
-import org.jboss.logging.Logger;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
+
 import antlr.SemanticException;
 import antlr.collections.AST;
 
@@ -45,15 +47,15 @@ import antlr.collections.AST;
  * @author josh
  */
 public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, DisplayableNode {
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( FromClause.class );
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, FromClause.class.getName());
 	public static final int ROOT_LEVEL = 1;
 
 	private int level = ROOT_LEVEL;
-	private Set fromElements = new HashSet();
-	private Map fromElementByClassAlias = new HashMap();
-	private Map fromElementByTableAlias = new HashMap();
-	private Map fromElementsByPath = new HashMap();
+	private Set<FromElement> fromElements = new HashSet<FromElement>();
+	private Map<String,FromElement> fromElementByClassAlias = new HashMap<String,FromElement>();
+	private Map<String,FromElement> fromElementByTableAlias = new HashMap<String,FromElement>();
+	private Map<String,FromElement> fromElementsByPath = new HashMap<String,FromElement>();
 
 	/**
 	 * All of the implicit FROM xxx JOIN yyy elements that are the destination of a collection.  These are created from
@@ -67,11 +69,11 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	/**
 	 * Collection of FROM clauses of which this is the parent.
 	 */
-	private Set childFromClauses;
+	private Set<FromClause> childFromClauses;
 	/**
 	 * Counts the from elements as they are added.
 	 */
-	private int fromElementCounter = 0;
+	private int fromElementCounter;
 	/**
 	 * Implied FROM elements to add onto the end of the FROM clause.
 	 */
@@ -80,8 +82,9 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	/**
 	 * Adds a new from element to the from node.
 	 *
-	 * @param path  The reference to the class.
+	 * @param path The reference to the class.
 	 * @param alias The alias AST.
+	 *
 	 * @return FromElement - The new FROM element.
 	 */
 	public FromElement addFromElement(String path, AST alias) throws SemanticException {
@@ -122,10 +125,11 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	 * Retreives the from-element represented by the given alias.
 	 *
 	 * @param aliasOrClassName The alias by which to locate the from-element.
+	 *
 	 * @return The from-element assigned the given alias, or null if none.
 	 */
 	public FromElement getFromElement(String aliasOrClassName) {
-		FromElement fromElement = ( FromElement ) fromElementByClassAlias.get( aliasOrClassName );
+		FromElement fromElement = fromElementByClassAlias.get( aliasOrClassName );
 		if ( fromElement == null && getSessionFactoryHelper().isStrictJPAQLComplianceEnabled() ) {
 			fromElement = findIntendedAliasedFromElementBasedOnCrazyJPARequirements( aliasOrClassName );
 		}
@@ -136,7 +140,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	}
 
 	public FromElement findFromElementBySqlAlias(String sqlAlias) {
-		FromElement fromElement = ( FromElement ) fromElementByTableAlias.get( sqlAlias );
+		FromElement fromElement = fromElementByTableAlias.get( sqlAlias );
 		if ( fromElement == null && parentFromClause != null ) {
 			fromElement = parentFromClause.getFromElement( sqlAlias );
 		}
@@ -157,12 +161,10 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	}
 
 	private FromElement findIntendedAliasedFromElementBasedOnCrazyJPARequirements(String specifiedAlias) {
-		Iterator itr = fromElementByClassAlias.entrySet().iterator();
-		while ( itr.hasNext() ) {
-			Map.Entry entry = ( Map.Entry ) itr.next();
-			String alias = ( String ) entry.getKey();
+		for ( Map.Entry<String, FromElement> entry : fromElementByClassAlias.entrySet() ) {
+			final String alias = entry.getKey();
 			if ( alias.equalsIgnoreCase( specifiedAlias ) ) {
-				return ( FromElement ) entry.getValue();
+				return entry.getValue();
 			}
 		}
 		return null;
@@ -172,6 +174,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	 * Convenience method to check whether a given token represents a from-element alias.
 	 *
 	 * @param possibleAlias The potential from-element alias to check.
+	 *
 	 * @return True if the possibleAlias is an alias to a from-element visible
 	 *         from this point in the query graph.
 	 */
@@ -199,7 +202,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 //		if ( fromElements == null || fromElements.isEmpty() ) {
 //			throw new QueryException( "Unable to locate from element" );
 //		}
-		return (FromElement) getFromElements().get(0);
+		return (FromElement) getFromElements().get( 0 );
 	}
 
 	/**
@@ -225,38 +228,38 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 
 	private static ASTUtil.FilterPredicate fromElementPredicate = new ASTUtil.IncludePredicate() {
 		@Override
-        public boolean include(AST node) {
-			FromElement fromElement = ( FromElement ) node;
+		public boolean include(AST node) {
+			FromElement fromElement = (FromElement) node;
 			return fromElement.isFromOrJoinFragment();
 		}
 	};
 
 	private static ASTUtil.FilterPredicate projectionListPredicate = new ASTUtil.IncludePredicate() {
 		@Override
-        public boolean include(AST node) {
-			FromElement fromElement = ( FromElement ) node;
+		public boolean include(AST node) {
+			FromElement fromElement = (FromElement) node;
 			return fromElement.inProjectionList();
 		}
 	};
 
 	private static ASTUtil.FilterPredicate collectionFetchPredicate = new ASTUtil.IncludePredicate() {
 		@Override
-        public boolean include(AST node) {
-			FromElement fromElement = ( FromElement ) node;
+		public boolean include(AST node) {
+			FromElement fromElement = (FromElement) node;
 			return fromElement.isFetch() && fromElement.getQueryableCollection() != null;
 		}
 	};
 
 	private static ASTUtil.FilterPredicate explicitFromPredicate = new ASTUtil.IncludePredicate() {
 		@Override
-        public boolean include(AST node) {
-			final FromElement fromElement = ( FromElement ) node;
+		public boolean include(AST node) {
+			final FromElement fromElement = (FromElement) node;
 			return !fromElement.isImplied();
 		}
 	};
 
 	FromElement findCollectionJoin(String path) {
-		return ( FromElement ) collectionJoinFromElementsByPath.get( path );
+		return (FromElement) collectionJoinFromElementsByPath.get( path );
 	}
 
 	/**
@@ -273,11 +276,13 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 
 	FromElement findJoinByPathLocal(String path) {
 		Map joinsByPath = fromElementsByPath;
-		return ( FromElement ) joinsByPath.get( path );
+		return (FromElement) joinsByPath.get( path );
 	}
 
 	void addJoinByPathMap(String path, FromElement destination) {
-        LOG.debugf("addJoinByPathMap() : %s -> %s", path, destination.getDisplayText());
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf( "addJoinByPathMap() : %s -> %s", path, destination.getDisplayText() );
+		}
 		fromElementsByPath.put( path, destination );
 	}
 
@@ -285,6 +290,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	 * Returns true if the from node contains the class alias name.
 	 *
 	 * @param alias The HQL class alias name.
+	 *
 	 * @return true if the from node contains the class alias name.
 	 */
 	public boolean containsClassAlias(String alias) {
@@ -299,6 +305,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	 * Returns true if the from node contains the table alias name.
 	 *
 	 * @param alias The SQL table alias name.
+	 *
 	 * @return true if the from node contains the table alias name.
 	 */
 	public boolean containsTableAlias(String alias) {
@@ -328,16 +335,14 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 
 	private void addChild(FromClause fromClause) {
 		if ( childFromClauses == null ) {
-			childFromClauses = new HashSet();
+			childFromClauses = new HashSet<FromClause>();
 		}
 		childFromClauses.add( fromClause );
 	}
 
 	public FromClause locateChildFromClauseWithJoinByPath(String path) {
 		if ( childFromClauses != null && !childFromClauses.isEmpty() ) {
-			Iterator children = childFromClauses.iterator();
-			while ( children.hasNext() ) {
-				FromClause child = ( FromClause ) children.next();
+			for ( FromClause child : childFromClauses ) {
 				if ( child.findJoinByPathLocal( path ) != null ) {
 					return child;
 				}
@@ -347,7 +352,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	}
 
 	public void promoteJoin(FromElement elem) {
-        LOG.debugf("Promoting [%s] to [%s]", elem, this);
+		LOG.debugf( "Promoting [%s] to [%s]", elem, this );
 		//TODO: implement functionality
 		//  this might be painful to do here, as the "join post processing" for
 		//  the subquery has already been performed (meaning that for
@@ -363,8 +368,11 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	}
 
 	void addCollectionJoinFromElementByPath(String path, FromElement destination) {
-        LOG.debugf("addCollectionJoinFromElementByPath() : %s -> %s", path, destination);
-		collectionJoinFromElementsByPath.put( path, destination );	// Add the new node to the map so that we don't create it twice.
+		LOG.debugf( "addCollectionJoinFromElementByPath() : %s -> %s", path, destination );
+		collectionJoinFromElementsByPath.put(
+				path,
+				destination
+		);    // Add the new node to the map so that we don't create it twice.
 	}
 
 	public FromClause getParentFromClause() {
@@ -386,8 +394,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 		while ( iter.hasNext() ) {
 			childrenInTree.add( iter.next() );
 		}
-		for ( Iterator iterator = fromElements.iterator(); iterator.hasNext(); ) {
-			FromElement fromElement = ( FromElement ) iterator.next();
+		for ( FromElement fromElement : fromElements ) {
 			if ( !childrenInTree.contains( fromElement ) ) {
 				throw new IllegalStateException( "Element not in AST: " + fromElement );
 			}
@@ -399,9 +406,7 @@ public class FromClause extends HqlSqlWalkerNode implements HqlSqlTokenTypes, Di
 	}
 
 	@Override
-    public String toString() {
-		return "FromClause{" +
-				"level=" + level +
-				"}";
+	public String toString() {
+		return "FromClause{level=" + level + "}";
 	}
 }

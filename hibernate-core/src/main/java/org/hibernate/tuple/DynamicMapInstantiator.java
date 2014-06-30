@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.hibernate.mapping.PersistentClass;
-import org.hibernate.metamodel.binding.EntityBinding;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
 
 
 public class DynamicMapInstantiator implements Instantiator {
@@ -57,10 +57,10 @@ public class DynamicMapInstantiator implements Instantiator {
 	}
 
 	public DynamicMapInstantiator(EntityBinding mappingInfo) {
-		this.entityName = mappingInfo.getEntity().getName();
+		this.entityName = mappingInfo.getEntityName();
 		isInstanceEntityNames.add( entityName );
 		for ( EntityBinding subEntityBinding : mappingInfo.getPostOrderSubEntityBindingClosure() ) {
-			isInstanceEntityNames.add( subEntityBinding.getEntity().getName() );
+			isInstanceEntityNames.add( subEntityBinding.getEntityName() );
 		}
 	}
 

@@ -23,13 +23,12 @@
  */
 package org.hibernate.engine.jdbc.spi;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.LobCreationContext;
 import org.hibernate.engine.jdbc.LobCreator;
-import org.hibernate.service.jdbc.connections.spi.ConnectionProvider;
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
+import org.hibernate.engine.jdbc.env.spi.ExtractedDatabaseMetaData;
+import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.service.Service;
 
 /**
@@ -42,12 +41,15 @@ public interface JdbcServices extends Service {
 	 * Obtain service for providing JDBC connections.
 	 *
 	 * @return The connection provider.
+	 *
+	 * @deprecated See deprecation notice on {@link org.hibernate.engine.spi.SessionFactoryImplementor#getConnectionProvider()}
+	 * for details
 	 */
+	@Deprecated
 	public ConnectionProvider getConnectionProvider();
 
 	/**
-	 * Obtain the dialect of the database to which {@link Connection connections} from
-	 * {@link #getConnectionProvider()} point.
+	 * Obtain the dialect of the database.
 	 *
 	 * @return The database dialect.
 	 */
@@ -86,8 +88,10 @@ public interface JdbcServices extends Service {
 	public LobCreator getLobCreator(LobCreationContext lobCreationContext);
 
 	/**
-	 * Obtain service for wrapping a {@link ResultSet} in a "column name cache" wrapper.
+	 * Obtain service for wrapping a {@link java.sql.ResultSet} in a "column name cache" wrapper.
 	 * @return The ResultSet wrapper.
 	 */
 	public ResultSetWrapper getResultSetWrapper();
+
+	public JdbcEnvironment getJdbcEnvironment();
 }

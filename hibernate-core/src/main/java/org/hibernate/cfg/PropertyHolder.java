@@ -22,9 +22,11 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.cfg;
+
 import javax.persistence.Column;
 import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
+
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.annotations.common.reflection.XProperty;
 import org.hibernate.mapping.Join;
@@ -91,4 +93,20 @@ public interface PropertyHolder {
 	boolean isInIdClass();
 
 	void setInIdClass(Boolean isInIdClass);
+
+	/**
+	 * Called during binding to allow the PropertyHolder to inspect its discovered properties.  Mainly
+	 * this is used in collecting attribute conversion declarations (via @Convert/@Converts).
+	 *
+	 * @param property The property
+	 */
+	void startingProperty(XProperty property);
+
+	/**
+	 * Determine the AttributeConverter to use for the given property.
+	 *
+	 * @param property
+	 * @return
+	 */
+	AttributeConverterDefinition resolveAttributeConverterDefinition(XProperty property);
 }

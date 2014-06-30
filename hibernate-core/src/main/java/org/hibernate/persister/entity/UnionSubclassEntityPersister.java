@@ -29,27 +29,33 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
 import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
+import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
 import org.hibernate.cfg.Settings;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
 import org.hibernate.engine.spi.Mapping;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.id.IdentityGenerator;
+import org.hibernate.internal.FilterAliasGenerator;
+import org.hibernate.internal.StaticFilterAliasGenerator;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.internal.util.collections.JoinedIterator;
 import org.hibernate.internal.util.collections.SingletonIterator;
 import org.hibernate.mapping.Column;
 import org.hibernate.mapping.PersistentClass;
-import org.hibernate.mapping.Subclass;
 import org.hibernate.mapping.Table;
-import org.hibernate.metamodel.binding.EntityBinding;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
+import org.hibernate.metamodel.spi.relational.TableSpecification;
+import org.hibernate.metamodel.spi.relational.Value;
 import org.hibernate.sql.SelectFragment;
 import org.hibernate.sql.SimpleSelect;
 import org.hibernate.type.StandardBasicTypes;
@@ -80,143 +86,116 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 	//INITIALIZATION:
 
 	public UnionSubclassEntityPersister(
-			final PersistentClass persistentClass, 
+			final EntityBinding entityBinding,
 			final EntityRegionAccessStrategy cacheAccessStrategy,
+			final NaturalIdRegionAccessStrategy naturalIdRegionAccessStrategy,
 			final SessionFactoryImplementor factory,
 			final Mapping mapping) throws HibernateException {
-
-		super( persistentClass, cacheAccessStrategy, factory );
-		
+		super(entityBinding, cacheAccessStrategy, naturalIdRegionAccessStrategy, factory );
 		if ( getIdentifierGenerator() instanceof IdentityGenerator ) {
 			throw new MappingException(
-					"Cannot use identity column key generation with <union-subclass> mapping for: " + 
-					getEntityName() 
+					"Cannot use identity column key generation with <union-subclass> mapping for: " +
+							getEntityName()
 			);
 		}
+		tableName = entityBinding.getPrimaryTable().getQualifiedName( factory.getDialect() );
 
-		// TABLE
-
-		tableName = persistentClass.getTable().getQualifiedName( 
-				factory.getDialect(), 
-				factory.getSettings().getDefaultCatalogName(), 
-				factory.getSettings().getDefaultSchemaName() 
-		);
-		/*rootTableName = persistentClass.getRootTable().getQualifiedName( 
-				factory.getDialect(), 
-				factory.getDefaultCatalog(), 
-				factory.getDefaultSchema() 
-		);*/
 
 		//Custom SQL
+		// Custom sql
+		customSQLInsert = new String[1];
+		customSQLUpdate = new String[1];
+		customSQLDelete = new String[1];
+		insertCallable = new boolean[1];
+		updateCallable = new boolean[1];
+		deleteCallable = new boolean[1];
+		insertResultCheckStyles = new ExecuteUpdateResultCheckStyle[1];
+		updateResultCheckStyles = new ExecuteUpdateResultCheckStyle[1];
+		deleteResultCheckStyles = new ExecuteUpdateResultCheckStyle[1];
 
-		String sql;
-		boolean callable = false;
-		ExecuteUpdateResultCheckStyle checkStyle = null;
-		sql = persistentClass.getCustomSQLInsert();
-		callable = sql != null && persistentClass.isCustomInsertCallable();
-		checkStyle = sql == null
-				? ExecuteUpdateResultCheckStyle.COUNT
-	            : persistentClass.getCustomSQLInsertCheckStyle() == null
-						? ExecuteUpdateResultCheckStyle.determineDefault( sql, callable )
-	                    : persistentClass.getCustomSQLInsertCheckStyle();
-		customSQLInsert = new String[] { sql };
-		insertCallable = new boolean[] { callable };
-		insertResultCheckStyles = new ExecuteUpdateResultCheckStyle[] { checkStyle };
-
-		sql = persistentClass.getCustomSQLUpdate();
-		callable = sql != null && persistentClass.isCustomUpdateCallable();
-		checkStyle = sql == null
-				? ExecuteUpdateResultCheckStyle.COUNT
-	            : persistentClass.getCustomSQLUpdateCheckStyle() == null
-						? ExecuteUpdateResultCheckStyle.determineDefault( sql, callable )
-	                    : persistentClass.getCustomSQLUpdateCheckStyle();
-		customSQLUpdate = new String[] { sql };
-		updateCallable = new boolean[] { callable };
-		updateResultCheckStyles = new ExecuteUpdateResultCheckStyle[] { checkStyle };
-
-		sql = persistentClass.getCustomSQLDelete();
-		callable = sql != null && persistentClass.isCustomDeleteCallable();
-		checkStyle = sql == null
-				? ExecuteUpdateResultCheckStyle.COUNT
-	            : persistentClass.getCustomSQLDeleteCheckStyle() == null
-						? ExecuteUpdateResultCheckStyle.determineDefault( sql, callable )
-	                    : persistentClass.getCustomSQLDeleteCheckStyle();
-		customSQLDelete = new String[] { sql };
-		deleteCallable = new boolean[] { callable };
-		deleteResultCheckStyles = new ExecuteUpdateResultCheckStyle[] { checkStyle };
-
-		discriminatorValue = persistentClass.getSubclassId();
-		discriminatorSQLValue = String.valueOf( persistentClass.getSubclassId() );
+		initializeCustomSql( entityBinding.getCustomInsert(), 0, customSQLInsert, insertCallable, insertResultCheckStyles );
+		initializeCustomSql( entityBinding.getCustomUpdate(), 0, customSQLUpdate, updateCallable, updateResultCheckStyles );
+		initializeCustomSql( entityBinding.getCustomDelete(), 0, customSQLDelete, deleteCallable, deleteResultCheckStyles );
+		//discriminator
+		{
+			discriminatorValue = entityBinding.getSubEntityBindingId();
+			discriminatorSQLValue = String.valueOf( discriminatorValue );
+		}
 
 		// PROPERTIES
 
-		int subclassSpan = persistentClass.getSubclassSpan() + 1;
+		int subclassSpan = entityBinding.getSubEntityBindingClosureSpan() + 1;
 		subclassClosure = new String[subclassSpan];
 		subclassClosure[0] = getEntityName();
 
 		// SUBCLASSES
-		subclassByDiscriminatorValue.put( 
-				persistentClass.getSubclassId(),
-				persistentClass.getEntityName() 
+		subclassByDiscriminatorValue.put(
+				entityBinding.getSubEntityBindingId(),
+				entityBinding.getEntityName()
 		);
-		if ( persistentClass.isPolymorphic() ) {
-			Iterator iter = persistentClass.getSubclassIterator();
+		if ( entityBinding.isPolymorphic() ) {
 			int k=1;
-			while ( iter.hasNext() ) {
-				Subclass sc = (Subclass) iter.next();
-				subclassClosure[k++] = sc.getEntityName();
-				subclassByDiscriminatorValue.put( sc.getSubclassId(), sc.getEntityName() );
+			for(EntityBinding subEntityBinding : entityBinding.getPreOrderSubEntityBindingClosure()){
+				subclassClosure[k++] = subEntityBinding.getEntityName();
+				subclassByDiscriminatorValue.put( subEntityBinding.getSubEntityBindingId(), subEntityBinding.getEntityName() );
 			}
 		}
-		
+
+
 		//SPACES
 		//TODO: i'm not sure, but perhaps we should exclude
 		//      abstract denormalized tables?
-		
-		int spacesSize = 1 + persistentClass.getSynchronizedTables().size();
+
+		String[] synchronizedTableNames = entityBinding.getSynchronizedTableNames();
+		int spacesSize = 1 +synchronizedTableNames.length;
 		spaces = new String[spacesSize];
 		spaces[0] = tableName;
-		Iterator iter = persistentClass.getSynchronizedTables().iterator();
-		for ( int i=1; i<spacesSize; i++ ) {
-			spaces[i] = (String) iter.next();
+		if ( ! ArrayHelper.isEmpty( synchronizedTableNames ) ) {
+			System.arraycopy( synchronizedTableNames, 0, spaces, 1, spacesSize );
 		}
-		
-		HashSet subclassTables = new HashSet();
-		iter = persistentClass.getSubclassTableClosureIterator();
-		while ( iter.hasNext() ) {
-			Table table = (Table) iter.next();
-			subclassTables.add( table.getQualifiedName(
-					factory.getDialect(), 
-					factory.getSettings().getDefaultCatalogName(), 
-					factory.getSettings().getDefaultSchemaName() 
-			) );
-		}
-		subclassSpaces = ArrayHelper.toStringArray(subclassTables);
 
-		subquery = generateSubquery(persistentClass, mapping);
+		HashSet<String> subclassTables = new HashSet<String>();
+		final EntityBinding[] subEntityBindings = entityBinding.getPreOrderSubEntityBindingClosure();
+		/*
+		 TODO: here we actually need all entitybindings in the hierarchy, for example:
+		 			A
+		 		  /   \
+		 		 B     C
+		 		/      \
+		 	  D	        E
+
+		if the current entity is A, then here we need to process all A,B,C,D,E
+		but if the current entity D, then here we need D,B,A
+		if the current entity is B, then still A,B,D
+		 */
+
+
+		EntityBinding[] ebs = ArrayHelper.join( entityBinding.getEntityBindingClosure(), subEntityBindings );
+		for ( EntityBinding subEntityBinding : ebs ) {
+			subclassTables.add( subEntityBinding.getPrimaryTable().getQualifiedName( factory.getDialect() ) );
+		}
+		subclassSpaces = ArrayHelper.toStringArray( subclassTables );
+
+		subquery = generateSubquery( entityBinding );
 
 		if ( isMultiTable() ) {
 			int idColumnSpan = getIdentifierColumnSpan();
-			ArrayList tableNames = new ArrayList();
-			ArrayList keyColumns = new ArrayList();
+			ArrayList<String> tableNames = new ArrayList<String>();
+			ArrayList<String[]> keyColumns = new ArrayList<String[]>();
 			if ( !isAbstract() ) {
 				tableNames.add( tableName );
 				keyColumns.add( getIdentifierColumnNames() );
 			}
-			iter = persistentClass.getSubclassTableClosureIterator();
-			while ( iter.hasNext() ) {
-				Table tab = ( Table ) iter.next();
-				if ( !tab.isAbstractUnionTable() ) {
-					String tableName = tab.getQualifiedName(
-							factory.getDialect(),
-							factory.getSettings().getDefaultCatalogName(),
-							factory.getSettings().getDefaultSchemaName()
-					);
+			ebs = ArrayHelper.join( new EntityBinding[]{entityBinding}, subEntityBindings );
+			for(final EntityBinding eb : ebs){
+				TableSpecification tab = eb.getPrimaryTable();
+				if ( isNotAbstractUnionTable( eb ) ) {
+					String tableName = tab.getQualifiedName( factory.getDialect() );
 					tableNames.add( tableName );
 					String[] key = new String[idColumnSpan];
-					Iterator citer = tab.getPrimaryKey().getColumnIterator();
-					for ( int k=0; k<idColumnSpan; k++ ) {
-						key[k] = ( ( Column ) citer.next() ).getQuotedName( factory.getDialect() );
+					List<org.hibernate.metamodel.spi.relational.Column> columns = tab.getPrimaryKey().getColumns();
+					for ( int k = 0; k < idColumnSpan; k++ ) {
+						key[k] = columns.get( k ).getColumnName().getText( factory.getDialect() );
 					}
 					keyColumns.add( key );
 				}
@@ -229,31 +208,9 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 			constraintOrderedTableNames = new String[] { tableName };
 			constraintOrderedKeyColumnNames = new String[][] { getIdentifierColumnNames() };
 		}
-
 		initLockers();
-
-		initSubclassPropertyAliasesMap(persistentClass);
-		
+		initSubclassPropertyAliasesMap(entityBinding);
 		postConstruct(mapping);
-
-	}
-
-	public UnionSubclassEntityPersister(
-			final EntityBinding entityBinding,
-			final EntityRegionAccessStrategy cacheAccessStrategy,
-			final SessionFactoryImplementor factory,
-			final Mapping mapping) throws HibernateException {
-		super(entityBinding, cacheAccessStrategy, factory );
-		// TODO: implement!!! initializing final fields to null to make compiler happy.
-		subquery = null;
-		tableName = null;
-		subclassClosure = null;
-		spaces = null;
-		subclassSpaces = null;
-		discriminatorValue = null;
-		discriminatorSQLValue = null;
-		constraintOrderedTableNames = null;
-		constraintOrderedKeyColumnNames = null;
 	}
 
 	public Serializable[] getQuerySpaces() {
@@ -351,10 +308,16 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 		return getTableName() + ' '  + name;
 	}
 
+	@Override
 	public String filterFragment(String name) {
-		return hasWhere() ?
-			" and " + getSQLWhereString(name) :
-			"";
+		return hasWhere()
+				? " and " + getSQLWhereString( name )
+				: "";
+	}
+
+	@Override
+	protected String filterFragment(String alias, Set<String> treatAsDeclarations) {
+		return filterFragment( alias );
 	}
 
 	public String getSubclassPropertyTableName(int i) {
@@ -402,6 +365,106 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 		return new int[ getPropertySpan() ];
 	}
 
+	private boolean isNotAbstractUnionTable(EntityBinding entityBinding) {
+//		return !entityBinding.isAbstract() && entityBinding.getHierarchyDetails()
+//				.getInheritanceType() != InheritanceType.TABLE_PER_CLASS;
+		return !entityBinding.isAbstract();
+	}
+	private void visitEntityHierarchy(EntityBinding entityBinding, Callback callback){
+		EntityBinding rootEntityBinding = entityBinding.getHierarchyDetails().getRootEntityBinding();
+		callback.execute( rootEntityBinding );
+		visitSubEntityBindings( rootEntityBinding, callback );
+	}
+	private void visitSubEntityBindings(EntityBinding superEntityBinding, Callback callback){
+		callback.execute( superEntityBinding );
+		Iterable<EntityBinding> entityBindings= superEntityBinding.getDirectSubEntityBindings();
+//		for(EntityBinding entityBinding : entityBindings){
+//			callback.execute( entityBinding );
+//		}
+		for(EntityBinding entityBinding : entityBindings){
+			visitSubEntityBindings( entityBinding, callback );
+		}
+	}
+	private static interface Callback{
+		void execute(EntityBinding entityBinding);
+	}
+	protected String generateSubquery(EntityBinding entityBinding){
+		final Dialect dialect = getFactory().getDialect();
+
+		if ( !entityBinding.hasSubEntityBindings() ) {
+			return entityBinding.getPrimaryTable().getQualifiedName( dialect );
+		}
+
+		final HashSet<org.hibernate.metamodel.spi.relational.Column> columns = new LinkedHashSet<org.hibernate.metamodel.spi.relational.Column>();
+//		Iterable<EntityBinding> subEntityBindings = entityBinding.getHierarchyDetails()..getEntityBindingClosure();
+
+//		for(EntityBinding eb : subEntityBindings){
+//			if ( isNotAbstractUnionTable( eb ) ) {
+//				TableSpecification table = entityBinding.getPrimaryTable();
+//				for ( Value v : table.values() ) {
+//					if ( org.hibernate.metamodel.spi.relational.Column.class.isInstance( v ) ) {
+//						columns.add( org.hibernate.metamodel.spi.relational.Column.class.cast( v ) );
+//					}
+//				}
+//			}
+//		}
+
+		visitSubEntityBindings(
+				entityBinding, new Callback() {
+			@Override
+			public void execute(EntityBinding eb) {
+				if ( isNotAbstractUnionTable( eb ) ) {
+					TableSpecification table = eb.getPrimaryTable();
+					for ( Value v : table.values() ) {
+						if ( org.hibernate.metamodel.spi.relational.Column.class.isInstance( v ) ) {
+							columns.add( org.hibernate.metamodel.spi.relational.Column.class.cast( v ) );
+						}
+					}
+				}
+			}
+		}
+		);
+
+
+		final StringBuilder buf = new StringBuilder()
+				.append("( ");
+
+		visitSubEntityBindings( entityBinding, new Callback() {
+			@Override
+			public void execute(EntityBinding eb) {
+				TableSpecification table = eb.getPrimaryTable();
+				if ( isNotAbstractUnionTable( eb )) {
+					//TODO: move to .sql package!!
+					buf.append("select ");
+					for(org.hibernate.metamodel.spi.relational.Column column : columns){
+						if(!table.hasValue( column )){
+							buf.append( dialect.getSelectClauseNullString(column.getJdbcDataType().getTypeCode()) )
+									.append(" as ");
+						}
+						buf.append( column.getColumnName().getText( dialect ) );
+						buf.append( ", " );
+					}
+					buf.append( eb.getSubEntityBindingId() )
+							.append( " as clazz_" );
+					buf.append(" from ")
+							.append( table.getQualifiedName( dialect ));
+					buf.append(" union ");
+					if ( dialect.supportsUnionAll() ) {
+						buf.append("all ");
+					}
+				}
+			}
+		} );
+
+
+		if ( buf.length() > 2 ) {
+			//chop the last union (all)
+			buf.setLength( buf.length() - ( dialect.supportsUnionAll() ? 11 : 7 ) );
+		}
+
+		return buf.append(" )").toString();
+	}
+
 	protected String generateSubquery(PersistentClass model, Mapping mapping) {
 
 		Dialect dialect = getFactory().getDialect();
@@ -447,7 +510,7 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 						buf.append( dialect.getSelectClauseNullString(sqlType) )
 							.append(" as ");
 					}
-					buf.append( col.getName() );
+					buf.append( col.getQuotedName(dialect) );
 					buf.append(", ");
 				}
 				buf.append( clazz.getSubclassId() )
@@ -503,5 +566,10 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 
 	public String[][] getContraintOrderedTableKeyColumnClosure() {
 		return constraintOrderedKeyColumnNames;
+	}
+
+	@Override
+	public FilterAliasGenerator getFilterAliasGenerator(String rootAlias) {
+		return new StaticFilterAliasGenerator(rootAlias);
 	}
 }

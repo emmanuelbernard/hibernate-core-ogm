@@ -25,14 +25,15 @@ package org.hibernate.engine.transaction.internal.jdbc;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.TransactionException;
 import org.hibernate.engine.transaction.spi.AbstractTransactionImpl;
 import org.hibernate.engine.transaction.spi.IsolationDelegate;
 import org.hibernate.engine.transaction.spi.JoinStatus;
 import org.hibernate.engine.transaction.spi.LocalStatus;
 import org.hibernate.engine.transaction.spi.TransactionCoordinator;
+import org.hibernate.internal.CoreMessageLogger;
 
 import org.jboss.logging.Logger;
 
@@ -47,7 +48,7 @@ import org.jboss.logging.Logger;
  */
 public class JdbcTransaction extends AbstractTransactionImpl {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, JdbcTransaction.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, JdbcTransaction.class.getName() );
 
 	private Connection managedConnection;
 	private boolean wasInitiallyAutoCommit;
@@ -65,9 +66,9 @@ public class JdbcTransaction extends AbstractTransactionImpl {
 			}
 			managedConnection = transactionCoordinator().getJdbcCoordinator().getLogicalConnection().getConnection();
 			wasInitiallyAutoCommit = managedConnection.getAutoCommit();
-            LOG.debug("initial autocommit status: " + wasInitiallyAutoCommit);
+			LOG.debugv( "initial autocommit status: {0}", wasInitiallyAutoCommit );
 			if ( wasInitiallyAutoCommit ) {
-                LOG.debug("disabling autocommit");
+				LOG.debug( "disabling autocommit" );
 				managedConnection.setAutoCommit( false );
 			}
 		}
@@ -109,7 +110,7 @@ public class JdbcTransaction extends AbstractTransactionImpl {
 	protected void doCommit() throws TransactionException {
 		try {
 			managedConnection.commit();
-            LOG.debug("committed JDBC Connection");
+			LOG.debug( "committed JDBC Connection" );
 		}
 		catch( SQLException e ) {
 			throw new TransactionException( "unable to commit against JDBC connection", e );
@@ -122,13 +123,13 @@ public class JdbcTransaction extends AbstractTransactionImpl {
 	private void releaseManagedConnection() {
 		try {
 			if ( wasInitiallyAutoCommit ) {
-                LOG.debug("re-enabling autocommit");
+				LOG.debug( "re-enabling autocommit" );
 				managedConnection.setAutoCommit( true );
 			}
 			managedConnection = null;
 		}
 		catch ( Exception e ) {
-            LOG.debug("Could not toggle autocommit", e);
+			LOG.debug( "Could not toggle autocommit", e );
 		}
 	}
 
@@ -146,7 +147,7 @@ public class JdbcTransaction extends AbstractTransactionImpl {
 				transactionCoordinator().getTransactionContext().managedClose();
 			}
 			catch (HibernateException e) {
-                LOG.unableToCloseSessionButSwallowingError(e);
+				LOG.unableToCloseSessionButSwallowingError( e );
 			}
 		}
 	}
@@ -160,7 +161,7 @@ public class JdbcTransaction extends AbstractTransactionImpl {
 	protected void doRollback() throws TransactionException {
 		try {
 			managedConnection.rollback();
-            LOG.debug("rolled JDBC Connection");
+			LOG.debug( "rolled JDBC Connection" );
 		}
 		catch( SQLException e ) {
 			throw new TransactionException( "unable to rollback against JDBC connection", e );

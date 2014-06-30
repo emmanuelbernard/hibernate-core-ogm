@@ -33,43 +33,79 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.cfg.Configuration;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
-import org.hibernate.exception.spi.SQLExceptionConverter;
+import org.hibernate.exception.internal.SQLExceptionTypeDelegate;
+import org.hibernate.exception.internal.SQLStateConversionDelegate;
+import org.hibernate.exception.internal.StandardSQLExceptionConverter;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.mapping.Table;
-
 import org.jboss.logging.Logger;
 
 /**
  * JDBC database metadata
  * @author Christoph Sturm, Teodor Danciu
+ * @author Brett Meyer
  */
 public class DatabaseMetadata {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, DatabaseMetaData.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, DatabaseMetaData.class.getName());
 
 	private final Map tables = new HashMap();
 	private final Set sequences = new HashSet();
 	private final boolean extras;
 
 	private DatabaseMetaData meta;
-	private SQLExceptionConverter sqlExceptionConverter;
+	private SqlExceptionHelper sqlExceptionHelper;
 
+	private final String[] types;
+	/**
+	 * @deprecated Use {@link #DatabaseMetadata(Connection, Dialect, Configuration)} instead
+	 */
+	@Deprecated
 	public DatabaseMetadata(Connection connection, Dialect dialect) throws SQLException {
-		this(connection, dialect, true);
+		this(connection, dialect, null, true);
 	}
 
+	/**
+	 * @deprecated Use {@link #DatabaseMetadata(Connection, Dialect, Configuration, boolean)} instead
+	 */
+	@Deprecated
 	public DatabaseMetadata(Connection connection, Dialect dialect, boolean extras) throws SQLException {
-		sqlExceptionConverter = dialect.buildSQLExceptionConverter();
+		this(connection, dialect, null, extras);
+	}
+	
+	public DatabaseMetadata(Connection connection, Dialect dialect, Configuration config) throws SQLException {
+		this(connection, dialect, config, true);
+	}
+
+	public DatabaseMetadata(Connection connection, Dialect dialect, Configuration config, boolean extras)
+			throws SQLException {
+		// TODO: Duplicates JdbcEnvironmentImpl#buildSqlExceptionHelper
+		final StandardSQLExceptionConverter sqlExceptionConverter = new StandardSQLExceptionConverter();
+		sqlExceptionConverter.addDelegate( dialect.buildSQLExceptionConversionDelegate() );
+		sqlExceptionConverter.addDelegate( new SQLExceptionTypeDelegate( dialect ) );
+		// todo : vary this based on extractedMetaDataSupport.getSqlStateType()
+		sqlExceptionConverter.addDelegate( new SQLStateConversionDelegate( dialect ) );
+		sqlExceptionHelper = new SqlExceptionHelper( sqlExceptionConverter );
+		
 		meta = connection.getMetaData();
 		this.extras = extras;
-		initSequences(connection, dialect);
+		initSequences( connection, dialect );
+		if ( config != null
+				&& ConfigurationHelper.getBoolean( AvailableSettings.ENABLE_SYNONYMS, config.getProperties(), false ) ) {
+			types = new String[] { "TABLE", "VIEW", "SYNONYM" };
+		}
+		else {
+			types = new String[] { "TABLE", "VIEW" };
+		}
 	}
-
-	private static final String[] TYPES = {"TABLE", "VIEW"};
 
 	public TableMetadata getTableMetadata(String name, String schema, String catalog, boolean isQuoted) throws HibernateException {
 
@@ -84,14 +120,14 @@ public class DatabaseMetadata {
 				ResultSet rs = null;
 				try {
 					if ( (isQuoted && meta.storesMixedCaseQuotedIdentifiers())) {
-						rs = meta.getTables(catalog, schema, name, TYPES);
+						rs = meta.getTables(catalog, schema, name, types);
 					} else if ( (isQuoted && meta.storesUpperCaseQuotedIdentifiers())
 						|| (!isQuoted && meta.storesUpperCaseIdentifiers() )) {
 						rs = meta.getTables(
 								StringHelper.toUpperCase(catalog),
 								StringHelper.toUpperCase(schema),
 								StringHelper.toUpperCase(name),
-								TYPES
+								types
 							);
 					}
 					else if ( (isQuoted && meta.storesLowerCaseQuotedIdentifiers())
@@ -100,11 +136,11 @@ public class DatabaseMetadata {
 								StringHelper.toLowerCase( catalog ),
 								StringHelper.toLowerCase(schema), 
 								StringHelper.toLowerCase(name), 
-								TYPES 
+								types 
 							);
 					}
 					else {
-						rs = meta.getTables(catalog, schema, name, TYPES);
+						rs = meta.getTables(catalog, schema, name, types);
 					}
 
 					while ( rs.next() ) {
@@ -116,17 +152,18 @@ public class DatabaseMetadata {
 						}
 					}
 
-                    LOG.tableNotFound(name);
+					LOG.tableNotFound( name );
 					return null;
 
 				}
 				finally {
-					if (rs!=null) rs.close();
+					if ( rs != null ) {
+						rs.close();
+					}
 				}
 			}
 			catch (SQLException sqlException) {
-				throw new SqlExceptionHelper( sqlExceptionConverter )
-						.convert( sqlException, "could not get table metadata: " + name );
+				throw sqlExceptionHelper.convert( sqlException, "could not get table metadata: " + name );
 			}
 		}
 
@@ -148,14 +185,17 @@ public class DatabaseMetadata {
 					rs = statement.executeQuery(sql);
 
 					while ( rs.next() ) {
-						sequences.add( rs.getString(1).toLowerCase().trim() );
+						sequences.add( StringHelper.toLowerCase(rs.getString(1)).trim() );
 					}
 				}
 				finally {
-					if (rs!=null) rs.close();
-					if (statement!=null) statement.close();
+					if ( rs != null ) {
+						rs.close();
+					}
+					if ( statement != null ) {
+						statement.close();
+					}
 				}
-
 			}
 		}
 	}
@@ -163,35 +203,35 @@ public class DatabaseMetadata {
 	public boolean isSequence(Object key) {
 		if (key instanceof String){
 			String[] strings = StringHelper.split(".", (String) key);
-			return sequences.contains( strings[strings.length-1].toLowerCase());
+			return sequences.contains( StringHelper.toLowerCase(strings[strings.length-1]));
 		}
 		return false;
 	}
 
- 	public boolean isTable(Object key) throws HibernateException {
- 		if(key instanceof String) {
+	public boolean isTable(Object key) throws HibernateException {
+		if(key instanceof String) {
 			Table tbl = new Table((String)key);
 			if ( getTableMetadata( tbl.getName(), tbl.getSchema(), tbl.getCatalog(), tbl.isQuoted() ) != null ) {
- 				return true;
- 			} else {
- 				String[] strings = StringHelper.split(".", (String) key);
- 				if(strings.length==3) {
+				return true;
+			} else {
+				String[] strings = StringHelper.split(".", (String) key);
+				if(strings.length==3) {
 					tbl = new Table(strings[2]);
 					tbl.setCatalog(strings[0]);
 					tbl.setSchema(strings[1]);
 					return getTableMetadata( tbl.getName(), tbl.getSchema(), tbl.getCatalog(), tbl.isQuoted() ) != null;
- 				} else if (strings.length==2) {
+				} else if (strings.length==2) {
 					tbl = new Table(strings[1]);
 					tbl.setSchema(strings[0]);
 					return getTableMetadata( tbl.getName(), tbl.getSchema(), tbl.getCatalog(), tbl.isQuoted() ) != null;
- 				}
- 			}
- 		}
- 		return false;
- 	}
+				}
+			}
+		}
+		return false;
+	}
 
 	@Override
-    public String toString() {
+	public String toString() {
 		return "DatabaseMetadata" + tables.keySet().toString() + sequences.toString();
 	}
 }

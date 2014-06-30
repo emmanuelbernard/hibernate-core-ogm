@@ -23,7 +23,12 @@
  */
 package org.hibernate.testing.junit4;
 
+import org.hibernate.internal.SessionFactoryRegistry;
+
+import org.hibernate.testing.PossibleLeaksLogger;
 import org.junit.runners.model.Statement;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author Steve Ebersole
@@ -41,5 +46,12 @@ public class AfterClassCallbackHandler extends Statement {
 	public void evaluate() throws Throwable {
 		wrappedStatement.evaluate();
 		runner.getTestClassMetadata().performAfterClassCallbacks( runner.getTestInstance() );
+		if ( SessionFactoryRegistry.INSTANCE.hasRegistrations() ) {
+			PossibleLeaksLogger.logPossibleLeak(
+					"Possible SessionFactory leak",
+					runner.getTestClassMetadata().getTestClass().getName()
+			);
+			SessionFactoryRegistry.INSTANCE.clearRegistrations();
+		}
 	}
 }

@@ -23,37 +23,11 @@
  */
 package org.hibernate.testing.cache;
 
-import org.jboss.logging.Logger;
-
-import org.hibernate.cache.CacheException;
-import org.hibernate.cache.spi.access.SoftLock;
-import org.hibernate.internal.CoreMessageLogger;
-
 /**
  * @author Strong Liu
  */
 class ReadOnlyCollectionRegionAccessStrategy extends BaseCollectionRegionAccessStrategy {
-	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
-			CoreMessageLogger.class, ReadOnlyCollectionRegionAccessStrategy.class.getName()
-	);
-
 	ReadOnlyCollectionRegionAccessStrategy(CollectionRegionImpl region) {
 		super( region );
 	}
-
-	@Override
-	public void unlockItem(Object key, SoftLock lock) throws CacheException {
-		LOG.invalidEditOfReadOnlyItem( key );
-	}
-
-	@Override
-	public SoftLock lockItem(Object key, Object version) throws CacheException {
-		LOG.invalidEditOfReadOnlyItem( key );
-		throw new UnsupportedOperationException( "Can't write to a readonly object" );
-	}
-
-	@Override
-	public void remove(Object key) throws CacheException {
-	}
-
 }

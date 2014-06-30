@@ -23,10 +23,11 @@
  */
 // $Id$
 package org.hibernate.annotations;
-import static java.lang.annotation.ElementType.TYPE;
-import static java.lang.annotation.RetentionPolicy.RUNTIME;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
+
+import static java.lang.annotation.ElementType.TYPE;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Optional annotation to express Hibernate specific discrimintor properties.
@@ -37,18 +38,15 @@ import java.lang.annotation.Target;
 @Retention(RUNTIME)
 public @interface DiscriminatorOptions {
 	/**
-	 * "Forces" Hibernate to specify the allowed discriminator values, even when retrieving all instances of the root class.
-	 *
-	 * @return {@code true} in case the discriminator value should be forces, {@code false} otherwise. Default is {@code false}.
+	 * "Forces" Hibernate to specify the allowed discriminator values, even when retrieving all instances of
+	 * the root class.  {@code true} indicates that the discriminator value should be forced; Default is
+	 * {@code false}.
 	 */
 	boolean force() default false;
 
 	/**
-	 * Set this to {@code false}, if your discriminator column is also part of a mapped composite identifier.
-	 * It tells Hibernate not to include the column in SQL INSERTs.
-	 *
-	 * @return {@code true} in case the discriminator value should be included in inserts, {@code false} otherwise.
-	 *         Default is {@code true}.
+	 * Set this to {@code false} if your discriminator column is also part of a mapped composite identifier.
+	 * It tells Hibernate not to include the column in SQL INSERTs.  Default is {@code true}.
 	 */
 	boolean insert() default true;
 }

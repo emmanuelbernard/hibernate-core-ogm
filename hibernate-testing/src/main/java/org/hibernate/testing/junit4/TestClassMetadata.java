@@ -23,16 +23,16 @@
  */
 package org.hibernate.testing.junit4;
 
-import org.hibernate.testing.AfterClassOnce;
-import org.hibernate.testing.BeforeClassOnce;
-import org.hibernate.testing.OnExpectedFailure;
-import org.hibernate.testing.OnFailure;
-
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.List;
+
+import org.hibernate.testing.AfterClassOnce;
+import org.hibernate.testing.BeforeClassOnce;
+import org.hibernate.testing.OnExpectedFailure;
+import org.hibernate.testing.OnFailure;
 
 /**
  * Metadata about various types of callback methods on a given test class.
@@ -42,12 +42,15 @@ import java.util.List;
 public class TestClassMetadata {
 	private static final Object[] NO_ARGS = new Object[0];
 
+	private Class testClass;
+
 	private LinkedHashSet<Method> beforeClassOnceMethods;
 	private LinkedHashSet<Method> afterClassOnceMethods;
 	private LinkedHashSet<Method> onFailureCallbacks;
 	private LinkedHashSet<Method> onExpectedFailureCallbacks;
 
 	public TestClassMetadata(Class testClass) {
+		this.testClass = testClass;
 		processClassHierarchy( testClass );
 	}
 
@@ -74,6 +77,10 @@ public class TestClassMetadata {
 		}
 	}
 
+	public Class getTestClass() {
+		return testClass;
+	}
+
 	private void addBeforeClassOnceCallback(Method method) {
 		if ( beforeClassOnceMethods == null ) {
 			beforeClassOnceMethods = new LinkedHashSet<Method>();
@@ -83,13 +90,11 @@ public class TestClassMetadata {
 	}
 
 	private void ensureAccessibility(Method method) {
-		if ( !method.isAccessible() ) {
-			try {
-				method.setAccessible( true );
-			}
-			catch (Exception ignored) {
-				// ignore for now
-			}
+		try {
+			method.setAccessible( true );
+		}
+		catch (Exception ignored) {
+			// ignore for now
 		}
 	}
 
@@ -141,17 +146,15 @@ public class TestClassMetadata {
 					)
 			);
 		}
-		if ( !method.isAccessible() ) {
-			try {
-				method.setAccessible( true );
-			}
-			catch (Exception e) {
-				errors.add(
-						new InvalidMethodForAnnotationException(
-								type.buildTypeMarker() + " attached to inaccessible method and unable to make accessible"
-						)
-				);
-			}
+		try {
+			method.setAccessible( true );
+		}
+		catch (Exception e) {
+			errors.add(
+					new InvalidMethodForAnnotationException(
+							type.buildTypeMarker() + " attached to inaccessible method and unable to make accessible"
+					)
+			);
 		}
 	}
 
@@ -192,6 +195,19 @@ public class TestClassMetadata {
 	}
 
 	private void invokeCallback(Method callback, Object target) {
+		try {
+			performCallbackInvocation( callback, target );
+		}
+		catch (CallbackException e) {
+			// this is getting eaten, at least when run from IntelliJ.  The test fails to start (for start up
+			// callbacks), but the exception is never shown..
+			System.out.println( "Error performing callback invocation : " + e.getLocalizedMessage() );
+			e.printStackTrace();
+			throw e;
+		}
+	}
+
+	private void performCallbackInvocation(Method callback, Object target) {
 		try {
 			callback.invoke( target, NO_ARGS );
 		}

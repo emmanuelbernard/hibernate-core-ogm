@@ -34,16 +34,20 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.MappingException;
+import org.hibernate.NullPrecedence;
+import org.hibernate.ScrollMode;
 import org.hibernate.cfg.Environment;
+import org.hibernate.dialect.constraint.ConstraintDelegate;
 import org.hibernate.dialect.function.CastFunction;
 import org.hibernate.dialect.function.SQLFunction;
 import org.hibernate.dialect.function.SQLFunctionTemplate;
@@ -56,52 +60,86 @@ import org.hibernate.dialect.lock.PessimisticForceIncrementLockingStrategy;
 import org.hibernate.dialect.lock.PessimisticReadSelectLockingStrategy;
 import org.hibernate.dialect.lock.PessimisticWriteSelectLockingStrategy;
 import org.hibernate.dialect.lock.SelectLockingStrategy;
+import org.hibernate.dialect.pagination.LegacyLimitHandler;
+import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.engine.jdbc.LobCreator;
+import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
+import org.hibernate.engine.spi.RowSelection;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.exception.spi.ConversionContext;
+import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
 import org.hibernate.exception.spi.SQLExceptionConverter;
-import org.hibernate.exception.internal.SQLStateConverter;
 import org.hibernate.exception.spi.ViolatedConstraintNameExtracter;
 import org.hibernate.id.IdentityGenerator;
 import org.hibernate.id.SequenceGenerator;
 import org.hibernate.id.TableHiLoGenerator;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.internal.util.io.StreamCopier;
-import org.hibernate.mapping.Column;
+import org.hibernate.metamodel.spi.TypeContributions;
+import org.hibernate.metamodel.spi.relational.AuxiliaryDatabaseObject;
+import org.hibernate.metamodel.spi.relational.Column;
+import org.hibernate.metamodel.spi.relational.Constraint;
+import org.hibernate.metamodel.spi.relational.ForeignKey;
+import org.hibernate.metamodel.spi.relational.Index;
+import org.hibernate.metamodel.spi.relational.Sequence;
+import org.hibernate.metamodel.spi.relational.Table;
 import org.hibernate.persister.entity.Lockable;
+import org.hibernate.procedure.internal.StandardCallableStatementSupport;
+import org.hibernate.procedure.spi.CallableStatementSupport;
+import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ANSICaseFragment;
 import org.hibernate.sql.ANSIJoinFragment;
 import org.hibernate.sql.CaseFragment;
 import org.hibernate.sql.ForUpdateFragment;
 import org.hibernate.sql.JoinFragment;
+import org.hibernate.tool.schema.internal.StandardAuxiliaryDatabaseObjectExporter;
+import org.hibernate.tool.schema.internal.StandardForeignKeyExporter;
+import org.hibernate.tool.schema.internal.StandardIndexExporter;
+import org.hibernate.tool.schema.internal.StandardSequenceExporter;
+import org.hibernate.tool.schema.internal.StandardTableExporter;
+import org.hibernate.tool.schema.internal.StandardUniqueKeyExporter;
+import org.hibernate.tool.schema.internal.TemporaryTableExporter;
+import org.hibernate.tool.schema.spi.Exporter;
 import org.hibernate.type.StandardBasicTypes;
-import org.hibernate.type.descriptor.sql.BlobTypeDescriptor;
 import org.hibernate.type.descriptor.sql.ClobTypeDescriptor;
 import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
 import org.jboss.logging.Logger;
 
 /**
- * Represents a dialect of SQL implemented by a particular RDBMS.
- * Subclasses implement Hibernate compatibility with different systems.<br>
- * <br>
- * Subclasses should provide a public default constructor that <tt>register()</tt>
- * a set of type mappings and default Hibernate properties.<br>
- * <br>
- * Subclasses should be immutable.
+ * Represents a dialect of SQL implemented by a particular RDBMS.  Subclasses implement Hibernate compatibility
+ * with different systems.  Subclasses should provide a public default constructor that register a set of type
+ * mappings and default Hibernate properties.  Subclasses should be immutable.
  *
  * @author Gavin King, David Channon
  */
-public abstract class Dialect {
+@SuppressWarnings("deprecation")
+public abstract class Dialect implements ConversionContext {
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			Dialect.class.getName()
+	);
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, Dialect.class.getName());
-
+	/**
+	 * Defines a default batch size constant
+	 */
 	public static final String DEFAULT_BATCH_SIZE = "15";
+
+	/**
+	 * Defines a "no batching" batch size constant
+	 */
 	public static final String NO_BATCH = "0";
 
 	/**
-	 * Characters used for quoting SQL identifiers
+	 * Characters used as opening for quoting SQL identifiers
 	 */
 	public static final String QUOTE = "`\"[";
+
+	/**
+	 * Characters used as closing for quoting SQL identifiers
+	 */
 	public static final String CLOSED_QUOTE = "`\"]";
 
 	private final TypeNames typeNames = new TypeNames();
@@ -115,7 +153,7 @@ public abstract class Dialect {
 	// constructors and factory methods ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	protected Dialect() {
-        LOG.usingDialect(this);
+		LOG.usingDialect( this );
 		StandardAnsiSqlAggregationFunctions.primeFunctionMap( sqlFunctions );
 
 		// standard sql92 functions (can be overridden by subclasses)
@@ -173,14 +211,14 @@ public abstract class Dialect {
 		registerColumnType( Types.LONGNVARCHAR, "nvarchar($l)" );
 		registerColumnType( Types.NCLOB, "nclob" );
 
-        // register hibernate types for default use in scalar sqlquery type auto detection
+		// register hibernate types for default use in scalar sqlquery type auto detection
 		registerHibernateType( Types.BIGINT, StandardBasicTypes.BIG_INTEGER.getName() );
 		registerHibernateType( Types.BINARY, StandardBasicTypes.BINARY.getName() );
 		registerHibernateType( Types.BIT, StandardBasicTypes.BOOLEAN.getName() );
 		registerHibernateType( Types.BOOLEAN, StandardBasicTypes.BOOLEAN.getName() );
 		registerHibernateType( Types.CHAR, StandardBasicTypes.CHARACTER.getName() );
-        registerHibernateType( Types.CHAR, 1, StandardBasicTypes.CHARACTER.getName() );
-        registerHibernateType( Types.CHAR, 255, StandardBasicTypes.STRING.getName() );
+		registerHibernateType( Types.CHAR, 1, StandardBasicTypes.CHARACTER.getName() );
+		registerHibernateType( Types.CHAR, 255, StandardBasicTypes.STRING.getName() );
 		registerHibernateType( Types.DATE, StandardBasicTypes.DATE.getName() );
 		registerHibernateType( Types.DOUBLE, StandardBasicTypes.DOUBLE.getName() );
 		registerHibernateType( Types.FLOAT, StandardBasicTypes.FLOAT.getName() );
@@ -207,8 +245,7 @@ public abstract class Dialect {
 	 * @throws HibernateException If no dialect was specified, or if it could not be instantiated.
 	 */
 	public static Dialect getDialect() throws HibernateException {
-		String dialectName = Environment.getProperties().getProperty( Environment.DIALECT );
-		return instantiateDialect( dialectName );
+		return instantiateDialect( Environment.getProperties().getProperty( Environment.DIALECT ) );
 	}
 
 
@@ -221,7 +258,7 @@ public abstract class Dialect {
 	 * @throws HibernateException If no dialect was specified, or if it could not be instantiated.
 	 */
 	public static Dialect getDialect(Properties props) throws HibernateException {
-		String dialectName = props.getProperty( Environment.DIALECT );
+		final String dialectName = props.getProperty( Environment.DIALECT );
 		if ( dialectName == null ) {
 			return getDialect();
 		}
@@ -233,7 +270,7 @@ public abstract class Dialect {
 			throw new HibernateException( "The dialect was not set. Set the property hibernate.dialect." );
 		}
 		try {
-			return ( Dialect ) ReflectHelper.classForName( dialectName ).newInstance();
+			return (Dialect) ReflectHelper.classForName( dialectName ).newInstance();
 		}
 		catch ( ClassNotFoundException cnfe ) {
 			throw new HibernateException( "Dialect class not found: " + dialectName );
@@ -253,12 +290,22 @@ public abstract class Dialect {
 	}
 
 	@Override
-    public String toString() {
+	public String toString() {
 		return getClass().getName();
 	}
 
 
 	// database type mapping support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	/**
+	 * Allows the Dialect to contribute additional types
+	 *
+	 * @param typeContributions Callback to contribute the types
+	 * @param serviceRegistry The service registry
+	 */
+	public void contributeTypes(TypeContributions typeContributions, ServiceRegistry serviceRegistry) {
+		// by default, nothing to do
+	}
 
 	/**
 	 * Get the name of the database type associated with the given
@@ -269,7 +316,7 @@ public abstract class Dialect {
 	 * @throws HibernateException If no mapping was specified for that type.
 	 */
 	public String getTypeName(int code) throws HibernateException {
-		String result = typeNames.get( code );
+		final String result = typeNames.get( code );
 		if ( result == null ) {
 			throw new HibernateException( "No default type mapping for (java.sql.Types) " + code );
 		}
@@ -289,9 +336,11 @@ public abstract class Dialect {
 	 * @throws HibernateException If no mapping was specified for that type.
 	 */
 	public String getTypeName(int code, long length, int precision, int scale) throws HibernateException {
-		String result = typeNames.get( code, length, precision, scale );
+		final String result = typeNames.get( code, length, precision, scale );
 		if ( result == null ) {
-			throw new HibernateException(String.format( "No type mapping for java.sql.Types code: %s, length: %s", code, length ));
+			throw new HibernateException(
+					String.format( "No type mapping for java.sql.Types code: %s, length: %s", code, length )
+			);
 		}
 		return result;
 	}
@@ -305,6 +354,56 @@ public abstract class Dialect {
 	 */
 	public String getCastTypeName(int code) {
 		return getTypeName( code, Column.DEFAULT_LENGTH, Column.DEFAULT_PRECISION, Column.DEFAULT_SCALE );
+	}
+
+	/**
+	 * Return an expression casting the value to the specified type
+	 *
+	 * @param value The value to cast
+	 * @param jdbcTypeCode The JDBC type code to cast to
+	 * @param length The type length
+	 * @param precision The type precision
+	 * @param scale The type scale
+	 *
+	 * @return The cast expression
+	 */
+	public String cast(String value, int jdbcTypeCode, int length, int precision, int scale) {
+		if ( jdbcTypeCode == Types.CHAR ) {
+			return "cast(" + value + " as char(" + length + "))";
+		}
+		else {
+			return "cast(" + value + "as " + getTypeName( jdbcTypeCode, length, precision, scale ) + ")";
+		}
+	}
+
+	/**
+	 * Return an expression casting the value to the specified type.  Simply calls
+	 * {@link #cast(String, int, int, int, int)} passing {@link Column#DEFAULT_PRECISION} and
+	 * {@link Column#DEFAULT_SCALE} as the precision/scale.
+	 *
+	 * @param value The value to cast
+	 * @param jdbcTypeCode The JDBC type code to cast to
+	 * @param length The type length
+	 *
+	 * @return The cast expression
+	 */
+	public String cast(String value, int jdbcTypeCode, int length) {
+		return cast( value, jdbcTypeCode, length, Column.DEFAULT_PRECISION, Column.DEFAULT_SCALE );
+	}
+
+	/**
+	 * Return an expression casting the value to the specified type.  Simply calls
+	 * {@link #cast(String, int, int, int, int)} passing {@link Column#DEFAULT_LENGTH} as the length
+	 *
+	 * @param value The value to cast
+	 * @param jdbcTypeCode The JDBC type code to cast to
+	 * @param precision The type precision
+	 * @param scale The type scale
+	 *
+	 * @return The cast expression
+	 */
+	public String cast(String value, int jdbcTypeCode, int precision, int scale) {
+		return cast( value, jdbcTypeCode, Column.DEFAULT_LENGTH, precision, scale );
 	}
 
 	/**
@@ -334,20 +433,20 @@ public abstract class Dialect {
 	/**
 	 * Allows the dialect to override a {@link SqlTypeDescriptor}.
 	 * <p/>
-	 * If <code>sqlTypeDescriptor</code> is a "standard basic" SQL type
-	 * descriptor, then this method uses {@link #getSqlTypeDescriptorOverride}
-	 * to get an optional override based on the SQL code returned by
+	 * If the passed {@code sqlTypeDescriptor} allows itself to be remapped (per
+	 * {@link org.hibernate.type.descriptor.sql.SqlTypeDescriptor#canBeRemapped()}), then this method uses
+	 * {@link #getSqlTypeDescriptorOverride}  to get an optional override based on the SQL code returned by
 	 * {@link SqlTypeDescriptor#getSqlType()}.
 	 * <p/>
-	 * If this dialect does not provide an override, then this method
-	 * simply returns <code>sqlTypeDescriptor</code>
+	 * If this dialect does not provide an override or if the {@code sqlTypeDescriptor} doe not allow itself to be
+	 * remapped, then this method simply returns the original passed {@code sqlTypeDescriptor}
 	 *
 	 * @param sqlTypeDescriptor The {@link SqlTypeDescriptor} to override
 	 * @return The {@link SqlTypeDescriptor} that should be used for this dialect;
-	 *         if there is no override, then <code>sqlTypeDescriptor</code> is returned.
-	 * @throws IllegalArgumentException if <code>sqlTypeDescriptor</code> is null.
+	 *         if there is no override, then original {@code sqlTypeDescriptor} is returned.
+	 * @throws IllegalArgumentException if {@code sqlTypeDescriptor} is null.
 	 *
-	 * @see {@link #getSqlTypeDescriptorOverride}
+	 * @see #getSqlTypeDescriptorOverride
 	 */
 	public SqlTypeDescriptor remapSqlTypeDescriptor(SqlTypeDescriptor sqlTypeDescriptor) {
 		if ( sqlTypeDescriptor == null ) {
@@ -362,21 +461,15 @@ public abstract class Dialect {
 	}
 
 	/**
-	 * Returns the {@link SqlTypeDescriptor} that should override the
-	 * "standard basic" SQL type descriptor for values of the specified
-	 * column type, or null, if there is no override.
+	 * Returns the {@link SqlTypeDescriptor} that should be used to handle the given JDBC type code.  Returns
+	 * {@code null} if there is no override.
 	 *
 	 * @param sqlCode A {@link Types} constant indicating the SQL column type
-	 * @return The {@link SqlTypeDescriptor} that should override the
-	 * "standard basic" SQL type descriptor, or null, if there is no override.
+	 * @return The {@link SqlTypeDescriptor} to use as an override, or {@code null} if there is no override.
 	 */
 	protected SqlTypeDescriptor getSqlTypeDescriptorOverride(int sqlCode) {
 		SqlTypeDescriptor descriptor;
 		switch ( sqlCode ) {
-			case Types.BLOB: {
-				descriptor = useInputStreamToInsertBlob() ? BlobTypeDescriptor.STREAM_BINDING : null;
-				break;
-			}
 			case Types.CLOB: {
 				descriptor = useInputStreamToInsertBlob() ? ClobTypeDescriptor.STREAM_BINDING : null;
 				break;
@@ -392,6 +485,7 @@ public abstract class Dialect {
 	/**
 	 * The legacy behavior of Hibernate.  LOBs are not processed by merge
 	 */
+	@SuppressWarnings( {"UnusedDeclaration"})
 	protected static final LobMergeStrategy LEGACY_LOB_MERGE_STRATEGY = new LobMergeStrategy() {
 		@Override
 		public Blob mergeBlob(Blob original, Blob target, SessionImplementor session) {
@@ -412,13 +506,16 @@ public abstract class Dialect {
 	/**
 	 * Merge strategy based on transferring contents based on streams.
 	 */
+	@SuppressWarnings( {"UnusedDeclaration"})
 	protected static final LobMergeStrategy STREAM_XFER_LOB_MERGE_STRATEGY = new LobMergeStrategy() {
 		@Override
 		public Blob mergeBlob(Blob original, Blob target, SessionImplementor session) {
 			if ( original != target ) {
 				try {
-					OutputStream connectedStream = target.setBinaryStream( 1L );  // the BLOB just read during the load phase of merge
-					InputStream detachedStream = original.getBinaryStream();      // the BLOB from the detached state
+					// the BLOB just read during the load phase of merge
+					final OutputStream connectedStream = target.setBinaryStream( 1L );
+					// the BLOB from the detached state
+					final InputStream detachedStream = original.getBinaryStream();
 					StreamCopier.copy( detachedStream, connectedStream );
 					return target;
 				}
@@ -435,8 +532,10 @@ public abstract class Dialect {
 		public Clob mergeClob(Clob original, Clob target, SessionImplementor session) {
 			if ( original != target ) {
 				try {
-					OutputStream connectedStream = target.setAsciiStream( 1L );  // the CLOB just read during the load phase of merge
-					InputStream detachedStream = original.getAsciiStream();      // the CLOB from the detached state
+					// the CLOB just read during the load phase of merge
+					final OutputStream connectedStream = target.setAsciiStream( 1L );
+					// the CLOB from the detached state
+					final InputStream detachedStream = original.getAsciiStream();
 					StreamCopier.copy( detachedStream, connectedStream );
 					return target;
 				}
@@ -453,8 +552,10 @@ public abstract class Dialect {
 		public NClob mergeNClob(NClob original, NClob target, SessionImplementor session) {
 			if ( original != target ) {
 				try {
-					OutputStream connectedStream = target.setAsciiStream( 1L );  // the NCLOB just read during the load phase of merge
-					InputStream detachedStream = original.getAsciiStream();      // the NCLOB from the detached state
+					// the NCLOB just read during the load phase of merge
+					final OutputStream connectedStream = target.setAsciiStream( 1L );
+					// the NCLOB from the detached state
+					final InputStream detachedStream = original.getAsciiStream();
 					StreamCopier.copy( detachedStream, connectedStream );
 					return target;
 				}
@@ -478,7 +579,7 @@ public abstract class Dialect {
 				return null;
 			}
 			try {
-				LobCreator lobCreator = session.getFactory().getJdbcServices().getLobCreator( session );
+				final LobCreator lobCreator = session.getFactory().getJdbcServices().getLobCreator( session );
 				return original == null
 						? lobCreator.createBlob( ArrayHelper.EMPTY_BYTE_ARRAY )
 						: lobCreator.createBlob( original.getBinaryStream(), original.length() );
@@ -494,7 +595,7 @@ public abstract class Dialect {
 				return null;
 			}
 			try {
-				LobCreator lobCreator = session.getFactory().getJdbcServices().getLobCreator( session );
+				final LobCreator lobCreator = session.getFactory().getJdbcServices().getLobCreator( session );
 				return original == null
 						? lobCreator.createClob( "" )
 						: lobCreator.createClob( original.getCharacterStream(), original.length() );
@@ -510,7 +611,7 @@ public abstract class Dialect {
 				return null;
 			}
 			try {
-				LobCreator lobCreator = session.getFactory().getJdbcServices().getLobCreator( session );
+				final LobCreator lobCreator = session.getFactory().getJdbcServices().getLobCreator( session );
 				return original == null
 						? lobCreator.createNClob( "" )
 						: lobCreator.createNClob( original.getCharacterStream(), original.length() );
@@ -530,14 +631,15 @@ public abstract class Dialect {
 
 	/**
 	 * Get the name of the Hibernate {@link org.hibernate.type.Type} associated with the given
-	 * {@link java.sql.Types} typecode.
+	 * {@link java.sql.Types} type code.
 	 *
-	 * @param code The {@link java.sql.Types} typecode
+	 * @param code The {@link java.sql.Types} type code
 	 * @return The Hibernate {@link org.hibernate.type.Type} name.
 	 * @throws HibernateException If no mapping was specified for that type.
 	 */
+	@SuppressWarnings( {"UnusedDeclaration"})
 	public String getHibernateTypeName(int code) throws HibernateException {
-		String result = hibernateTypeNames.get( code );
+		final String result = hibernateTypeNames.get( code );
 		if ( result == null ) {
 			throw new HibernateException( "No Hibernate type mapping for java.sql.Types code: " + code );
 		}
@@ -557,13 +659,14 @@ public abstract class Dialect {
 	 * @throws HibernateException If no mapping was specified for that type.
 	 */
 	public String getHibernateTypeName(int code, int length, int precision, int scale) throws HibernateException {
-		String result = hibernateTypeNames.get( code, length, precision, scale );
+		final String result = hibernateTypeNames.get( code, length, precision, scale );
 		if ( result == null ) {
 			throw new HibernateException(
-					"No Hibernate type mapping for java.sql.Types code: " +
-					code +
-					", length: " +
-					length
+					String.format(
+							"No Hibernate type mapping for type [code=%s, length=%s]",
+							code,
+							length
+					)
 			);
 		}
 		return result;
@@ -596,7 +699,9 @@ public abstract class Dialect {
 	// function support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	protected void registerFunction(String name, SQLFunction function) {
-		sqlFunctions.put( name, function );
+		// HHH-7721: SQLFunctionRegistry expects all lowercase.  Enforce,
+		// just in case a user's customer dialect uses mixed cases.
+		sqlFunctions.put( name.toLowerCase(), function );
 	}
 
 	/**
@@ -613,7 +718,7 @@ public abstract class Dialect {
 	// keyword support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	protected void registerKeyword(String word) {
-		sqlKeywords.add(word);
+		sqlKeywords.add( word );
 	}
 
 	public Set<String> getKeywords() {
@@ -802,19 +907,6 @@ public abstract class Dialect {
 	}
 
 	/**
-	 * The multiline script used to create a sequence.
-	 *
-	 * @param sequenceName The name of the sequence
-	 * @return The sequence creation commands
-	 * @throws MappingException If sequences are not supported.
-	 * @deprecated Use {@link #getCreateSequenceString(String, int, int)} instead
-	 */
-	@Deprecated
-    public String[] getCreateSequenceStrings(String sequenceName) throws MappingException {
-		return new String[] { getCreateSequenceString( sequenceName ) };
-	}
-
-	/**
 	 * An optional multi-line form for databases which {@link #supportsPooledSequences()}.
 	 *
 	 * @param sequenceName The name of the sequence
@@ -841,7 +933,7 @@ public abstract class Dialect {
 	 * @return The sequence creation command
 	 * @throws MappingException If sequences are not supported.
 	 */
-	protected String getCreateSequenceString(String sequenceName) throws MappingException {
+	public String getCreateSequenceString(String sequenceName) throws MappingException {
 		throw new MappingException( getClass().getName() + " does not support sequences" );
 	}
 
@@ -902,7 +994,6 @@ public abstract class Dialect {
 	 * Get the select command used retrieve the names of all sequences.
 	 *
 	 * @return The select command; or null if sequences are not supported.
-	 * @see org.hibernate.tool.hbm2ddl.SchemaUpdate
 	 */
 	public String getQuerySequencesString() {
 		return null;
@@ -926,135 +1017,14 @@ public abstract class Dialect {
 	// limit/offset support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	/**
-	 * Does this dialect support some form of limiting query results
-	 * via a SQL clause?
+	 * Build delegate managing LIMIT clause.
 	 *
-	 * @return True if this dialect supports some form of LIMIT.
+	 * @param sql SQL query.
+	 * @param selection Selection criteria. {@code null} in case of unlimited number of rows.
+	 * @return LIMIT clause delegate.
 	 */
-	public boolean supportsLimit() {
-		return false;
-	}
-
-	/**
-	 * Does this dialect's LIMIT support (if any) additionally
-	 * support specifying an offset?
-	 *
-	 * @return True if the dialect supports an offset within the limit support.
-	 */
-	public boolean supportsLimitOffset() {
-		return supportsLimit();
-	}
-
-	/**
-	 * Does this dialect support bind variables (i.e., prepared statement
-	 * parameters) for its limit/offset?
-	 *
-	 * @return True if bind variables can be used; false otherwise.
-	 */
-	public boolean supportsVariableLimit() {
-		return supportsLimit();
-	}
-
-	/**
-	 * ANSI SQL defines the LIMIT clause to be in the form LIMIT offset, limit.
-	 * Does this dialect require us to bind the parameters in reverse order?
-	 *
-	 * @return true if the correct order is limit, offset
-	 */
-	public boolean bindLimitParametersInReverseOrder() {
-		return false;
-	}
-
-	/**
-	 * Does the <tt>LIMIT</tt> clause come at the start of the
-	 * <tt>SELECT</tt> statement, rather than at the end?
-	 *
-	 * @return true if limit parameters should come before other parameters
-	 */
-	public boolean bindLimitParametersFirst() {
-		return false;
-	}
-
-	/**
-	 * Does the <tt>LIMIT</tt> clause take a "maximum" row number instead
-	 * of a total number of returned rows?
-	 * <p/>
-	 * This is easiest understood via an example.  Consider you have a table
-	 * with 20 rows, but you only want to retrieve rows number 11 through 20.
-	 * Generally, a limit with offset would say that the offset = 11 and the
-	 * limit = 10 (we only want 10 rows at a time); this is specifying the
-	 * total number of returned rows.  Some dialects require that we instead
-	 * specify offset = 11 and limit = 20, where 20 is the "last" row we want
-	 * relative to offset (i.e. total number of rows = 20 - 11 = 9)
-	 * <p/>
-	 * So essentially, is limit relative from offset?  Or is limit absolute?
-	 *
-	 * @return True if limit is relative from offset; false otherwise.
-	 */
-	public boolean useMaxForLimit() {
-		return false;
-	}
-
-	/**
-	 * Generally, if there is no limit applied to a Hibernate query we do not apply any limits
-	 * to the SQL query.  This option forces that the limit be written to the SQL query.
-	 *
-	 * @return True to force limit into SQL query even if none specified in Hibernate query; false otherwise.
-	 */
-	public boolean forceLimitUsage() {
-		return false;
-	}
-
-	/**
-	 * Given a limit and an offset, apply the limit clause to the query.
-	 *
-	 * @param query The query to which to apply the limit.
-	 * @param offset The offset of the limit
-	 * @param limit The limit of the limit ;)
-	 * @return The modified query statement with the limit applied.
-	 */
-	public String getLimitString(String query, int offset, int limit) {
-		return getLimitString( query, ( offset > 0 || forceLimitUsage() )  );
-	}
-
-	/**
-	 * Apply s limit clause to the query.
-	 * <p/>
-	 * Typically dialects utilize {@link #supportsVariableLimit() variable}
-	 * limit clauses when they support limits.  Thus, when building the
-	 * select command we do not actually need to know the limit or the offest
-	 * since we will just be using placeholders.
-	 * <p/>
-	 * Here we do still pass along whether or not an offset was specified
-	 * so that dialects not supporting offsets can generate proper exceptions.
-	 * In general, dialects will override one or the other of this method and
-	 * {@link #getLimitString(String, int, int)}.
-	 *
-	 * @param query The query to which to apply the limit.
-	 * @param hasOffset Is the query requesting an offset?
-	 * @return the modified SQL
-	 */
-	protected String getLimitString(String query, boolean hasOffset) {
-		throw new UnsupportedOperationException( "Paged queries not supported by " + getClass().getName());
-	}
-
-	/**
-	 * Hibernate APIs explicitly state that setFirstResult() should be a zero-based offset. Here we allow the
-	 * Dialect a chance to convert that value based on what the underlying db or driver will expect.
-	 * <p/>
-	 * NOTE: what gets passed into {@link #getLimitString(String,int,int)} is the zero-based offset.  Dialects which
-	 * do not {@link #supportsVariableLimit} should take care to perform any needed {@link #convertToFirstRowValue}
-	 * calls prior to injecting the limit values into the SQL string.
-	 *
-	 * @param zeroBasedFirstResult The user-supplied, zero-based first row offset.
-	 *
-	 * @return The corresponding db/dialect specific offset.
-	 *
-	 * @see org.hibernate.Query#setFirstResult
-	 * @see org.hibernate.Criteria#setFirstResult
-	 */
-	public int convertToFirstRowValue(int zeroBasedFirstResult) {
-		return zeroBasedFirstResult;
+	public LimitHandler buildLimitHandler(String sql, RowSelection selection) {
+		return new LegacyLimitHandler( this, sql, selection );
 	}
 
 
@@ -1098,20 +1068,20 @@ public abstract class Dialect {
 	 * @since 3.2
 	 */
 	public LockingStrategy getLockingStrategy(Lockable lockable, LockMode lockMode) {
-        switch ( lockMode ) {
-            case PESSIMISTIC_FORCE_INCREMENT:
-                return new PessimisticForceIncrementLockingStrategy( lockable, lockMode );
-            case PESSIMISTIC_WRITE:
-                return new PessimisticWriteSelectLockingStrategy( lockable, lockMode );
-            case PESSIMISTIC_READ:
-                return new PessimisticReadSelectLockingStrategy( lockable, lockMode );
-            case OPTIMISTIC:
-                return new OptimisticLockingStrategy( lockable, lockMode );
-            case OPTIMISTIC_FORCE_INCREMENT:
-                return new OptimisticForceIncrementLockingStrategy( lockable, lockMode );
-            default:
-                return new SelectLockingStrategy( lockable, lockMode );
-        }
+		switch ( lockMode ) {
+			case PESSIMISTIC_FORCE_INCREMENT:
+				return new PessimisticForceIncrementLockingStrategy( lockable, lockMode );
+			case PESSIMISTIC_WRITE:
+				return new PessimisticWriteSelectLockingStrategy( lockable, lockMode );
+			case PESSIMISTIC_READ:
+				return new PessimisticReadSelectLockingStrategy( lockable, lockMode );
+			case OPTIMISTIC:
+				return new OptimisticLockingStrategy( lockable, lockMode );
+			case OPTIMISTIC_FORCE_INCREMENT:
+				return new OptimisticForceIncrementLockingStrategy( lockable, lockMode );
+			default:
+				return new SelectLockingStrategy( lockable, lockMode );
+		}
 	}
 
 	/**
@@ -1121,26 +1091,29 @@ public abstract class Dialect {
 	 * @return The appropriate for update fragment.
 	 */
 	public String getForUpdateString(LockOptions lockOptions) {
-        LockMode lockMode = lockOptions.getLockMode();
-        return getForUpdateString( lockMode, lockOptions.getTimeOut() );
+		final LockMode lockMode = lockOptions.getLockMode();
+		return getForUpdateString( lockMode, lockOptions.getTimeOut() );
 	}
 
-    private String getForUpdateString(LockMode lockMode, int timeout){
-       switch ( lockMode ) {
-            case UPGRADE:
-                return getForUpdateString();
-            case PESSIMISTIC_READ:
-                return getReadLockString( timeout );
-            case PESSIMISTIC_WRITE:
-                return getWriteLockString( timeout );
-            case UPGRADE_NOWAIT:
-            case FORCE:
-            case PESSIMISTIC_FORCE_INCREMENT:
-                return getForUpdateNowaitString();
-            default:
-                return "";
-        }
-    }
+	@SuppressWarnings( {"deprecation"})
+	private String getForUpdateString(LockMode lockMode, int timeout){
+		switch ( lockMode ) {
+			case UPGRADE:
+				return getForUpdateString();
+			case PESSIMISTIC_READ:
+				return getReadLockString( timeout );
+			case PESSIMISTIC_WRITE:
+				return getWriteLockString( timeout );
+			case UPGRADE_NOWAIT:
+			case FORCE:
+			case PESSIMISTIC_FORCE_INCREMENT:
+				return getForUpdateNowaitString();
+			case UPGRADE_SKIPLOCKED:
+				return getForUpdateSkipLockedString();
+			default:
+				return "";
+		}
+	}
 
 	/**
 	 * Given a lock mode, determine the appropriate for update fragment to use.
@@ -1226,13 +1199,23 @@ public abstract class Dialect {
 	 * dialect given the aliases of the columns to be write locked.
 	 *
 	 * @param aliases The columns to be write locked.
-	 * @param lockOptions
+	 * @param lockOptions the lock options to apply
 	 * @return The appropriate <tt>FOR UPDATE OF column_list</tt> clause string.
 	 */
+	@SuppressWarnings({"unchecked", "UnusedParameters"})
 	public String getForUpdateString(String aliases, LockOptions lockOptions) {
-		// by default we simply return the getForUpdateString() result since
-		// the default is to say no support for "FOR UPDATE OF ..."
-		return getForUpdateString(lockOptions);
+		LockMode lockMode = lockOptions.getLockMode();
+		final Iterator<Map.Entry<String, LockMode>> itr = lockOptions.getAliasLockIterator();
+		while ( itr.hasNext() ) {
+			// seek the highest lock mode
+			final Map.Entry<String, LockMode>entry = itr.next();
+			final LockMode lm = entry.getValue();
+			if ( lm.greaterThan( lockMode ) ) {
+				lockMode = lm;
+			}
+		}
+		lockOptions.setLockMode( lockMode );
+		return getForUpdateString( lockOptions );
 	}
 
 	/**
@@ -1246,13 +1229,34 @@ public abstract class Dialect {
 	}
 
 	/**
+	 * Retrieves the <tt>FOR UPDATE SKIP LOCKED</tt> syntax specific to this dialect.
+	 *
+	 * @return The appropriate <tt>FOR UPDATE SKIP LOCKED</tt> clause string.
+	 */
+	public String getForUpdateSkipLockedString() {
+		// by default we report no support for SKIP_LOCKED lock semantics
+		return getForUpdateString();
+	}
+
+	/**
 	 * Get the <tt>FOR UPDATE OF column_list NOWAIT</tt> fragment appropriate
 	 * for this dialect given the aliases of the columns to be write locked.
 	 *
 	 * @param aliases The columns to be write locked.
-	 * @return The appropriate <tt>FOR UPDATE colunm_list NOWAIT</tt> clause string.
+	 * @return The appropriate <tt>FOR UPDATE OF colunm_list NOWAIT</tt> clause string.
 	 */
 	public String getForUpdateNowaitString(String aliases) {
+		return getForUpdateString( aliases );
+	}
+
+	/**
+	 * Get the <tt>FOR UPDATE OF column_list SKIP LOCKED</tt> fragment appropriate
+	 * for this dialect given the aliases of the columns to be write locked.
+	 *
+	 * @param aliases The columns to be write locked.
+	 * @return The appropriate <tt>FOR UPDATE colunm_list SKIP LOCKED</tt> clause string.
+	 */
+	public String getForUpdateSkipLockedString(String aliases) {
 		return getForUpdateString( aliases );
 	}
 
@@ -1262,11 +1266,11 @@ public abstract class Dialect {
 	 * <p/>
 	 * contributed by <a href="http://sourceforge.net/users/heschulz">Helge Schulz</a>
 	 *
-	 * @param mode The lock mode to apply
+	 * @param lockOptions The lock options to apply
 	 * @param tableName The name of the table to which to apply the lock hint.
 	 * @return The table with any required lock hints.
 	 */
-	public String appendLockHint(LockMode mode, String tableName) {
+	public String appendLockHint(LockOptions lockOptions, String tableName){
 		return tableName;
 	}
 
@@ -1283,7 +1287,7 @@ public abstract class Dialect {
 	 * @param keyColumnNames a map of key columns indexed by aliased table names.
 	 * @return the modified SQL string.
 	 */
-	public String applyLocksToSql(String sql, LockOptions aliasedLockOptions, Map keyColumnNames) {
+	public String applyLocksToSql(String sql, LockOptions aliasedLockOptions, Map<String, String[]> keyColumnNames) {
 		return sql + new ForUpdateFragment( this, aliasedLockOptions, keyColumnNames ).toFragmentString();
 	}
 
@@ -1403,20 +1407,42 @@ public abstract class Dialect {
 	// callable statement support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	/**
-	 * Registers an OUT parameter which will be returning a
-	 * {@link java.sql.ResultSet}.  How this is accomplished varies greatly
-	 * from DB to DB, hence its inclusion (along with {@link #getResultSet}) here.
+	 * Registers a parameter (either OUT, or the new REF_CURSOR param type available in Java 8) capable of
+	 * returning {@link java.sql.ResultSet} *by position*.  Pre-Java 8, registering such ResultSet-returning
+	 * parameters varied greatly across database and drivers; hence its inclusion as part of the Dialect contract.
 	 *
 	 * @param statement The callable statement.
-	 * @param position The bind position at which to register the OUT param.
+	 * @param position The bind position at which to register the output param.
+	 *
 	 * @return The number of (contiguous) bind positions used.
-	 * @throws SQLException Indicates problems registering the OUT param.
+	 *
+	 * @throws SQLException Indicates problems registering the param.
 	 */
 	public int registerResultSetOutParameter(CallableStatement statement, int position) throws SQLException {
 		throw new UnsupportedOperationException(
 				getClass().getName() +
-				" does not support resultsets via stored procedures"
-			);
+						" does not support resultsets via stored procedures"
+		);
+	}
+
+	/**
+	 * Registers a parameter (either OUT, or the new REF_CURSOR param type available in Java 8) capable of
+	 * returning {@link java.sql.ResultSet} *by name*.  Pre-Java 8, registering such ResultSet-returning
+	 * parameters varied greatly across database and drivers; hence its inclusion as part of the Dialect contract.
+	 *
+	 * @param statement The callable statement.
+	 * @param name The parameter name (for drivers which support named parameters).
+	 *
+	 * @return The number of (contiguous) bind positions used.
+	 *
+	 * @throws SQLException Indicates problems registering the param.
+	 */
+	@SuppressWarnings("UnusedParameters")
+	public int registerResultSetOutParameter(CallableStatement statement, String name) throws SQLException {
+		throw new UnsupportedOperationException(
+				getClass().getName() +
+						" does not support resultsets via stored procedures"
+		);
 	}
 
 	/**
@@ -1429,9 +1455,44 @@ public abstract class Dialect {
 	 */
 	public ResultSet getResultSet(CallableStatement statement) throws SQLException {
 		throw new UnsupportedOperationException(
-				getClass().getName() +
-				" does not support resultsets via stored procedures"
-			);
+				getClass().getName() + " does not support resultsets via stored procedures"
+		);
+	}
+
+	/**
+	 * Given a callable statement previously processed by {@link #registerResultSetOutParameter},
+	 * extract the {@link java.sql.ResultSet}.
+	 *
+	 * @param statement The callable statement.
+	 * @param position The bind position at which to register the output param.
+	 *
+	 * @return The extracted result set.
+	 *
+	 * @throws SQLException Indicates problems extracting the result set.
+	 */
+	@SuppressWarnings("UnusedParameters")
+	public ResultSet getResultSet(CallableStatement statement, int position) throws SQLException {
+		throw new UnsupportedOperationException(
+				getClass().getName() + " does not support resultsets via stored procedures"
+		);
+	}
+
+	/**
+	 * Given a callable statement previously processed by {@link #registerResultSetOutParameter},
+	 * extract the {@link java.sql.ResultSet} from the OUT parameter.
+	 *
+	 * @param statement The callable statement.
+	 * @param name The parameter name (for drivers which support named parameters).
+	 *
+	 * @return The extracted result set.
+	 *
+	 * @throws SQLException Indicates problems extracting the result set.
+	 */
+	@SuppressWarnings("UnusedParameters")
+	public ResultSet getResultSet(CallableStatement statement, String name) throws SQLException {
+		throw new UnsupportedOperationException(
+				getClass().getName() + " does not support resultsets via stored procedures"
+		);
 	}
 
 	// current timestamp support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1483,22 +1544,31 @@ public abstract class Dialect {
 	// SQLException support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	/**
-	 * Build an instance of the SQLExceptionConverter preferred by this dialect for
-	 * converting SQLExceptions into Hibernate's JDBCException hierarchy.  The default
-	 * Dialect implementation simply returns a converter based on X/Open SQLState codes.
+	 * Build an instance of a {@link SQLExceptionConversionDelegate} for
+	 * interpreting dialect-specific error or SQLState codes.
+	 * <p/>
+	 * When {@link #buildSQLExceptionConverter} returns null, the default 
+	 * {@link SQLExceptionConverter} is used to interpret SQLState and
+	 * error codes. If this method is overridden to return a non-null value,
+	 * the default {@link SQLExceptionConverter} will use the returned
+	 * {@link SQLExceptionConversionDelegate} in addition to the following 
+	 * standard delegates:
+	 * <ol>
+	 *     <li>a "static" delegate based on the JDBC 4 defined SQLException hierarchy;</li>
+	 *     <li>a delegate that interprets SQLState codes for either X/Open or SQL-2003 codes,
+	 *         depending on java.sql.DatabaseMetaData#getSQLStateType</li>
+	 * </ol>
 	 * <p/>
 	 * It is strongly recommended that specific Dialect implementations override this
 	 * method, since interpretation of a SQL error is much more accurate when based on
-	 * the ErrorCode rather than the SQLState.  Unfortunately, the ErrorCode is a vendor-
-	 * specific approach.
+	 * the a vendor-specific ErrorCode rather than the SQLState.
+	 * <p/>
+	 * Specific Dialects may override to return whatever is most appropriate for that vendor.
 	 *
-	 * @return The Dialect's preferred SQLExceptionConverter.
+	 * @return The SQLExceptionConversionDelegate for this dialect
 	 */
-	public SQLExceptionConverter buildSQLExceptionConverter() {
-		// The default SQLExceptionConverter for all dialects is based on SQLState
-		// since SQLErrorCode is extremely vendor-specific.  Specific Dialects
-		// may override to return whatever is most appropriate for that vendor.
-		return new SQLStateConverter( getViolatedConstraintNameExtracter() );
+	public SQLExceptionConversionDelegate buildSQLExceptionConversionDelegate() {
+		return null;
 	}
 
 	private static final ViolatedConstraintNameExtracter EXTRACTER = new ViolatedConstraintNameExtracter() {
@@ -1586,6 +1656,7 @@ public abstract class Dialect {
 
 	/**
 	 * The name of the SQL function that can do case insensitive <b>like</b> comparison.
+	 *
 	 * @return  The dialect-specific "case insensitive" like function.
 	 */
 	public String getCaseInsensitiveLike(){
@@ -1593,7 +1664,10 @@ public abstract class Dialect {
 	}
 
 	/**
-	 * Does the underlying Database supports case insensitive like comparison.
+	 * Does this dialect support case insensitive LIKE restrictions?
+	 *
+	 * @return {@code true} if the underlying database supports case insensitive like comparison,
+	 * {@code false} otherwise.  The default is {@code false}.
 	 */
 	public boolean supportsCaseInsensitiveLike(){
 		return false;
@@ -1615,6 +1689,11 @@ public abstract class Dialect {
 
 	/**
 	 * What is the maximum length Hibernate can use for generated aliases?
+	 * <p/>
+	 * The maximum here should account for the fact that Hibernate often needs to append "uniqueing" information
+	 * to the end of generated aliases.  That "uniqueing" information will be added to the end of a identifier
+	 * generated to the length specified here; so be sure to leave some room (generally speaking 5 positions will
+	 * suffice).
 	 *
 	 * @return The maximum length.
 	 */
@@ -1680,6 +1759,78 @@ public abstract class Dialect {
 
 	// DDL support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+	private StandardTableExporter tableExporter = new StandardTableExporter( this );
+	private StandardSequenceExporter sequenceExporter = new StandardSequenceExporter( this );
+	private StandardIndexExporter indexExporter = new StandardIndexExporter( this );
+	private StandardForeignKeyExporter foreignKeyExporter = new StandardForeignKeyExporter( this );
+	private StandardUniqueKeyExporter uniqueKeyExporter = new StandardUniqueKeyExporter( this );
+	private StandardAuxiliaryDatabaseObjectExporter auxiliaryObjectExporter = new StandardAuxiliaryDatabaseObjectExporter( this );
+	private TemporaryTableExporter temporaryTableExporter = new TemporaryTableExporter( this );
+	private ConstraintDelegate constraintDelegate = new ConstraintDelegate( this );
+
+	public Exporter<Table> getTableExporter() {
+		return tableExporter;
+	}
+
+	public Exporter<Table> getTemporaryTableExporter() {
+		return temporaryTableExporter;
+	}
+
+	public Exporter<Sequence> getSequenceExporter() {
+		return sequenceExporter;
+	}
+
+	public Exporter<Index> getIndexExporter() {
+		return indexExporter;
+	}
+
+	public Exporter<ForeignKey> getForeignKeyExporter() {
+		return foreignKeyExporter;
+	}
+
+	public Exporter<Constraint> getUniqueKeyExporter() {
+		return uniqueKeyExporter;
+	}
+
+	public Exporter<AuxiliaryDatabaseObject> getAuxiliaryDatabaseObjectExporter() {
+		return auxiliaryObjectExporter;
+	}
+
+	protected ConstraintDelegate getConstraintDelegate() {
+		return constraintDelegate;
+	}
+
+	/**
+	 * Get the SQL command used to create the named schema
+	 *
+	 * @param schemaName The name of the schema to be created.
+	 *
+	 * @return The creation command
+	 */
+	public String getCreateSchemaCommand(String schemaName) {
+		return "create schema " + schemaName;
+	}
+
+	/**
+	 * Get the SQL command used to drop the named schema
+	 *
+	 * @param schemaName The name of the schema to be dropped.
+	 *
+	 * @return The drop command
+	 */
+	public String getDropSchemaCommand(String schemaName) {
+		return "drop schema " + schemaName;
+	}
+
+	/**
+	 * Get the SQL command used to retrieve the current schema name
+	 *
+	 * @return The current schema retrieval SQL
+	 */
+	public String getCurrentSchemaCommand() {
+		return null;
+	}
+
 	/**
 	 * Does this dialect support the <tt>ALTER TABLE</tt> syntax?
 	 *
@@ -1709,29 +1860,21 @@ public abstract class Dialect {
 	}
 
 	/**
-	 * Does this dialect support the <tt>UNIQUE</tt> column syntax?
-	 *
-	 * @return boolean
-	 */
-	public boolean supportsUnique() {
-		return true;
-	}
-
-    /**
-     * Does this dialect support adding Unique constraints via create and alter table ?
-     * @return boolean
-     */
-	public boolean supportsUniqueConstraintInCreateAlterTable() {
-	    return true;
-	}
-
-	/**
 	 * The syntax used to add a column to a table (optional).
 	 *
 	 * @return The "add column" fragment.
 	 */
 	public String getAddColumnString() {
 		throw new UnsupportedOperationException( "No add column syntax supported by " + getClass().getName() );
+	}
+
+	/**
+	 * The syntax for the suffix used to add a column to a table (optional).
+	 *
+	 * @return The suffix "add column" fragment.
+	 */
+	public String getAddColumnSuffixString() {
+		return "";
 	}
 
 	public String getDropForeignKeyString() {
@@ -1762,10 +1905,10 @@ public abstract class Dialect {
 			String referencedTable,
 			String[] primaryKey,
 			boolean referencesPrimaryKey) {
-		StringBuffer res = new StringBuffer( 30 );
+		final StringBuilder res = new StringBuilder( 30 );
 
 		res.append( " add constraint " )
-				.append( constraintName )
+				.append( quote( constraintName ) )
 				.append( " foreign key (" )
 				.append( StringHelper.join( ", ", foreignKey ) )
 				.append( ") references " )
@@ -1790,16 +1933,11 @@ public abstract class Dialect {
 		return " add constraint " + constraintName + " primary key ";
 	}
 
-    /**
-     * The syntax used to add a unique constraint to a table.
-     *
-     * @param constraintName The name of the unique constraint.
-     * @return The "add unique" fragment
-     */
-    public String getAddUniqueConstraintString(String constraintName) {
-        return " add constraint " + constraintName + " unique ";
-    }
-
+	/**
+	 * Does the database/driver have bug in deleting rows that refer to other rows being deleted in the same query?
+	 *
+	 * @return {@code true} if the database/driver has this bug
+	 */
 	public boolean hasSelfReferentialForeignKeyBug() {
 		return false;
 	}
@@ -1813,24 +1951,98 @@ public abstract class Dialect {
 		return "";
 	}
 
+	/**
+	 * Does this dialect/database support commenting on tables, columns, etc?
+	 *
+	 * @return {@code true} if commenting is supported
+	 */
 	public boolean supportsCommentOn() {
 		return false;
 	}
 
+	/**
+	 * Get the comment into a form supported for table definition.
+	 *
+	 * @param comment The comment to apply
+	 *
+	 * @return The comment fragment
+	 */
 	public String getTableComment(String comment) {
 		return "";
 	}
 
+	/**
+	 * Get the comment into a form supported for column definition.
+	 *
+	 * @param comment The comment to apply
+	 *
+	 * @return The comment fragment
+	 */
 	public String getColumnComment(String comment) {
 		return "";
 	}
 
+	/**
+	 * For dropping a table, can the phrase "if exists" be applied before the table name?
+	 * <p/>
+	 * NOTE : Only one or the other (or neither) of this and {@link #supportsIfExistsAfterTableName} should return true
+	 *
+	 * @return {@code true} if the "if exists" can be applied before the table name
+	 */
 	public boolean supportsIfExistsBeforeTableName() {
 		return false;
 	}
 
+	/**
+	 * For dropping a table, can the phrase "if exists" be applied after the table name?
+	 * <p/>
+	 * NOTE : Only one or the other (or neither) of this and {@link #supportsIfExistsBeforeTableName} should return true
+	 *
+	 * @return {@code true} if the "if exists" can be applied after the table name
+	 */
 	public boolean supportsIfExistsAfterTableName() {
 		return false;
+	}
+
+	/**
+	 * For dropping a constraint with an "alter table", can the phrase "if exists" be applied before the constraint name?
+	 * <p/>
+	 * NOTE : Only one or the other (or neither) of this and {@link #supportsIfExistsAfterConstraintName} should return true
+	 *
+	 * @return {@code true} if the "if exists" can be applied before the constraint name
+	 */
+	public boolean supportsIfExistsBeforeConstraintName() {
+		return false;
+	}
+
+	/**
+	 * For dropping a constraint with an "alter table", can the phrase "if exists" be applied after the constraint name?
+	 * <p/>
+	 * NOTE : Only one or the other (or neither) of this and {@link #supportsIfExistsBeforeConstraintName} should return true
+	 *
+	 * @return {@code true} if the "if exists" can be applied after the constraint name
+	 */
+	public boolean supportsIfExistsAfterConstraintName() {
+		return false;
+	}
+
+	/**
+	 * Generate a DROP TABLE statement
+	 *
+	 * @param tableName The name of the table to drop
+	 *
+	 * @return The DROP TABLE command
+	 */
+	public String getDropTableString(String tableName) {
+		final StringBuilder buf = new StringBuilder( "drop table " );
+		if ( supportsIfExistsBeforeTableName() ) {
+			buf.append( "if exists " );
+		}
+		buf.append( tableName ).append( getCascadeConstraintsString() );
+		if ( supportsIfExistsAfterTableName() ) {
+			buf.append( " if exists" );
+		}
+		return buf.toString();
 	}
 
 	/**
@@ -1853,11 +2065,12 @@ public abstract class Dialect {
 		return true;
 	}
 
+	/**
+	 * Does this dialect support cascaded delete on foreign key definitions?
+	 *
+	 * @return {@code true} indicates that the dialect does support cascaded delete on foreign keys.
+	 */
 	public boolean supportsCascadeDelete() {
-		return true;
-	}
-
-	public boolean supportsNotNullUnique() {
 		return true;
 	}
 
@@ -1871,12 +2084,13 @@ public abstract class Dialect {
 	}
 
 	/**
-	 * Get the separator to use for defining cross joins when translating HQL queries.
+	 * Returns the separator to use for defining cross joins when translating HQL queries.
 	 * <p/>
 	 * Typically this will be either [<tt> cross join </tt>] or [<tt>, </tt>]
 	 * <p/>
 	 * Note that the spaces are important!
 	 *
+	 * @return The cross join separator
 	 */
 	public String getCrossJoinSeparator() {
 		return " cross join ";
@@ -1977,6 +2191,32 @@ public abstract class Dialect {
 	 */
 	public boolean replaceResultVariableInOrderByClauseWithPosition() {
 		return false;
+	}
+
+	/**
+	 * Renders an ordering fragment
+	 *
+	 * @param expression The SQL order expression. In case of {@code @OrderBy} annotation user receives property placeholder
+	 * (e.g. attribute name enclosed in '{' and '}' signs).
+	 * @param collation Collation string in format {@code collate IDENTIFIER}, or {@code null}
+	 * if expression has not been explicitly specified.
+	 * @param order Order direction. Possible values: {@code asc}, {@code desc}, or {@code null}
+	 * if expression has not been explicitly specified.
+	 * @param nulls Nulls precedence. Default value: {@link NullPrecedence#NONE}.
+	 * @return Renders single element of {@code ORDER BY} clause.
+	 */
+	public String renderOrderByElement(String expression, String collation, String order, NullPrecedence nulls) {
+		final StringBuilder orderByElement = new StringBuilder( expression );
+		if ( collation != null ) {
+			orderByElement.append( " " ).append( collation );
+		}
+		if ( order != null ) {
+			orderByElement.append( " " ).append( order );
+		}
+		if ( nulls != NullPrecedence.NONE ) {
+			orderByElement.append( " nulls " ).append( nulls.name().toLowerCase() );
+		}
+		return orderByElement.toString();
 	}
 
 	/**
@@ -2153,8 +2393,10 @@ public abstract class Dialect {
 	 * Does this dialect support using a JDBC bind parameter as an argument
 	 * to a function or procedure call?
 	 *
-	 * @return True if the database supports accepting bind params as args; false otherwise.
+	 * @return Returns {@code true} if the database supports accepting bind params as args, {@code false} otherwise. The
+	 * default is {@code true}.
 	 */
+	@SuppressWarnings( {"UnusedDeclaration"})
 	public boolean supportsBindAsCallableArgument() {
 		return true;
 	}
@@ -2168,13 +2410,111 @@ public abstract class Dialect {
 		return false;
 	}
 
-    /**
-     * Does this dialect support `count(distinct a,b)`?
-     *
-     * @return True if the database supports counting distinct tuples; false otherwise.
-     */
+	/**
+	 * Does this dialect support `count(distinct a,b)`?
+	 *
+	 * @return True if the database supports counting distinct tuples; false otherwise.
+	 */
 	public boolean supportsTupleDistinctCounts() {
 		// oddly most database in fact seem to, so true is the default.
 		return true;
 	}
+	
+	/**
+	 * If {@link #supportsTupleDistinctCounts()} is true, does the Dialect require the tuple to be wrapped with parens?
+	 * 
+	 * @return boolean
+	 */
+	public boolean requiresParensForTupleDistinctCounts() {
+		return false;
+	}
+
+	/**
+	 * Return the limit that the underlying database places on the number elements in an {@code IN} predicate.
+	 * If the database defines no such limits, simply return zero or less-than-zero.
+	 *
+	 * @return int The limit, or zero-or-less to indicate no limit.
+	 */
+	public int getInExpressionCountLimit() {
+		return 0;
+	}
+
+	/**
+	 * HHH-4635
+	 * Oracle expects all Lob values to be last in inserts and updates.
+	 *
+	 * @return boolean True of Lob values should be last, false if it
+	 * does not matter.
+	 */
+	public boolean forceLobAsLastValue() {
+		return false;
+	}
+
+	/**
+	 * Some dialects have trouble applying pessimistic locking depending upon what other query options are
+	 * specified (paging, ordering, etc).  This method allows these dialects to request that locking be applied
+	 * by subsequent selects.
+	 *
+	 * @return {@code true} indicates that the dialect requests that locking be applied by subsequent select;
+	 * {@code false} (the default) indicates that locking should be applied to the main SQL statement..
+	 */
+	public boolean useFollowOnLocking() {
+		return false;
+	}
+
+	/**
+	 * Negate an expression
+	 *
+	 * @param expression The expression to negate
+	 *
+	 * @return The negated expression
+	 */
+	public String getNotExpression(String expression) {
+		return "not " + expression;
+	}
+	
+	public String[] applyConstraints(Iterable<Table> tables, JdbcEnvironment jdbcEnvironment) {
+		return constraintDelegate.applyConstraints( tables, jdbcEnvironment );
+	}
+	
+	public String[] dropConstraints(Iterable<Table> tables, JdbcEnvironment jdbcEnvironment) {
+		return constraintDelegate.dropConstraints( tables, jdbcEnvironment );
+	}
+	
+	/**
+	 * Apply a hint to the query.  The entire query is provided, allowing the Dialect full control over the placement
+	 * and syntax of the hint.  By default, ignore the hint and simply return the query.
+	 * 
+	 * @param query The query to which to apply the hint.
+	 * @param hints The  hints to apply
+	 * @return The modified SQL
+	 */
+	public String getQueryHintString(String query, List<String> hints) {
+		return query;
+	}
+	
+	/**
+	 * Certain dialects support a subset of ScrollModes.  Provide a default to be used by Criteria and Query.
+	 * 
+	 * @return ScrollMode
+	 */
+	public ScrollMode defaultScrollMode() {
+		return ScrollMode.SCROLL_INSENSITIVE;
+	}
+	
+	/**
+	 * Does this dialect support tuples in subqueries?  Ex:
+	 * delete from Table1 where (col1, col2) in (select col1, col2 from Table2)
+	 * 
+	 * @return boolean
+	 */
+	public boolean supportsTuplesInSubqueries() {
+		return true;
+	}
+
+	public CallableStatementSupport getCallableStatementSupport() {
+		// most databases do not support returning cursors (ref_cursor)...
+		return StandardCallableStatementSupport.NO_REF_CURSOR_INSTANCE;
+	}
+
 }

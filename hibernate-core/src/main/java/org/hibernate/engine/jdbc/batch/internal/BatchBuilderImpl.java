@@ -25,14 +25,15 @@ package org.hibernate.engine.jdbc.batch.internal;
 
 import java.util.Map;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.cfg.Environment;
 import org.hibernate.engine.jdbc.batch.spi.Batch;
 import org.hibernate.engine.jdbc.batch.spi.BatchBuilder;
 import org.hibernate.engine.jdbc.batch.spi.BatchKey;
 import org.hibernate.engine.jdbc.spi.JdbcCoordinator;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.service.spi.Configurable;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -41,12 +42,26 @@ import org.jboss.logging.Logger;
  * @author Steve Ebersole
  */
 public class BatchBuilderImpl implements BatchBuilder, Configurable {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, BatchBuilderImpl.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			BatchBuilderImpl.class.getName()
+	);
 
 	private int size;
 
+	/**
+	 * Constructs a BatchBuilderImpl
+	 */
 	public BatchBuilderImpl() {
+	}
+
+	/**
+	 * Constructs a BatchBuilderImpl
+	 *
+	 * @param size The batch size to use.
+	 */
+	public BatchBuilderImpl(int size) {
+		this.size = size;
 	}
 
 	@Override
@@ -54,17 +69,14 @@ public class BatchBuilderImpl implements BatchBuilder, Configurable {
 		size = ConfigurationHelper.getInt( Environment.STATEMENT_BATCH_SIZE, configurationValues, size );
 	}
 
-	public BatchBuilderImpl(int size) {
-		this.size = size;
-	}
-
+	@SuppressWarnings("UnusedDeclaration")
 	public void setJdbcBatchSize(int size) {
 		this.size = size;
 	}
 
 	@Override
 	public Batch buildBatch(BatchKey key, JdbcCoordinator jdbcCoordinator) {
-        LOG.tracef("Building batch [size=%s]", size);
+		LOG.tracef( "Building batch [size=%s]", size );
 		return size > 1
 				? new BatchingBatch( key, jdbcCoordinator, size )
 				: new NonBatchingBatch( key, jdbcCoordinator );
@@ -72,12 +84,14 @@ public class BatchBuilderImpl implements BatchBuilder, Configurable {
 
 	@Override
 	public String getManagementDomain() {
-		return null; // use Hibernate default domain
+		// use Hibernate default domain
+		return null;
 	}
 
 	@Override
 	public String getManagementServiceType() {
-		return null;  // use Hibernate default scheme
+		// use Hibernate default scheme
+		return null;
 	}
 
 	@Override

@@ -24,10 +24,15 @@
  */
 package org.hibernate.internal.util;
 
+import java.beans.Introspector;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.HashSet;
+import java.util.Set;
+
 import org.hibernate.AssertionFailure;
 import org.hibernate.MappingException;
 import org.hibernate.PropertyNotFoundException;
@@ -38,12 +43,21 @@ import org.hibernate.property.PropertyAccessor;
 import org.hibernate.type.PrimitiveType;
 import org.hibernate.type.Type;
 
+import com.fasterxml.classmate.MemberResolver;
+import com.fasterxml.classmate.ResolvedType;
+import com.fasterxml.classmate.ResolvedTypeWithMembers;
+import com.fasterxml.classmate.TypeResolver;
+import com.fasterxml.classmate.members.ResolvedField;
+import com.fasterxml.classmate.members.ResolvedMethod;
+import com.fasterxml.classmate.types.ResolvedArrayType;
+
 /**
  * Utility class for various reflection operations.
  *
  * @author Gavin King
  * @author Steve Ebersole
  */
+@SuppressWarnings("unchecked")
 public final class ReflectHelper {
 
 	//TODO: this dependency is kinda Bad
@@ -57,6 +71,9 @@ public final class ReflectHelper {
 
 	private static final Method OBJECT_EQUALS;
 	private static final Method OBJECT_HASHCODE;
+
+	private static final TypeResolver TYPE_RESOLVER = new TypeResolver();
+	private static final MemberResolver MEMBER_RESOLVER = new MemberResolver( TYPE_RESOLVER );
 
 	static {
 		Method eq;
@@ -159,9 +176,9 @@ public final class ReflectHelper {
 	 */
 	public static Class classForName(String name, Class caller) throws ClassNotFoundException {
 		try {
-			ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-			if ( contextClassLoader != null ) {
-				return contextClassLoader.loadClass( name );
+			ClassLoader classLoader = ClassLoaderHelper.getContextClassLoader();
+			if ( classLoader != null ) {
+				return classLoader.loadClass( name );
 			}
 		}
 		catch ( Throwable ignore ) {
@@ -181,9 +198,9 @@ public final class ReflectHelper {
 	 */
 	public static Class classForName(String name) throws ClassNotFoundException {
 		try {
-			ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-			if ( contextClassLoader != null ) {
-				return contextClassLoader.loadClass(name);
+			ClassLoader classLoader = ClassLoaderHelper.getContextClassLoader();
+			if ( classLoader != null ) {
+				return classLoader.loadClass(name);
 			}
 		}
 		catch ( Throwable ignore ) {
@@ -294,16 +311,14 @@ public final class ReflectHelper {
 	 * @return The default constructor.
 	 * @throws PropertyNotFoundException Indicates there was not publicly accessible, no-arg constructor (todo : why PropertyNotFoundException???)
 	 */
-	public static Constructor getDefaultConstructor(Class clazz) throws PropertyNotFoundException {
+	public static <T> Constructor<T> getDefaultConstructor(Class<T> clazz) throws PropertyNotFoundException {
 		if ( isAbstractClass( clazz ) ) {
 			return null;
 		}
 
 		try {
-			Constructor constructor = clazz.getDeclaredConstructor( NO_PARAM_SIGNATURE );
-			if ( !isPublic( clazz, constructor ) ) {
-				constructor.setAccessible( true );
-			}
+			Constructor<T> constructor = clazz.getDeclaredConstructor( NO_PARAM_SIGNATURE );
+			constructor.setAccessible( true );
 			return constructor;
 		}
 		catch ( NoSuchMethodException nme ) {
@@ -361,9 +376,7 @@ public final class ReflectHelper {
 					}
 				}
 				if ( found ) {
-					if ( !isPublic( clazz, constructor ) ) {
-						constructor.setAccessible( true );
-					}
+					constructor.setAccessible( true );
 					return constructor;
 				}
 			}
@@ -380,4 +393,97 @@ public final class ReflectHelper {
 		}
 	}
 
+	/**
+	 * Process bean properties getter by applying the JavaBean naming conventions.
+	 *
+	 * @param member the member for which to get the property name.
+	 *
+	 * @return The bean method name with the "is" or "get" prefix stripped off, {@code null}
+	 *         the method name id not according to the JavaBeans standard.
+	 */
+	public static String getPropertyName(Member member) {
+		String name = null;
+
+		if ( member instanceof Field ) {
+			name = member.getName();
+		}
+
+		if ( member instanceof Method ) {
+			name = getPropertyNameFromGetterMethod( member.getName() );
+		}
+		return name;
+	}
+
+	public static String getPropertyNameFromGetterMethod(String methodName) {
+		if ( methodName.startsWith( "is" ) ) {
+			return Introspector.decapitalize( methodName.substring( 2 ) );
+		}
+		else if ( methodName.startsWith( "has" ) ) {
+			return Introspector.decapitalize( methodName.substring( 3 ) );
+		}
+		else if ( methodName.startsWith( "get" ) ) {
+			return Introspector.decapitalize( methodName.substring( 3 ) );
+		}
+
+		return null;
+	}
+
+	public static boolean isProperty(Member m) {
+		if ( m instanceof Method ) {
+			Method method = (Method) m;
+			return !method.isSynthetic()
+					&& !method.isBridge()
+					&& !Modifier.isStatic( method.getModifiers() )
+					&& method.getParameterTypes().length == 0
+					&& ( method.getName().startsWith( "get" ) || method.getName().startsWith( "is" ) );
+		}
+		else {
+			return !Modifier.isTransient( m.getModifiers() ) && !m.isSynthetic();
+		}
+	}
+
+	/**
+	 * Returns a Set of field types in the given class.  However, for Collection
+	 * and Map fields, the value and key types are returned instead of the
+	 * Iterable class itself.
+	 *
+	 * @param clazz
+	 * @return Set<Class<?>>
+	 */
+	// TODO: This should be moved out of ReflectHelper.  Partial duplication with
+	// AnnotationBindingContextImpl#resolveMemberTypes
+	public static Set<Class<?>> getMemberTypes( Class<?> clazz ) {
+		Set<Class<?>> fieldTypes = new HashSet<Class<?>>();
+
+		ResolvedType resolvedType = TYPE_RESOLVER.resolve( clazz );
+		ResolvedTypeWithMembers resolvedTypes = MEMBER_RESOLVER.resolve( resolvedType, null, null );
+		ResolvedField[] resolvedFields = resolvedTypes.getMemberFields();
+
+		for ( ResolvedField resolvedField : resolvedFields ) {
+			resolveAllTypes( resolvedField.getType(), fieldTypes );
+		}
+
+		// TODO: This should really just be checking getters, but for now do everything.
+		ResolvedMethod[] resolvedMethods = resolvedTypes.getMemberMethods();
+		for ( ResolvedMethod resolvedMethod : resolvedMethods ) {
+			if ( resolvedMethod.getReturnType() != null ) {
+				resolveAllTypes( resolvedMethod.getReturnType(), fieldTypes );
+			}
+		}
+
+		return fieldTypes;
+	}
+
+	private static void resolveAllTypes(ResolvedType fieldType, Set<Class<?>> fieldTypes) {
+		if ( fieldType instanceof ResolvedArrayType ) {
+			ResolvedArrayType arrayType = (ResolvedArrayType) fieldType;
+			resolveAllTypes( arrayType.getArrayElementType(), fieldTypes );
+		} else {
+			fieldTypes.add( fieldType.getErasedType() );
+		}
+
+		for ( ResolvedType typeParameter : fieldType.getTypeBindings().getTypeParameters() ) {
+			resolveAllTypes( typeParameter, fieldTypes );
+		}
+	}
 }

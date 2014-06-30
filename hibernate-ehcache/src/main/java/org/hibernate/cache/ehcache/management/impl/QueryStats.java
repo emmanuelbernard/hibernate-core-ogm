@@ -25,7 +25,6 @@ package org.hibernate.cache.ehcache.management.impl;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import javax.management.openmbean.CompositeData;
 import javax.management.openmbean.CompositeDataSupport;
@@ -41,6 +40,8 @@ import org.hibernate.stat.QueryStatistics;
 
 
 /**
+ * Represent point in time state of the query stats of a given query
+ *
  * @author gkeim
  * @author Alex Snaps
  */
@@ -75,7 +76,7 @@ public class QueryStats implements Serializable {
 	private static final CompositeType COMPOSITE_TYPE;
 	private static final String TABULAR_TYPE_NAME = "Statistics by Query";
 	private static final String TABULAR_TYPE_DESCRIPTION = "All Query Statistics";
-	private static final String[] INDEX_NAMES = new String[] { "query", };
+	private static final String[] INDEX_NAMES = new String[] {"query",};
 	private static final TabularType TABULAR_TYPE;
 
 	static {
@@ -86,7 +87,7 @@ public class QueryStats implements Serializable {
 			);
 			TABULAR_TYPE = new TabularType( TABULAR_TYPE_NAME, TABULAR_TYPE_DESCRIPTION, COMPOSITE_TYPE, INDEX_NAMES );
 		}
-		catch ( OpenDataException e ) {
+		catch (OpenDataException e) {
 			throw new RuntimeException( e );
 		}
 	}
@@ -137,15 +138,17 @@ public class QueryStats implements Serializable {
 	protected long executionMinTime;
 
 	/**
-	 * @param name
+	 * Constructor
+	 * @param name the query string
 	 */
 	public QueryStats(String name) {
 		this.query = name;
 	}
 
 	/**
-	 * @param name
-	 * @param src
+	 * Constructor
+	 * @param name the query string
+	 * @param src the source of the stats to this query
 	 */
 	public QueryStats(String name, QueryStatistics src) {
 		this( name );
@@ -161,15 +164,17 @@ public class QueryStats implements Serializable {
 			this.executionMinTime =
 					BeanUtils.getLongBeanProperty( src, "executionMinTime" );
 		}
-		catch ( Exception e ) {
+		catch (Exception e) {
 			e.printStackTrace();
 			throw new RuntimeException( "Exception retrieving statistics", e );
 		}
 	}
 
 	/**
-	 * @param cData
+	 * Constructor
+	 * @param cData CompositeDate to construct an instance from
 	 */
+	@SuppressWarnings("UnusedAssignment")
 	public QueryStats(final CompositeData cData) {
 		int i = 0;
 		query = (String) cData.get( ITEM_NAMES[i++] );
@@ -183,17 +188,9 @@ public class QueryStats implements Serializable {
 		executionMinTime = (Long) cData.get( ITEM_NAMES[i++] );
 	}
 
-	private static int safeParseInt(String s) {
-		try {
-			return Integer.parseInt( s );
-		}
-		catch ( Exception e ) {
-			return -1;
-		}
-	}
-
 	/**
-	 * @param stats
+	 * Adds to the counter of this instance
+	 * @param stats the counters to add to these ones
 	 */
 	public void add(QueryStats stats) {
 		cacheHitCount += stats.getCacheHitCount();
@@ -206,9 +203,6 @@ public class QueryStats implements Serializable {
 		executionMinTime += stats.getExecutionMinTime();
 	}
 
-	/**
-	 * toString
-	 */
 	@Override
 	public String toString() {
 		return "query=" + query + ", cacheHitCount=" + cacheHitCount + ", cacheMissCount=" + cacheMissCount
@@ -218,70 +212,81 @@ public class QueryStats implements Serializable {
 	}
 
 	/**
-	 * getQuery
+	 * Accessor to the queryString
+	 * @return the query string
 	 */
+	@SuppressWarnings("UnusedDeclaration")
 	public String getQuery() {
 		return query;
 	}
 
 	/**
-	 * getCacheHitCount
+	 * The amount of hits for this query
+	 * @return the hit count
 	 */
 	public long getCacheHitCount() {
 		return cacheHitCount;
 	}
 
 	/**
-	 * getCacheMissCount
+	 * The amount of misses for this query
+	 * @return the miss count
 	 */
 	public long getCacheMissCount() {
 		return cacheMissCount;
 	}
 
 	/**
-	 * getCachePutCount
+	 * The amount of puts for this query
+	 * @return the put count
 	 */
 	public long getCachePutCount() {
 		return cachePutCount;
 	}
 
 	/**
-	 * getExecutionCount
+	 * The amount of execution of this query
+	 * @return the execution count
 	 */
 	public long getExecutionCount() {
 		return executionCount;
 	}
 
 	/**
-	 * getExecutionRowCount
+	 * The amount of rows returned for this query
+	 * @return the row count
 	 */
 	public long getExecutionRowCount() {
 		return executionRowCount;
 	}
 
 	/**
-	 * getExecutionAvgTime
+	 * The avg time to execute this query
+	 * @return the avg time in ms
 	 */
 	public long getExecutionAvgTime() {
 		return executionAvgTime;
 	}
 
 	/**
-	 * getExecutionMaxTime
+	 * The max time to execute this query
+	 * @return the max time in ms
 	 */
 	public long getExecutionMaxTime() {
 		return executionMaxTime;
 	}
 
 	/**
-	 * getExecutionMinTime
+	 * The minimum time to execute this query
+	 * @return the min time in ms
 	 */
 	public long getExecutionMinTime() {
 		return executionMinTime;
 	}
 
 	/**
-	 * toCompositeData
+	 * Creates a CompositeData instance of this instance
+	 * @return the compositeData representation of this instance
 	 */
 	public CompositeData toCompositeData() {
 		try {
@@ -297,25 +302,29 @@ public class QueryStats implements Serializable {
 			}
 			);
 		}
-		catch ( OpenDataException e ) {
+		catch (OpenDataException e) {
 			throw new RuntimeException( e );
 		}
 	}
 
 	/**
-	 * newTabularDataInstance
+	 * Creates a new TabularData
+	 * @return a new TabularData instance
 	 */
 	public static TabularData newTabularDataInstance() {
 		return new TabularDataSupport( TABULAR_TYPE );
 	}
 
 	/**
-	 * fromTabularData
+	 * Reads an array of queryStats from TabularData
+	 * @param tabularData the tabularData with the {@link CompositeData} of stats to extract
+	 * @return all queryStats as an array
 	 */
+	@SuppressWarnings({"unchecked", "UnusedDeclaration"})
 	public static QueryStats[] fromTabularData(final TabularData tabularData) {
 		final List<QueryStats> countList = new ArrayList( tabularData.size() );
-		for ( final Iterator pos = tabularData.values().iterator(); pos.hasNext(); ) {
-			countList.add( new QueryStats( (CompositeData) pos.next() ) );
+		for ( Object o : tabularData.values() ) {
+			countList.add( new QueryStats( (CompositeData) o ) );
 		}
 		return countList.toArray( new QueryStats[countList.size()] );
 	}

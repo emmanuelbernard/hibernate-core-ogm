@@ -27,6 +27,7 @@ package org.hibernate.loader.collection;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
@@ -96,7 +97,7 @@ public class OneToManyJoinWalker extends CollectionJoinWalker {
 		final int collectionJoins = countCollectionPersisters( associations ) + 1;
 		collectionSuffixes = BasicLoader.generateSuffixes( joins + 1, collectionJoins );
 
-		StringBuffer whereString = whereString(
+		StringBuilder whereString = whereString(
 				alias,
 				oneToManyPersister.getKeyColumnNames(),
 				subquery,

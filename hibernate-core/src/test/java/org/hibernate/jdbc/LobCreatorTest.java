@@ -38,6 +38,8 @@ import java.sql.NClob;
 import java.sql.SQLException;
 import java.util.Properties;
 
+import org.junit.Test;
+
 import org.hibernate.cfg.Environment;
 import org.hibernate.engine.jdbc.BlobImplementer;
 import org.hibernate.engine.jdbc.ClobImplementer;
@@ -48,9 +50,7 @@ import org.hibernate.engine.jdbc.NClobImplementer;
 import org.hibernate.engine.jdbc.NonContextualLobCreator;
 import org.hibernate.engine.jdbc.WrappedBlob;
 import org.hibernate.engine.jdbc.WrappedClob;
-import org.hibernate.engine.jdbc.internal.LobCreatorBuilder;
-
-import org.junit.Test;
+import org.hibernate.engine.jdbc.env.internal.LobCreatorBuilderImpl;
 
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -66,40 +66,40 @@ public class LobCreatorTest extends org.hibernate.testing.junit4.BaseUnitTestCas
 		LobCreationContext lobCreationContext = new LobCreationContextImpl( connection );
 
 		LobCreator lobCreator =
-				new LobCreatorBuilder( new Properties(), connection )
+				LobCreatorBuilderImpl.makeLobCreatorBuilder( new Properties(), connection )
 						.buildLobCreator( lobCreationContext );
 		assertTrue( lobCreator instanceof ContextualLobCreator );
 		testLobCreation( lobCreator );
 
 		connection.close();
 	}
-
+    @Test
 	public void testJdbc3LobCreator() throws SQLException {
 		final Connection connection = createConnectionProxy( 3, new JdbcLobBuilderImpl( false) );
 		LobCreationContext lobCreationContext = new LobCreationContextImpl( connection );
 
 		LobCreator lobCreator =
-				new LobCreatorBuilder( new Properties(), connection )
+				LobCreatorBuilderImpl.makeLobCreatorBuilder( new Properties(), connection )
 						.buildLobCreator( lobCreationContext );
 		assertSame( NonContextualLobCreator.INSTANCE, lobCreator );
 
 		testLobCreation( lobCreator );
 		connection.close();
 	}
-
+    @Test
 	public void testJdbc4UnsupportedLobCreator() throws SQLException {
 		final Connection connection = createConnectionProxy( 4, new JdbcLobBuilderImpl( false ) );
 		LobCreationContext lobCreationContext = new LobCreationContextImpl( connection );
 
 		LobCreator lobCreator =
-				new LobCreatorBuilder( new Properties(), connection )
+				LobCreatorBuilderImpl.makeLobCreatorBuilder( new Properties(), connection )
 						.buildLobCreator( lobCreationContext );
 		assertSame( NonContextualLobCreator.INSTANCE, lobCreator );
 
 		testLobCreation( lobCreator );
 		connection.close();
 	}
-
+    @Test
 	public void testConfiguredNonContextualLobCreator() throws SQLException {
 		final Connection connection = createConnectionProxy( 4, new JdbcLobBuilderImpl( true ) );
 		LobCreationContext lobCreationContext = new LobCreationContextImpl( connection );
@@ -107,7 +107,7 @@ public class LobCreatorTest extends org.hibernate.testing.junit4.BaseUnitTestCas
 		Properties props = new Properties();
 		props.setProperty( Environment.NON_CONTEXTUAL_LOB_CREATION, "true" );
 		LobCreator lobCreator =
-				new LobCreatorBuilder( props, connection )
+				LobCreatorBuilderImpl.makeLobCreatorBuilder( props, connection )
 						.buildLobCreator( lobCreationContext );
 		assertSame( NonContextualLobCreator.INSTANCE, lobCreator );
 

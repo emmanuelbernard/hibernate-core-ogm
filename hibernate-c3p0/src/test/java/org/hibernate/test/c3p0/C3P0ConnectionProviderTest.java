@@ -28,11 +28,12 @@ import java.util.Set;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
+import org.hibernate.c3p0.internal.C3P0ConnectionProvider;
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
+import org.hibernate.engine.jdbc.spi.JdbcServices;
+
 import org.junit.Test;
 
-import org.hibernate.engine.jdbc.spi.JdbcServices;
-import org.hibernate.service.jdbc.connections.internal.C3P0ConnectionProvider;
-import org.hibernate.service.jdbc.connections.spi.ConnectionProvider;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 
 import static org.junit.Assert.assertEquals;
@@ -64,6 +65,9 @@ public class C3P0ConnectionProviderTest extends BaseCoreFunctionalTestCase {
 
                 int actual_minPoolSize = (Integer) mBeanServer.getAttribute( obj, "minPoolSize" );
                 assertEquals( 50, actual_minPoolSize );
+
+                int actual_initialPoolSize = (Integer) mBeanServer.getAttribute( obj, "initialPoolSize" );
+                assertEquals( 50, actual_initialPoolSize );
 
                 int actual_maxPoolSize = (Integer) mBeanServer.getAttribute( obj, "maxPoolSize" );
                 assertEquals( 800, actual_maxPoolSize );

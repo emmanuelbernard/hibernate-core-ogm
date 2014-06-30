@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.persistence.JoinColumn;
 import javax.persistence.PrimaryKeyJoinColumn;
+
 import org.hibernate.AnnotationException;
 import org.hibernate.AssertionFailure;
 import org.hibernate.MappingException;
@@ -121,7 +122,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 		setUnique( unique );
 		setInsertable( insertable );
 		setUpdatable( updatable );
-		setSecondaryTableName( secondaryTable );
+		setExplicitTableName( secondaryTable );
 		setPropertyHolder( propertyHolder );
 		setJoins( joins );
 		setMappings( mappings );
@@ -210,7 +211,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 		if ( actualColumns == null || actualColumns.length == 0 ) {
 			return new Ejb3JoinColumn[] {
 					buildJoinColumn(
-							(JoinColumn) null,
+							null,
 							mappedBy,
 							joins,
 							propertyHolder,
@@ -255,6 +256,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 				);
 			}
 			Ejb3JoinColumn joinColumn = new Ejb3JoinColumn();
+			joinColumn.setMappings( mappings );
 			joinColumn.setJoinAnnotation( ann, null );
 			if ( StringHelper.isEmpty( joinColumn.getLogicalColumnName() )
 				&& ! StringHelper.isEmpty( suffixForDefaultColumnName ) ) {
@@ -264,7 +266,6 @@ public class Ejb3JoinColumn extends Ejb3Column {
 			joinColumn.setPropertyHolder( propertyHolder );
 			joinColumn.setPropertyName( BinderHelper.getRelativePath( propertyHolder, propertyName ) );
 			joinColumn.setImplicit( false );
-			joinColumn.setMappings( mappings );
 			joinColumn.bind();
 			return joinColumn;
 		}
@@ -298,6 +299,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 		}
 		else {
 			setImplicit( false );
+			final ObjectNameNormalizer nameNormalizer = getMappings().getObjectNameNormalizer();
 			if ( !BinderHelper.isEmptyAnnotationValue( annJoin.columnDefinition() ) ) setSqlType( annJoin.columnDefinition() );
 			if ( !BinderHelper.isEmptyAnnotationValue( annJoin.name() ) ) setLogicalColumnName( annJoin.name() );
 			setNullable( annJoin.nullable() );
@@ -305,7 +307,10 @@ public class Ejb3JoinColumn extends Ejb3Column {
 			setInsertable( annJoin.insertable() );
 			setUpdatable( annJoin.updatable() );
 			setReferencedColumn( annJoin.referencedColumnName() );
-			setSecondaryTableName( annJoin.table() );
+
+			final String tableName = !BinderHelper.isEmptyAnnotationValue( annJoin.table() )
+					? nameNormalizer.normalizeIdentifierQuoting( getMappings().getNamingStrategy().tableName( annJoin.table() ) ) : "";
+			setExplicitTableName( tableName );
 		}
 	}
 
@@ -355,8 +360,8 @@ public class Ejb3JoinColumn extends Ejb3Column {
 		else {
 			defaultName = mappings.getObjectNameNormalizer().normalizeIdentifierQuoting( defaultName );
 			return new Ejb3JoinColumn(
-					(String) null, defaultName,
-					false, false, true, true, null, (String) null,
+					null, defaultName,
+					false, false, true, true, null, null,
 					joins, propertyHolder, null, null, true, mappings
 			);
 		}
@@ -509,14 +514,22 @@ public class Ejb3JoinColumn extends Ejb3Column {
 	@Override
     protected void addColumnBinding(SimpleValue value) {
 		if ( StringHelper.isEmpty( mappedBy ) ) {
-			String unquotedLogColName = StringHelper.unquote( getLogicalColumnName() );
-			String unquotedRefColumn = StringHelper.unquote( getReferencedColumn() );
-			String logicalColumnName = getMappings().getNamingStrategy()
+			// was the column explicitly quoted in the mapping/annotation
+			// TODO: in metamodel, we need to better split global quoting and explicit quoting w/ respect to logical names
+			boolean isLogicalColumnQuoted = StringHelper.isQuoted( getLogicalColumnName() );
+			
+			final ObjectNameNormalizer nameNormalizer = getMappings().getObjectNameNormalizer();
+			final String logicalColumnName = nameNormalizer.normalizeIdentifierQuoting( getLogicalColumnName() );
+			final String referencedColumn = nameNormalizer.normalizeIdentifierQuoting( getReferencedColumn() );
+			final String unquotedLogColName = StringHelper.unquote( logicalColumnName );
+			final String unquotedRefColumn = StringHelper.unquote( referencedColumn );
+			String logicalCollectionColumnName = getMappings().getNamingStrategy()
 					.logicalCollectionColumnName( unquotedLogColName, getPropertyName(), unquotedRefColumn );
-			if ( StringHelper.isQuoted( getLogicalColumnName() ) || StringHelper.isQuoted( getLogicalColumnName() ) ) {
-				logicalColumnName = StringHelper.quote( logicalColumnName );
+			
+			if ( isLogicalColumnQuoted ) {
+				logicalCollectionColumnName = StringHelper.quote( logicalCollectionColumnName );
 			}
-			getMappings().addColumnBinding( logicalColumnName, getMappingColumn(), value.getTable() );
+			getMappings().addColumnBinding( logicalCollectionColumnName, getMappingColumn(), value.getTable() );
 		}
 	}
 
@@ -555,7 +568,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 				);
 			}
 			catch (MappingException e) {
-				throw new RecoverableException(e);
+				throw new RecoverableException( e.getMessage(), e );
 			}
 		}
 		Table matchingTable = columnOwner instanceof PersistentClass ?

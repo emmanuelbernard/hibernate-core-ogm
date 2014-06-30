@@ -25,6 +25,7 @@ package org.hibernate.id.uuid;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+
 import org.hibernate.internal.util.BytesHelper;
 
 /**
@@ -32,7 +33,9 @@ import org.hibernate.internal.util.BytesHelper;
  *
  * @author Steve Ebersole
  */
-public class Helper {
+public final class Helper {
+	private Helper() {
+	}
 
 	// IP ADDRESS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -117,14 +120,14 @@ public class Helper {
 
 	public static String format(int value) {
 		final String formatted = Integer.toHexString( value );
-		StringBuffer buf = new StringBuffer( "00000000".intern() );
+		StringBuilder buf = new StringBuilder( "00000000" );
 		buf.replace( 8 - formatted.length(), 8, formatted );
 		return buf.toString();
 	}
 
 	public static String format(short value) {
 		String formatted = Integer.toHexString( value );
-		StringBuffer buf = new StringBuffer( "0000" );
+		StringBuilder buf = new StringBuilder( "0000" );
 		buf.replace( 4 - formatted.length(), 4, formatted );
 		return buf.toString();
 	}
@@ -138,7 +141,7 @@ public class Helper {
 		System.out.println( "ip address int : " + addressInt );
 
 		String formatted = Integer.toHexString( addressInt );
-		StringBuffer buf = new StringBuffer( "00000000" );
+		StringBuilder buf = new StringBuilder( "00000000" );
 		buf.replace( 8 - formatted.length(), 8, formatted );
 		String addressHex = buf.toString();
 		System.out.println( "ip address hex : " + addressHex );

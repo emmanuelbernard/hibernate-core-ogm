@@ -27,6 +27,7 @@ import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.UUID;
 
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
@@ -34,27 +35,33 @@ import org.hibernate.MultiTenancyStrategy;
 import org.hibernate.Query;
 import org.hibernate.SQLQuery;
 import org.hibernate.ScrollableResults;
+import org.hibernate.SessionEventListener;
 import org.hibernate.SessionException;
 import org.hibernate.SharedSessionContract;
 import org.hibernate.cache.spi.CacheKey;
+import org.hibernate.engine.jdbc.LobCreationContext;
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
+import org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider;
+import org.hibernate.engine.jdbc.spi.JdbcConnectionAccess;
 import org.hibernate.engine.query.spi.HQLQueryPlan;
+import org.hibernate.engine.query.spi.NativeSQLQueryPlan;
+import org.hibernate.engine.query.spi.ParameterMetadata;
+import org.hibernate.engine.query.spi.sql.NativeSQLQuerySpecification;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.NamedQueryDefinition;
 import org.hibernate.engine.spi.NamedSQLQueryDefinition;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.engine.jdbc.LobCreationContext;
-import org.hibernate.engine.jdbc.spi.JdbcConnectionAccess;
-import org.hibernate.engine.query.spi.NativeSQLQueryPlan;
-import org.hibernate.engine.query.spi.sql.NativeSQLQuerySpecification;
 import org.hibernate.engine.transaction.spi.TransactionContext;
 import org.hibernate.engine.transaction.spi.TransactionEnvironment;
+import org.hibernate.id.uuid.StandardRandomStrategy;
 import org.hibernate.jdbc.WorkExecutor;
 import org.hibernate.jdbc.WorkExecutorVisitable;
 import org.hibernate.persister.entity.EntityPersister;
-import org.hibernate.service.jdbc.connections.spi.ConnectionProvider;
-import org.hibernate.service.jdbc.connections.spi.MultiTenantConnectionProvider;
+import org.hibernate.procedure.ProcedureCall;
+import org.hibernate.procedure.ProcedureCallMemento;
+import org.hibernate.procedure.internal.ProcedureCallImpl;
 import org.hibernate.type.Type;
 
 /**
@@ -62,11 +69,11 @@ import org.hibernate.type.Type;
  *
  * @author Gavin King
  */
-public abstract class AbstractSessionImpl implements Serializable, SharedSessionContract,
-													 SessionImplementor, TransactionContext {
+public abstract class AbstractSessionImpl
+		implements Serializable, SharedSessionContract, SessionImplementor, TransactionContext {
 	protected transient SessionFactoryImpl factory;
 	private final String tenantIdentifier;
-	private boolean closed = false;
+	private boolean closed;
 
 	protected AbstractSessionImpl(SessionFactoryImpl factory, String tenantIdentifier) {
 		this.factory = factory;
@@ -114,7 +121,7 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 
 	@Override
 	public boolean isClosed() {
-		return closed;
+		return closed || factory.isClosed();
 	}
 
 	protected void setClosed() {
@@ -122,9 +129,38 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 	}
 
 	protected void errorIfClosed() {
-		if ( closed ) {
+		if ( isClosed() ) {
 			throw new SessionException( "Session is closed!" );
 		}
+	}
+
+	@Override
+	public Query createQuery(NamedQueryDefinition namedQueryDefinition) {
+		String queryString = namedQueryDefinition.getQueryString();
+		final Query query = new QueryImpl(
+				queryString,
+				namedQueryDefinition.getFlushMode(),
+				this,
+				getHQLQueryPlan( queryString, false ).getParameterMetadata()
+		);
+		query.setComment( "named HQL query " + namedQueryDefinition.getName() );
+		if ( namedQueryDefinition.getLockOptions() != null ) {
+			query.setLockOptions( namedQueryDefinition.getLockOptions() );
+		}
+
+		return query;
+	}
+
+	@Override
+	public SQLQuery createSQLQuery(NamedSQLQueryDefinition namedQueryDefinition) {
+		final ParameterMetadata parameterMetadata = factory.getQueryPlanCache().getSQLParameterMetadata( namedQueryDefinition.getQueryString() );
+		final SQLQuery query = new SQLQueryImpl(
+				namedQueryDefinition,
+				this,
+				parameterMetadata
+		);
+		query.setComment( "named native SQL query " + namedQueryDefinition.getName() );
+		return query;
 	}
 
 	@Override
@@ -133,26 +169,15 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 		NamedQueryDefinition nqd = factory.getNamedQuery( queryName );
 		final Query query;
 		if ( nqd != null ) {
-			String queryString = nqd.getQueryString();
-			query = new QueryImpl(
-					queryString,
-			        nqd.getFlushMode(),
-			        this,
-			        getHQLQueryPlan( queryString, false ).getParameterMetadata()
-			);
-			query.setComment( "named HQL query " + queryName );
+			query = createQuery( nqd );
 		}
 		else {
 			NamedSQLQueryDefinition nsqlqd = factory.getNamedSQLQuery( queryName );
 			if ( nsqlqd==null ) {
 				throw new MappingException( "Named query not known: " + queryName );
 			}
-			query = new SQLQueryImpl(
-					nsqlqd,
-			        this,
-			        factory.getQueryPlanCache().getSQLParameterMetadata( nsqlqd.getQueryString() )
-			);
-			query.setComment( "named native SQL query " + queryName );
+
+			query = createSQLQuery( nsqlqd );
 			nqd = nsqlqd;
 		}
 		initQuery( query, nqd );
@@ -177,22 +202,41 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 	}
 
 	private void initQuery(Query query, NamedQueryDefinition nqd) {
+		// todo : cacheable and readonly should be Boolean rather than boolean...
 		query.setCacheable( nqd.isCacheable() );
 		query.setCacheRegion( nqd.getCacheRegion() );
-		if ( nqd.getTimeout()!=null ) query.setTimeout( nqd.getTimeout().intValue() );
-		if ( nqd.getFetchSize()!=null ) query.setFetchSize( nqd.getFetchSize().intValue() );
-		if ( nqd.getCacheMode() != null ) query.setCacheMode( nqd.getCacheMode() );
 		query.setReadOnly( nqd.isReadOnly() );
-		if ( nqd.getComment() != null ) query.setComment( nqd.getComment() );
+
+		if ( nqd.getTimeout() != null ) {
+			query.setTimeout( nqd.getTimeout() );
+		}
+		if ( nqd.getFetchSize() != null ) {
+			query.setFetchSize( nqd.getFetchSize() );
+		}
+		if ( nqd.getCacheMode() != null ) {
+			query.setCacheMode( nqd.getCacheMode() );
+		}
+		if ( nqd.getComment() != null ) {
+			query.setComment( nqd.getComment() );
+		}
+		if ( nqd.getFirstResult() != null ) {
+			query.setFirstResult( nqd.getFirstResult() );
+		}
+		if ( nqd.getMaxResults() != null ) {
+			query.setMaxResults( nqd.getMaxResults() );
+		}
+		if ( nqd.getFlushMode() != null ) {
+			query.setFlushMode( nqd.getFlushMode() );
+		}
 	}
 
 	@Override
 	public Query createQuery(String queryString) {
 		errorIfClosed();
-		QueryImpl query = new QueryImpl(
+		final QueryImpl query = new QueryImpl(
 				queryString,
-		        this,
-		        getHQLQueryPlan( queryString, false ).getParameterMetadata()
+				this,
+				getHQLQueryPlan( queryString, false ).getParameterMetadata()
 		);
 		query.setComment( queryString );
 		return query;
@@ -201,13 +245,56 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 	@Override
 	public SQLQuery createSQLQuery(String sql) {
 		errorIfClosed();
-		SQLQueryImpl query = new SQLQueryImpl(
+		final SQLQueryImpl query = new SQLQueryImpl(
 				sql,
-		        this,
-		        factory.getQueryPlanCache().getSQLParameterMetadata( sql )
+				this,
+				factory.getQueryPlanCache().getSQLParameterMetadata( sql )
 		);
 		query.setComment( "dynamic native SQL query" );
 		return query;
+	}
+
+	@Override
+	@SuppressWarnings("UnnecessaryLocalVariable")
+	public ProcedureCall getNamedProcedureCall(String name) {
+		errorIfClosed();
+
+		final ProcedureCallMemento memento = factory.getNamedQueryRepository().getNamedProcedureCallMemento( name );
+		if ( memento == null ) {
+			throw new IllegalArgumentException(
+					"Could not find named stored procedure call with that registration name : " + name
+			);
+		}
+		final ProcedureCall procedureCall = memento.makeProcedureCall( this );
+//		procedureCall.setComment( "Named stored procedure call [" + name + "]" );
+		return procedureCall;
+	}
+
+	@Override
+	@SuppressWarnings("UnnecessaryLocalVariable")
+	public ProcedureCall createStoredProcedureCall(String procedureName) {
+		errorIfClosed();
+		final ProcedureCall procedureCall = new ProcedureCallImpl( this, procedureName );
+//		call.setComment( "Dynamic stored procedure call" );
+		return procedureCall;
+	}
+
+	@Override
+	@SuppressWarnings("UnnecessaryLocalVariable")
+	public ProcedureCall createStoredProcedureCall(String procedureName, Class... resultClasses) {
+		errorIfClosed();
+		final ProcedureCall procedureCall = new ProcedureCallImpl( this, procedureName, resultClasses );
+//		call.setComment( "Dynamic stored procedure call" );
+		return procedureCall;
+	}
+
+	@Override
+	@SuppressWarnings("UnnecessaryLocalVariable")
+	public ProcedureCall createStoredProcedureCall(String procedureName, String... resultSetMappings) {
+		errorIfClosed();
+		final ProcedureCall procedureCall = new ProcedureCallImpl( this, procedureName, resultSetMappings );
+//		call.setComment( "Dynamic stored procedure call" );
+		return procedureCall;
 	}
 
 	protected HQLQueryPlan getHQLQueryPlan(String query, boolean shallow) throws HibernateException {
@@ -237,7 +324,7 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 
 	@Override
 	public EntityKey generateEntityKey(Serializable id, EntityPersister persister) {
-		return new EntityKey( id, persister, getTenantIdentifier() );
+		return new EntityKey( id, persister );
 	}
 
 	@Override
@@ -252,11 +339,13 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 		if ( jdbcConnectionAccess == null ) {
 			if ( MultiTenancyStrategy.NONE == factory.getSettings().getMultiTenancyStrategy() ) {
 				jdbcConnectionAccess = new NonContextualJdbcConnectionAccess(
+						getEventListenerManager(),
 						factory.getServiceRegistry().getService( ConnectionProvider.class )
 				);
 			}
 			else {
 				jdbcConnectionAccess = new ContextualJdbcConnectionAccess(
+						getEventListenerManager(),
 						factory.getServiceRegistry().getService( MultiTenantConnectionProvider.class )
 				);
 			}
@@ -264,28 +353,62 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 		return jdbcConnectionAccess;
 	}
 
+	private UUID sessionIdentifier;
+
+	public UUID getSessionIdentifier() {
+		if ( sessionIdentifier == null ) {
+			sessionIdentifier = StandardRandomStrategy.INSTANCE.generateUUID( this );
+		}
+		return sessionIdentifier;
+	}
+
 	private static class NonContextualJdbcConnectionAccess implements JdbcConnectionAccess, Serializable {
+		private final SessionEventListener listener;
 		private final ConnectionProvider connectionProvider;
 
-		private NonContextualJdbcConnectionAccess(ConnectionProvider connectionProvider) {
+		private NonContextualJdbcConnectionAccess(
+				SessionEventListener listener,
+				ConnectionProvider connectionProvider) {
+			this.listener = listener;
 			this.connectionProvider = connectionProvider;
 		}
 
 		@Override
 		public Connection obtainConnection() throws SQLException {
-			return connectionProvider.getConnection();
+			try {
+				listener.jdbcConnectionAcquisitionStart();
+				return connectionProvider.getConnection();
+			}
+			finally {
+				listener.jdbcConnectionAcquisitionEnd();
+			}
 		}
 
 		@Override
 		public void releaseConnection(Connection connection) throws SQLException {
-			connectionProvider.closeConnection( connection );
+			try {
+				listener.jdbcConnectionReleaseStart();
+				connectionProvider.closeConnection( connection );
+			}
+			finally {
+				listener.jdbcConnectionReleaseEnd();
+			}
+		}
+
+		@Override
+		public boolean supportsAggressiveRelease() {
+			return connectionProvider.supportsAggressiveRelease();
 		}
 	}
 
 	private class ContextualJdbcConnectionAccess implements JdbcConnectionAccess, Serializable {
+		private final SessionEventListener listener;
 		private final MultiTenantConnectionProvider connectionProvider;
 
-		private ContextualJdbcConnectionAccess(MultiTenantConnectionProvider connectionProvider) {
+		private ContextualJdbcConnectionAccess(
+				SessionEventListener listener,
+				MultiTenantConnectionProvider connectionProvider) {
+			this.listener = listener;
 			this.connectionProvider = connectionProvider;
 		}
 
@@ -294,7 +417,14 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 			if ( tenantIdentifier == null ) {
 				throw new HibernateException( "Tenant identifier required!" );
 			}
-			return connectionProvider.getConnection( tenantIdentifier );
+
+			try {
+				listener.jdbcConnectionAcquisitionStart();
+				return connectionProvider.getConnection( tenantIdentifier );
+			}
+			finally {
+				listener.jdbcConnectionAcquisitionEnd();
+			}
 		}
 
 		@Override
@@ -302,7 +432,19 @@ public abstract class AbstractSessionImpl implements Serializable, SharedSession
 			if ( tenantIdentifier == null ) {
 				throw new HibernateException( "Tenant identifier required!" );
 			}
-			connectionProvider.releaseConnection( tenantIdentifier, connection );
+
+			try {
+				listener.jdbcConnectionReleaseStart();
+				connectionProvider.releaseConnection( tenantIdentifier, connection );
+			}
+			finally {
+				listener.jdbcConnectionReleaseEnd();
+			}
+		}
+
+		@Override
+		public boolean supportsAggressiveRelease() {
+			return connectionProvider.supportsAggressiveRelease();
 		}
 	}
 }

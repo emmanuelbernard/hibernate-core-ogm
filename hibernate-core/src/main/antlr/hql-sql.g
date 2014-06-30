@@ -58,10 +58,14 @@ tokens
     private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, HqlSqlBaseWalker.class.getName());
 
 	private int level = 0;
+
 	private boolean inSelect = false;
 	private boolean inFunctionCall = false;
 	private boolean inCase = false;
 	private boolean inFrom = false;
+	private boolean inCount = false;
+	private boolean inCountDistinct = false;
+
 	private int statementType;
 	private String statementTypeName;
 	// Note: currentClauseType tracks the current clause within the current
@@ -91,6 +95,14 @@ tokens
 	public final boolean isInCase() {
 		return inCase;
 	}
+
+    public final boolean isInCount() {
+        return inCount;
+    }
+
+    public final boolean isInCountDistinct() {
+        return inCountDistinct;
+    }
 
 	public final int getStatementType() {
 		return statementType;
@@ -191,6 +203,8 @@ tokens
 	protected void resolveSelectExpression(AST dotNode) throws SemanticException { }
 
 	protected void processFunction(AST functionCall,boolean inSelect) throws SemanticException { }
+
+	protected void processCastFunction(AST functionCall,boolean inSelect) throws SemanticException { }
 
 	protected void processAggregation(AST node, boolean inSelect) throws SemanticException { }
 
@@ -336,8 +350,17 @@ orderClause
 	;
 
 orderExprs
-	: orderExpr ( ASCENDING | DESCENDING )? (orderExprs)?
+	: orderExpr ( ASCENDING | DESCENDING )? ( nullOrdering )? (orderExprs)?
 	;
+
+nullOrdering
+    : NULLS nullPrecedence
+    ;
+
+nullPrecedence
+    : FIRST
+    | LAST
+    ;
 
 orderExpr
 	: { isOrderExpressionResultVariableRef( _t ) }? resultVariableRef
@@ -388,12 +411,17 @@ selectExpr
 	| collectionFunction			// elements() or indices()
 	| literal
 	| arithmeticExpr
+	| logicalExpr
+	| parameter
 	| query
 	;
 
 count
-	: #(COUNT ( DISTINCT | ALL )? ( aggregateExpr | ROW_STAR ) )
-	;
+    : #(COUNT  { inCount = true; } ( DISTINCT { inCountDistinct = true; } | ALL )? ( aggregateExpr | ROW_STAR ) ) {
+        inCount = false;
+        inCountDistinct = false;
+    }
+    ;
 
 constructor
 	{ String className = null; }
@@ -478,7 +506,7 @@ path returns [String p] {
 	}
 	: a:identifier { p = a.getText(); }
 	| #(DOT x=path y:identifier) {
-			StringBuffer buf = new StringBuffer();
+			StringBuilder buf = new StringBuilder();
 			buf.append(x).append(".").append(y.getText());
 			p = buf.toString();
 		}
@@ -601,6 +629,10 @@ functionCall
         processFunction( #functionCall, inSelect );
         inFunctionCall=false;
     }
+    | #(CAST {inFunctionCall=true;} exprOrSubquery pathAsIdent) {
+    	processCastFunction( #functionCall, inSelect );
+        inFunctionCall=false;
+    }
 	| #(AGGREGATE aggregateExpr )
 	;
 
@@ -636,6 +668,9 @@ addrExpr! [ boolean root ]
 	| #(i:INDEX_OP lhs2:addrExprLhs rhs2:expr)	{
 		#addrExpr = #(#i, #lhs2, #rhs2);
 		processIndex(#addrExpr);
+	}
+	| mcr:mapComponentReference {
+	    #addrExpr = #mcr;
 	}
 	| p:identifier {
 //		#addrExpr = #p;

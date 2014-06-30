@@ -24,11 +24,12 @@
 package org.hibernate.id;
 
 import org.junit.Test;
+
+import org.hibernate.testing.junit4.BaseUnitTestCase;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
-
-import org.hibernate.testing.junit4.BaseUnitTestCase;
 
 /**
  * @author Steve Ebersole
@@ -142,7 +143,7 @@ public abstract class AbstractHolderTest extends BaseUnitTestCase {
 		}
 		assertEquals( holder.copy().initialize( i ), holder );
 	}
-
+    @Test
 	public void testBasicHiloAlgorithm() {
 		// mimic an initialValue of 1 and increment of 20
 		final long initialValue = 1;

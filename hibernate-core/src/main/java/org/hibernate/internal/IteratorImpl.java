@@ -23,10 +23,12 @@
  *
  */
 package org.hibernate.internal;
+
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.NoSuchElementException;
+
 import org.hibernate.HibernateException;
 import org.hibernate.JDBCException;
 import org.hibernate.engine.HibernateIterator;
@@ -34,6 +36,7 @@ import org.hibernate.event.spi.EventSource;
 import org.hibernate.hql.internal.HolderInstantiator;
 import org.hibernate.type.EntityType;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -81,39 +84,28 @@ public final class IteratorImpl implements HibernateIterator {
 
 	public void close() throws JDBCException {
 		if (ps!=null) {
+			LOG.debug("Closing iterator");
+			session.getTransactionCoordinator().getJdbcCoordinator().release( ps );
+			ps = null;
+			rs = null;
+			hasNext = false;
 			try {
-                LOG.debugf("Closing iterator");
-				ps.close();
-				ps = null;
-				rs = null;
-				hasNext = false;
+				session.getPersistenceContext().getLoadContexts().cleanup( rs );
 			}
-			catch (SQLException e) {
-                LOG.unableToCloseIterator(e);
-				throw session.getFactory().getSQLExceptionHelper().convert(
-				        e,
-				        "Unable to close iterator"
-					);
-			}
-			finally {
-				try {
-					session.getPersistenceContext().getLoadContexts().cleanup( rs );
-				}
-				catch( Throwable ignore ) {
-					// ignore this error for now
-                    LOG.debugf("Exception trying to cleanup load context : %s", ignore.getMessage());
-				}
+			catch( Throwable ignore ) {
+				// ignore this error for now
+                LOG.debugf("Exception trying to cleanup load context : %s", ignore.getMessage());
 			}
 		}
 	}
 
 	private void postNext() throws SQLException {
-        LOG.debugf("Attempting to retrieve next results");
+		LOG.debug("Attempting to retrieve next results");
 		this.hasNext = rs.next();
 		if (!hasNext) {
-            LOG.debugf("Exhausted results");
+			LOG.debug("Exhausted results");
 			close();
-        } else LOG.debugf("Retrieved next results");
+		} else LOG.debug("Retrieved next results");
 	}
 
 	public boolean hasNext() {
@@ -127,7 +119,7 @@ public final class IteratorImpl implements HibernateIterator {
 		try {
 			boolean isHolder = holderInstantiator.isRequired();
 
-            LOG.debugf("Assembling results");
+			LOG.debugf( "Assembling results" );
 			if ( single && !isHolder ) {
 				currentResult = types[0].nullSafeGet( rs, names[0], session, null );
 			}
@@ -146,7 +138,7 @@ public final class IteratorImpl implements HibernateIterator {
 			}
 
 			postNext();
-            LOG.debugf("Returning current results");
+			LOG.debugf( "Returning current results" );
 			return currentResult;
 		}
 		catch (SQLException sqle) {

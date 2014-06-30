@@ -27,36 +27,45 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.hibernate.boot.registry.StandardServiceInitiator;
 import org.hibernate.cache.internal.RegionFactoryInitiator;
+import org.hibernate.engine.config.internal.ConfigurationServiceInitiator;
 import org.hibernate.engine.jdbc.batch.internal.BatchBuilderInitiator;
+import org.hibernate.engine.jdbc.connections.internal.ConnectionProviderInitiator;
+import org.hibernate.engine.jdbc.connections.internal.MultiTenantConnectionProviderInitiator;
+import org.hibernate.engine.jdbc.cursor.internal.RefCursorSupportInitiator;
+import org.hibernate.engine.jdbc.dialect.internal.DialectFactoryInitiator;
+import org.hibernate.engine.jdbc.dialect.internal.DialectResolverInitiator;
+import org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator;
 import org.hibernate.engine.jdbc.internal.JdbcServicesInitiator;
+import org.hibernate.engine.jndi.internal.JndiServiceInitiator;
 import org.hibernate.engine.transaction.internal.TransactionFactoryInitiator;
+import org.hibernate.engine.transaction.jta.platform.internal.JtaPlatformInitiator;
+import org.hibernate.engine.transaction.jta.platform.internal.JtaPlatformResolverInitiator;
 import org.hibernate.id.factory.internal.MutableIdentifierGeneratorFactoryInitiator;
+import org.hibernate.jmx.internal.JmxServiceInitiator;
 import org.hibernate.persister.internal.PersisterClassResolverInitiator;
 import org.hibernate.persister.internal.PersisterFactoryInitiator;
-import org.hibernate.service.config.internal.ConfigurationServiceInitiator;
 import org.hibernate.service.internal.SessionFactoryServiceRegistryFactoryInitiator;
-import org.hibernate.service.jdbc.connections.internal.ConnectionProviderInitiator;
-import org.hibernate.service.jdbc.connections.internal.MultiTenantConnectionProviderInitiator;
-import org.hibernate.service.jdbc.dialect.internal.DialectFactoryInitiator;
-import org.hibernate.service.jdbc.dialect.internal.DialectResolverInitiator;
-import org.hibernate.service.jmx.internal.JmxServiceInitiator;
-import org.hibernate.service.jndi.internal.JndiServiceInitiator;
-import org.hibernate.service.jta.platform.internal.JtaPlatformInitiator;
-import org.hibernate.service.spi.BasicServiceInitiator;
+import org.hibernate.tool.hbm2ddl.ImportSqlCommandExtractorInitiator;
+import org.hibernate.tool.schema.internal.SchemaManagementToolInitiator;
 
 /**
  * Central definition of the standard set of service initiators defined by Hibernate.
  * 
  * @author Steve Ebersole
  */
-public class StandardServiceInitiators {
-	public static List<BasicServiceInitiator> LIST = buildStandardServiceInitiatorList();
+public final class StandardServiceInitiators {
+	private StandardServiceInitiators() {
+	}
 
-	private static List<BasicServiceInitiator> buildStandardServiceInitiatorList() {
-		final List<BasicServiceInitiator> serviceInitiators = new ArrayList<BasicServiceInitiator>();
+	public static List<StandardServiceInitiator> LIST = buildStandardServiceInitiatorList();
+
+	private static List<StandardServiceInitiator> buildStandardServiceInitiatorList() {
+		final List<StandardServiceInitiator> serviceInitiators = new ArrayList<StandardServiceInitiator>();
 
 		serviceInitiators.add( ConfigurationServiceInitiator.INSTANCE );
+		serviceInitiators.add( ImportSqlCommandExtractorInitiator.INSTANCE );
 
 		serviceInitiators.add( JndiServiceInitiator.INSTANCE );
 		serviceInitiators.add( JmxServiceInitiator.INSTANCE );
@@ -69,10 +78,15 @@ public class StandardServiceInitiators {
 		serviceInitiators.add( DialectResolverInitiator.INSTANCE );
 		serviceInitiators.add( DialectFactoryInitiator.INSTANCE );
 		serviceInitiators.add( BatchBuilderInitiator.INSTANCE );
+		serviceInitiators.add( JdbcEnvironmentInitiator.INSTANCE );
 		serviceInitiators.add( JdbcServicesInitiator.INSTANCE );
+		serviceInitiators.add( RefCursorSupportInitiator.INSTANCE );
+
+		serviceInitiators.add( SchemaManagementToolInitiator.INSTANCE );
 
 		serviceInitiators.add( MutableIdentifierGeneratorFactoryInitiator.INSTANCE);
 
+		serviceInitiators.add( JtaPlatformResolverInitiator.INSTANCE );
 		serviceInitiators.add( JtaPlatformInitiator.INSTANCE );
 		serviceInitiators.add( TransactionFactoryInitiator.INSTANCE );
 

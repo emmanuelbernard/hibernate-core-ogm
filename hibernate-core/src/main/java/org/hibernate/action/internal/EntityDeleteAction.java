@@ -32,43 +32,66 @@ import org.hibernate.cache.spi.access.SoftLock;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.event.service.spi.EventListenerGroup;
 import org.hibernate.event.spi.EventType;
+import org.hibernate.event.spi.PostCommitDeleteEventListener;
 import org.hibernate.event.spi.PostDeleteEvent;
 import org.hibernate.event.spi.PostDeleteEventListener;
 import org.hibernate.event.spi.PreDeleteEvent;
 import org.hibernate.event.spi.PreDeleteEventListener;
 import org.hibernate.persister.entity.EntityPersister;
-import org.hibernate.event.service.spi.EventListenerGroup;
 
-public final class EntityDeleteAction extends EntityAction {
+/**
+ * The action for performing an entity deletion.
+ */
+public class EntityDeleteAction extends EntityAction {
 	private final Object version;
 	private final boolean isCascadeDeleteEnabled;
 	private final Object[] state;
 
 	private SoftLock lock;
+	private Object[] naturalIdValues;
 
+	/**
+	 * Constructs an EntityDeleteAction.
+	 *
+	 * @param id The entity identifier
+	 * @param state The current (extracted) entity state
+	 * @param version The current entity version
+	 * @param instance The entity instance
+	 * @param persister The entity persister
+	 * @param isCascadeDeleteEnabled Whether cascade delete is enabled
+	 * @param session The session
+	 */
 	public EntityDeleteAction(
 			final Serializable id,
-	        final Object[] state,
-	        final Object version,
-	        final Object instance,
-	        final EntityPersister persister,
-	        final boolean isCascadeDeleteEnabled,
-	        final SessionImplementor session) {
+			final Object[] state,
+			final Object version,
+			final Object instance,
+			final EntityPersister persister,
+			final boolean isCascadeDeleteEnabled,
+			final SessionImplementor session) {
 		super( session, id, instance, persister );
 		this.version = version;
 		this.isCascadeDeleteEnabled = isCascadeDeleteEnabled;
 		this.state = state;
+
+		// before remove we need to remove the local (transactional) natural id cross-reference
+		naturalIdValues = session.getPersistenceContext().getNaturalIdHelper().removeLocalNaturalIdCrossReference(
+				getPersister(),
+				getId(),
+				state
+		);
 	}
 
 	@Override
 	public void execute() throws HibernateException {
-		Serializable id = getId();
-		EntityPersister persister = getPersister();
-		SessionImplementor session = getSession();
-		Object instance = getInstance();
+		final Serializable id = getId();
+		final EntityPersister persister = getPersister();
+		final SessionImplementor session = getSession();
+		final Object instance = getInstance();
 
-		boolean veto = preDelete();
+		final boolean veto = preDelete();
 
 		Object version = this.version;
 		if ( persister.isVersionPropertyGenerated() ) {
@@ -96,7 +119,7 @@ public final class EntityDeleteAction extends EntityAction {
 		// exists on the database (needed for identity-column key generation), and
 		// remove it from the session cache
 		final PersistenceContext persistenceContext = session.getPersistenceContext();
-		EntityEntry entry = persistenceContext.removeEntry( instance );
+		final EntityEntry entry = persistenceContext.removeEntry( instance );
 		if ( entry == null ) {
 			throw new AssertionFailure( "possible nonthreadsafe access to session" );
 		}
@@ -109,6 +132,8 @@ public final class EntityDeleteAction extends EntityAction {
 			persister.getCacheAccessStrategy().remove( ck );
 		}
 
+		persistenceContext.getNaturalIdHelper().removeSharedNaturalIdCrossReference( persister, id, naturalIdValues );
+
 		postDelete();
 
 		if ( getSession().getFactory().getStatistics().isStatisticsEnabled() && !veto ) {
@@ -118,7 +143,7 @@ public final class EntityDeleteAction extends EntityAction {
 
 	private boolean preDelete() {
 		boolean veto = false;
-		EventListenerGroup<PreDeleteEventListener> listenerGroup = listenerGroup( EventType.PRE_DELETE );
+		final EventListenerGroup<PreDeleteEventListener> listenerGroup = listenerGroup( EventType.PRE_DELETE );
 		if ( listenerGroup.isEmpty() ) {
 			return veto;
 		}
@@ -130,7 +155,7 @@ public final class EntityDeleteAction extends EntityAction {
 	}
 
 	private void postDelete() {
-		EventListenerGroup<PostDeleteEventListener> listenerGroup = listenerGroup( EventType.POST_DELETE );
+		final EventListenerGroup<PostDeleteEventListener> listenerGroup = listenerGroup( EventType.POST_DELETE );
 		if ( listenerGroup.isEmpty() ) {
 			return;
 		}
@@ -146,8 +171,8 @@ public final class EntityDeleteAction extends EntityAction {
 		}
 	}
 
-	private void postCommitDelete() {
-		EventListenerGroup<PostDeleteEventListener> listenerGroup = listenerGroup( EventType.POST_COMMIT_DELETE );
+	private void postCommitDelete(boolean success) {
+		final EventListenerGroup<PostDeleteEventListener> listenerGroup = listenerGroup( EventType.POST_COMMIT_DELETE );
 		if ( listenerGroup.isEmpty() ) {
 			return;
 		}
@@ -158,8 +183,19 @@ public final class EntityDeleteAction extends EntityAction {
 				getPersister(),
 				eventSource()
 		);
-		for( PostDeleteEventListener listener : listenerGroup.listeners() ){
-			listener.onPostDelete( event );
+		for ( PostDeleteEventListener listener : listenerGroup.listeners() ) {
+			if ( PostCommitDeleteEventListener.class.isInstance( listener ) ) {
+				if ( success ) {
+					listener.onPostDelete( event );
+				}
+				else {
+					((PostCommitDeleteEventListener) listener).onPostDeleteCommitFailed( event );
+				}
+			}
+			else {
+				//default to the legacy implementation that always fires the event
+				listener.onPostDelete( event );
+			}
 		}
 	}
 
@@ -173,11 +209,18 @@ public final class EntityDeleteAction extends EntityAction {
 			);
 			getPersister().getCacheAccessStrategy().unlockItem( ck, lock );
 		}
-		postCommitDelete();
+		postCommitDelete( success );
 	}
 
 	@Override
 	protected boolean hasPostCommitEventListeners() {
-		return ! listenerGroup( EventType.POST_COMMIT_DELETE ).isEmpty();
+		final EventListenerGroup<PostDeleteEventListener> group = listenerGroup( EventType.POST_COMMIT_DELETE );
+		for ( PostDeleteEventListener listener : group.listeners() ) {
+			if ( listener.requiresPostCommitHanding( getPersister() ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

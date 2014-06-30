@@ -22,7 +22,9 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.dialect;
+
 import java.sql.Types;
+
 import org.hibernate.dialect.function.NoArgSQLFunction;
 import org.hibernate.type.StandardBasicTypes;
 
@@ -32,6 +34,9 @@ import org.hibernate.type.StandardBasicTypes;
  * @author Gavin King
  */
 public class SQLServer2008Dialect extends SQLServer2005Dialect {
+	/**
+	 * Constructs a SQLServer2008Dialect
+	 */
 	public SQLServer2008Dialect() {
 		registerColumnType( Types.DATE, "date" );
 		registerColumnType( Types.TIME, "time" );

@@ -25,6 +25,7 @@
 package org.hibernate.param;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.type.Type;
@@ -54,9 +55,7 @@ public class CollectionFilterKeyParameterSpecification implements ParameterSpeci
 		this.queryParameterPosition = queryParameterPosition;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public int bind(
 			PreparedStatement statement,
 			QueryParameters qp,
@@ -67,23 +66,17 @@ public class CollectionFilterKeyParameterSpecification implements ParameterSpeci
 		return keyType.getColumnSpan( session.getFactory() );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Type getExpectedType() {
 		return keyType;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public void setExpectedType(Type expectedType) {
 		// todo : throw exception?
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String renderDisplayInfo() {
 		return "collection-filter-key=" + collectionRole;
 	}

@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2008, 2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,16 +20,18 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate;
+
 import java.util.List;
+
 import org.hibernate.criterion.CriteriaSpecification;
 import org.hibernate.criterion.Criterion;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Projection;
 import org.hibernate.sql.JoinType;
 import org.hibernate.transform.ResultTransformer;
+
 
 /**
  * <tt>Criteria</tt> is a simplified API for retrieving entities
@@ -118,7 +120,7 @@ public interface Criteria extends CriteriaSpecification {
 	 * @return this (for method chaining)
 	 */
 	public Criteria add(Criterion criterion);
-	
+
 	/**
 	 * Add an {@link Order ordering} to the result set.
 	 *
@@ -142,7 +144,7 @@ public interface Criteria extends CriteriaSpecification {
 	public Criteria setFetchMode(String associationPath, FetchMode mode) throws HibernateException;
 
 	/**
-	 * Set the lock mode of the current entity
+	 * Set the lock mode of the current entity.
 	 *
 	 * @param lockMode The lock mode to be applied
 	 *
@@ -151,7 +153,7 @@ public interface Criteria extends CriteriaSpecification {
 	public Criteria setLockMode(LockMode lockMode);
 
 	/**
-	 * Set the lock mode of the aliased entity
+	 * Set the lock mode of the aliased entity.
 	 *
 	 * @param alias The previously assigned alias representing the entity to
 	 *			which the given lock mode should apply.
@@ -245,7 +247,7 @@ public interface Criteria extends CriteriaSpecification {
 	 * @return this (for method chaining)
 	 *
 	 * @throws HibernateException Indicates a problem creating the sub criteria
-	 * @deprecated use {@link #createAlias(String, String, JoinType, Criterion}
+	 * @deprecated use {@link #createAlias(String, String, JoinType, Criterion)}
 	 */
 	@Deprecated
 	public Criteria createAlias(String associationPath, String alias, int joinType, Criterion withClause) throws HibernateException;
@@ -392,7 +394,7 @@ public interface Criteria extends CriteriaSpecification {
 	 * @return this (for method chaining)
 	 */
 	public Criteria setMaxResults(int maxResults);
-	
+
 	/**
 	 * Set the first result to be retrieved.
 	 *
@@ -452,6 +454,7 @@ public interface Criteria extends CriteriaSpecification {
 	 *
 	 * @param readOnly true, entities and proxies loaded by the criteria will be put in read-only mode
 	 *                 false, entities and proxies loaded by the criteria will be put in modifiable mode
+	 * @return {@code this}, for method chaining
 	 */
 	public Criteria setReadOnly(boolean readOnly);
 
@@ -503,6 +506,18 @@ public interface Criteria extends CriteriaSpecification {
 	 * @return this (for method chaining)
 	 */
 	public Criteria setComment(String comment);
+	
+	  
+	/**
+	 * Add a DB query hint to the SQL.  These differ from JPA's {@link javax.persistence.QueryHint}, which is specific
+	 * to the JPA implementation and ignores DB vendor-specific hints.  Instead, these are intended solely for the
+	 * vendor-specific hints, such as Oracle's optimizers.  Multiple query hints are supported; the Dialect will
+	 * determine concatenation and placement.
+	 * 
+	 * @param hint The database specific query hint to add.
+	 * @return this (for method chaining)
+	 */
+	public Criteria addQueryHint(String hint);
 
 	/**
 	 * Override the flush mode for this particular query.
@@ -529,9 +544,9 @@ public interface Criteria extends CriteriaSpecification {
 	 * exeucting the SQL or processing the SQL results.
 	 */
 	public List list() throws HibernateException;
-	
+
 	/**
-	 * Get the results as an instance of {@link ScrollableResults}
+	 * Get the results as an instance of {@link ScrollableResults}.
 	 *
 	 * @return The {@link ScrollableResults} representing the matched
 	 * query results.

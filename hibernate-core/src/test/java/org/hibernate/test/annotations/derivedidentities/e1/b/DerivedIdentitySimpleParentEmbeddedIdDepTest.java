@@ -23,12 +23,12 @@
  */
 package org.hibernate.test.annotations.derivedidentities.e1.b;
 
-import org.hibernate.Session;
-
 import org.junit.Test;
 
-import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.hibernate.Session;
 import org.hibernate.test.util.SchemaUtil;
+import org.hibernate.testing.FailureExpectedWithNewMetamodel;
+import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -36,11 +36,13 @@ import static org.junit.Assert.assertTrue;
 /**
  * @author Emmanuel Bernard
  */
+@FailureExpectedWithNewMetamodel
 public class DerivedIdentitySimpleParentEmbeddedIdDepTest extends BaseCoreFunctionalTestCase {
 	@Test
 	public void testManyToOne() throws Exception {
-		assertTrue( SchemaUtil.isColumnPresent( "Dependent", "emp_empId", configuration() ) );
-		assertTrue( ! SchemaUtil.isColumnPresent( "Dependent", "empPK", configuration() ) );
+		assertTrue( SchemaUtil.isColumnPresent( "Dependent", "emp_empId", metadata() ) );
+		assertTrue( ! SchemaUtil.isColumnPresent( "Dependent", "empPK", metadata() ) );
+
 		Employee e = new Employee();
 		e.empId = 1;
 		e.empName = "Emmanuel";
@@ -63,8 +65,9 @@ public class DerivedIdentitySimpleParentEmbeddedIdDepTest extends BaseCoreFuncti
 
 	@Test
 	public void testOneToOne() throws Exception {
-		assertTrue( SchemaUtil.isColumnPresent( "ExclusiveDependent", "FK", configuration() ) );
-		assertTrue( ! SchemaUtil.isColumnPresent( "ExclusiveDependent", "empPK", configuration() ) );
+		assertTrue( SchemaUtil.isColumnPresent( "ExclusiveDependent", "FK", metadata() ) );
+		assertTrue( ! SchemaUtil.isColumnPresent( "ExclusiveDependent", "empPK", metadata() ) );
+
 		Employee e = new Employee();
 		e.empId = 1;
 		e.empName = "Emmanuel";
@@ -89,6 +92,7 @@ public class DerivedIdentitySimpleParentEmbeddedIdDepTest extends BaseCoreFuncti
 	protected Class<?>[] getAnnotatedClasses() {
 		return new Class<?>[] {
 				Dependent.class,
+				DependentId.class,
 				Employee.class,
 				ExclusiveDependent.class
 		};

@@ -24,6 +24,7 @@
 package org.hibernate;
 
 import javax.transaction.Synchronization;
+
 import org.hibernate.engine.transaction.spi.LocalStatus;
 
 /**
@@ -46,7 +47,7 @@ public interface Transaction {
 	/**
 	 * Is this transaction the initiator of any underlying transaction?
 	 *
-	 * @return {@literal true} if this transaction initiated the underlying transaction; {@literal false} otherwise.
+	 * @return {@code true} if this transaction initiated the underlying transaction; {@code false} otherwise.
 	 */
 	public boolean isInitiator();
 
@@ -101,7 +102,7 @@ public interface Transaction {
 	 * transaction is active when it is initiated directly through the JDBC {@link java.sql.Connection}, only when
 	 * it is initiated from here.
 	 *
-	 * @return {@literal true} if the transaction is still active; {@literal false} otherwise.
+	 * @return {@code true} if the transaction is still active; {@code false} otherwise.
 	 *
 	 * @throws HibernateException Indicates a problem checking the transaction status.
 	 */
@@ -112,7 +113,8 @@ public interface Transaction {
 	 * <p/>
 	 * Generally speaking this will be the same as {@link #isActive()}.
 	 * 
-	 * @return
+	 * @return {@code true} if Hibernate is known to be participating in the underlying transaction; {@code false}
+	 * otherwise.
 	 */
 	public boolean isParticipating();
 
@@ -123,10 +125,11 @@ public interface Transaction {
 	 * transaction was committed when the commit was performed directly through the JDBC {@link java.sql.Connection},
 	 * only when the commit was done from this.
 	 *
-	 * @return {@literal true} if the transaction is rolled back; {@literal false} otherwise.
+	 * @return {@code true} if the transaction is rolled back; {@code false} otherwise.
 	 *
 	 * @throws HibernateException Indicates a problem checking the transaction status.
 	 */
+	@SuppressWarnings( {"UnusedDeclaration"})
 	public boolean wasCommitted();
 
 	/**
@@ -140,6 +143,7 @@ public interface Transaction {
 	 *
 	 * @throws HibernateException Indicates a problem checking the transaction status.
 	 */
+	@SuppressWarnings( {"UnusedDeclaration"})
 	public boolean wasRolledBack();
 
 	/**

@@ -23,6 +23,7 @@
  */
 package org.hibernate.id.uuid;
 import java.util.UUID;
+
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.id.UUIDGenerationStrategy;
 import org.hibernate.internal.util.BytesHelper;
@@ -38,6 +39,7 @@ import org.hibernate.internal.util.BytesHelper;
  * @author Steve Ebersole
  */
 public class CustomVersionOneStrategy implements UUIDGenerationStrategy {
+	@Override
 	public int getGeneratedVersion() {
 		return 1;
 	}
@@ -57,7 +59,7 @@ public class CustomVersionOneStrategy implements UUIDGenerationStrategy {
 
 		mostSignificantBits = BytesHelper.asLong( hiBits );
 	}
-
+	@Override
 	public UUID generateUUID(SessionImplementor session) {
 		long leastSignificantBits = generateLeastSignificantBits( System.currentTimeMillis() );
 		return new UUID( mostSignificantBits, leastSignificantBits );

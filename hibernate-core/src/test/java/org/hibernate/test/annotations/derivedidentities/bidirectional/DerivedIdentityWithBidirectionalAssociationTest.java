@@ -23,13 +23,12 @@
  */
 package org.hibernate.test.annotations.derivedidentities.bidirectional;
 
-import org.hibernate.Session;
-
 import org.junit.Test;
 
+import org.hibernate.Session;
+import org.hibernate.test.util.SchemaUtil;
 import org.hibernate.testing.Skip;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
-import org.hibernate.test.util.SchemaUtil;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -41,8 +40,9 @@ import static org.junit.Assert.assertTrue;
 public class DerivedIdentityWithBidirectionalAssociationTest extends BaseCoreFunctionalTestCase {
 	@Test
 	public void testBidirectionalAssociation() throws Exception {
-		assertTrue( SchemaUtil.isColumnPresent( "Dependent", "emp_empId", configuration() ) );
-		assertTrue( !SchemaUtil.isColumnPresent( "Dependent", "empPK", configuration() ) );
+		assertTrue( SchemaUtil.isColumnPresent( "Dependent", "emp_empId", metadata() ) );
+		assertTrue( !SchemaUtil.isColumnPresent( "Dependent", "empPK", metadata() ) );
+
 		Employee e = new Employee();
 		e.empId = 1;
 		e.empName = "Emmanuel";

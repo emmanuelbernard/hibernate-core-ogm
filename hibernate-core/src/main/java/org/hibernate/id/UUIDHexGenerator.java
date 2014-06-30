@@ -22,14 +22,17 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.id;
+
 import java.io.Serializable;
 import java.util.Properties;
 
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
+import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.dialect.Dialect;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -45,50 +48,43 @@ import org.jboss.logging.Logger;
  * @author Gavin King
  */
 public class UUIDHexGenerator extends AbstractUUIDGenerator implements Configurable {
-
     private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, UUIDHexGenerator.class.getName());
 
-	private static boolean warned = false;
+	private static boolean WARNED;
 
 	private String sep = "";
 
 	public UUIDHexGenerator() {
-		if ( ! warned ) {
-			warned = true;
-            LOG.usingUuidHexGenerator(this.getClass().getName(), UUIDGenerator.class.getName());
+		if ( !WARNED ) {
+			WARNED = true;
+            LOG.usingUuidHexGenerator( this.getClass().getName(), UUIDGenerator.class.getName() );
 		}
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
-	public void configure(Type type, Properties params, Dialect d) {
+	@Override
+	public void configure(Type type, Properties params, Dialect d, ClassLoaderService classLoaderService) {
 		sep = ConfigurationHelper.getString( "separator", params, "" );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Serializable generate(SessionImplementor session, Object obj) {
-		return new StringBuffer( 36 )
-				.append( format( getIP() ) ).append( sep )
-				.append( format( getJVM() ) ).append( sep )
-				.append( format( getHiTime() ) ).append( sep )
-				.append( format( getLoTime() ) ).append( sep )
-				.append( format( getCount() ) )
-				.toString();
+		return format( getIP() ) + sep
+				+ format( getJVM() ) + sep
+				+ format( getHiTime() ) + sep
+				+ format( getLoTime() ) + sep
+				+ format( getCount() );
 	}
 
 	protected String format(int intValue) {
 		String formatted = Integer.toHexString( intValue );
-		StringBuffer buf = new StringBuffer( "00000000" );
+		StringBuilder buf = new StringBuilder( "00000000" );
 		buf.replace( 8 - formatted.length(), 8, formatted );
 		return buf.toString();
 	}
 
 	protected String format(short shortValue) {
 		String formatted = Integer.toHexString( shortValue );
-		StringBuffer buf = new StringBuffer( "0000" );
+		StringBuilder buf = new StringBuilder( "0000" );
 		buf.replace( 4 - formatted.length(), 4, formatted );
 		return buf.toString();
 	}

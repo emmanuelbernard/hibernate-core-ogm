@@ -23,11 +23,11 @@
  */
 package org.hibernate.engine.transaction.spi;
 
-import org.hibernate.engine.jdbc.spi.JdbcCoordinator;
-import org.hibernate.engine.transaction.synchronization.spi.SynchronizationCallbackCoordinator;
-
 import java.io.Serializable;
 import java.sql.Connection;
+
+import org.hibernate.engine.jdbc.spi.JdbcCoordinator;
+import org.hibernate.engine.transaction.synchronization.spi.SynchronizationCallbackCoordinator;
 
 /**
  * Acts as the coordinator between the Hibernate engine and physical transactions.
@@ -73,6 +73,13 @@ public interface TransactionCoordinator extends Serializable {
 	 */
 	public void addObserver(TransactionObserver observer);
 
+	/**
+	 * Removed an observer from the coordinator.
+	 *
+	 * @param observer The observer to remove.
+	 */
+	public void removeObserver(TransactionObserver observer);
+	
 	/**
 	 * Can we join to the underlying transaction?
 	 *
@@ -133,5 +140,7 @@ public interface TransactionCoordinator extends Serializable {
 	public void sendAfterTransactionBeginNotifications(TransactionImplementor hibernateTransaction);
 	public void sendBeforeTransactionCompletionNotifications(TransactionImplementor hibernateTransaction);
 	public void sendAfterTransactionCompletionNotifications(TransactionImplementor hibernateTransaction, int status);
+
+	public boolean isActive();
 
 }

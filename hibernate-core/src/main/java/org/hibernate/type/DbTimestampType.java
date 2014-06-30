@@ -30,11 +30,11 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.Date;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * <tt>dbtimestamp</tt>: An extension of {@link TimestampType} which
@@ -50,10 +50,10 @@ import org.hibernate.internal.CoreMessageLogger;
 public class DbTimestampType extends TimestampType {
 	public static final DbTimestampType INSTANCE = new DbTimestampType();
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, DbTimestampType.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, DbTimestampType.class.getName() );
 
 	@Override
-    public String getName() {
+	public String getName() {
 		return "dbtimestamp";
 	}
 
@@ -63,14 +63,18 @@ public class DbTimestampType extends TimestampType {
 	}
 
 	@Override
-    public Date seed(SessionImplementor session) {
+	public Date seed(SessionImplementor session) {
 		if ( session == null ) {
-            LOG.trace("Incoming session was null; using current jvm time");
+			LOG.trace( "Incoming session was null; using current jvm time" );
 			return super.seed( session );
-        } else if (!session.getFactory().getDialect().supportsCurrentTimestampSelection()) {
-            LOG.debugf("Falling back to vm-based timestamp, as dialect does not support current timestamp selection");
+		}
+		else if ( !session.getFactory().getDialect().supportsCurrentTimestampSelection() ) {
+			LOG.debug( "Falling back to vm-based timestamp, as dialect does not support current timestamp selection" );
 			return super.seed( session );
-        } else return getCurrentTimestamp(session);
+		}
+		else {
+			return getCurrentTimestamp( session );
+		}
 	}
 
 	private Date getCurrentTimestamp(SessionImplementor session) {
@@ -87,10 +91,12 @@ public class DbTimestampType extends TimestampType {
 					.getJdbcCoordinator()
 					.getStatementPreparer()
 					.prepareStatement( timestampSelectString, false );
-			ResultSet rs = ps.executeQuery();
+			ResultSet rs = session.getTransactionCoordinator().getJdbcCoordinator().getResultSetReturn().extract( ps );
 			rs.next();
 			Timestamp ts = rs.getTimestamp( 1 );
-            LOG.trace("Current timestamp retreived from db : " + ts + " (nanos=" + ts.getNanos() + ", time=" + ts.getTime() + ")");
+			if ( LOG.isTraceEnabled() ) {
+				LOG.tracev( "Current timestamp retreived from db : {0} (nanos={1}, time={2})", ts, ts.getNanos(), ts.getTime() );
+			}
 			return ts;
 		}
 		catch( SQLException e ) {
@@ -102,12 +108,7 @@ public class DbTimestampType extends TimestampType {
 		}
 		finally {
 			if ( ps != null ) {
-				try {
-					ps.close();
-				}
-				catch( SQLException sqle ) {
-                    LOG.unableToCleanUpPreparedStatement(sqle);
-				}
+				session.getTransactionCoordinator().getJdbcCoordinator().release( ps );
 			}
 		}
 	}
@@ -120,9 +121,11 @@ public class DbTimestampType extends TimestampType {
 					.getStatementPreparer()
 					.prepareStatement( callString, true );
 			cs.registerOutParameter( 1, java.sql.Types.TIMESTAMP );
-			cs.execute();
+			session.getTransactionCoordinator().getJdbcCoordinator().getResultSetReturn().execute( cs );
 			Timestamp ts = cs.getTimestamp( 1 );
-            LOG.trace("Current timestamp retreived from db : " + ts + " (nanos=" + ts.getNanos() + ", time=" + ts.getTime() + ")");
+			if ( LOG.isTraceEnabled() ) {
+				LOG.tracev( "Current timestamp retreived from db : {0} (nanos={1}, time={2})", ts, ts.getNanos(), ts.getTime() );
+			}
 			return ts;
 		}
 		catch( SQLException e ) {
@@ -134,12 +137,7 @@ public class DbTimestampType extends TimestampType {
 		}
 		finally {
 			if ( cs != null ) {
-				try {
-					cs.close();
-				}
-				catch( SQLException sqle ) {
-                    LOG.unableToCleanUpCallableStatement(sqle);
-				}
+				session.getTransactionCoordinator().getJdbcCoordinator().release( cs );
 			}
 		}
 	}

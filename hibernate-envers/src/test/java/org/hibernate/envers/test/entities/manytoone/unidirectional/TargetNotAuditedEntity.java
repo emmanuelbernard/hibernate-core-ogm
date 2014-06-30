@@ -22,16 +22,19 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.envers.test.entities.manytoone.unidirectional;
+
 import javax.persistence.Entity;
 import javax.persistence.FetchType;
 import javax.persistence.Id;
 import javax.persistence.ManyToOne;
+
 import org.hibernate.envers.Audited;
 import org.hibernate.envers.RelationTargetAuditMode;
 import org.hibernate.envers.test.entities.UnversionedStrTestEntity;
 
 /**
  * Audited entity with a reference to not audited entity.
+ *
  * @author Toamsz Bech
  */
 @Entity
@@ -46,7 +49,8 @@ public class TargetNotAuditedEntity {
 	@ManyToOne(fetch = FetchType.LAZY)
 	private UnversionedStrTestEntity reference;
 
-	public TargetNotAuditedEntity() { }
+	public TargetNotAuditedEntity() {
+	}
 
 	public TargetNotAuditedEntity(Integer id, String data, UnversionedStrTestEntity reference) {
 		this.id = id;
@@ -89,13 +93,21 @@ public class TargetNotAuditedEntity {
 	}
 
 	public boolean equals(Object o) {
-		if (this == o) return true;
-		if (!(o instanceof TargetNotAuditedEntity)) return false;
+		if ( this == o ) {
+			return true;
+		}
+		if ( !(o instanceof TargetNotAuditedEntity) ) {
+			return false;
+		}
 
 		TargetNotAuditedEntity that = (TargetNotAuditedEntity) o;
 
-		if (data != null ? !data.equals(that.getData()) : that.getData() != null) return false;
-		if (id != null ? !id.equals(that.getId()) : that.getId() != null) return false;
+		if ( data != null ? !data.equals( that.getData() ) : that.getData() != null ) {
+			return false;
+		}
+		if ( id != null ? !id.equals( that.getId() ) : that.getId() != null ) {
+			return false;
+		}
 
 		return true;
 	}

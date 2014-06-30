@@ -7,8 +7,10 @@
 # Build output directies
 /target
 */target
+*/**/target
 /build
 */build
+testdb
 
 # IntelliJ specific files/directories
 out
@@ -31,3 +33,14 @@ bin
 # Miscellaneous
 *.log
 .clover
+
+# JBoss Transactions
+ObjectStore
+
+# Profiler and heap dumps
+*.jps
+*.hprof
+
+# Maven Enhance Plugin
+tooling/hibernate-enhance-maven-plugin/src/main/resources/pom.xml
+tooling/hibernate-enhance-maven-plugin/src/main/resources/META-INF/maven/plugin.xml

@@ -23,8 +23,10 @@
  *
  */
 package org.hibernate.hql.internal.ast.tree;
+
 import java.util.ArrayList;
 import java.util.List;
+
 import org.hibernate.param.ParameterSpecification;
 import org.hibernate.sql.JoinFragment;
 
@@ -55,11 +57,12 @@ public class SqlFragment extends Node implements ParameterContainer {
 
 
 	// ParameterContainer impl ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	private List embeddedParameters;
+
+	private List<ParameterSpecification> embeddedParameters;
 
 	public void addEmbeddedParameter(ParameterSpecification specification) {
 		if ( embeddedParameters == null ) {
-			embeddedParameters = new ArrayList();
+			embeddedParameters = new ArrayList<ParameterSpecification>();
 		}
 		embeddedParameters.add( specification );
 	}
@@ -69,6 +72,6 @@ public class SqlFragment extends Node implements ParameterContainer {
 	}
 
 	public ParameterSpecification[] getEmbeddedParameters() {
-		return ( ParameterSpecification[] ) embeddedParameters.toArray( new ParameterSpecification[ embeddedParameters.size() ] );
+		return embeddedParameters.toArray( new ParameterSpecification[ embeddedParameters.size() ] );
 	}
 }

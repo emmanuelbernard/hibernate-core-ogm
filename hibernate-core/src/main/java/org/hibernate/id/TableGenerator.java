@@ -30,18 +30,23 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Properties;
+
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.LockMode;
+import org.hibernate.LockOptions;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.cfg.ObjectNameNormalizer;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.internal.FormatStyle;
 import org.hibernate.engine.jdbc.spi.JdbcServices;
 import org.hibernate.engine.jdbc.spi.SqlStatementLogger;
+import org.hibernate.engine.spi.SessionEventListenerManager;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.jdbc.AbstractReturningWork;
-import org.hibernate.mapping.Table;
+import org.hibernate.metamodel.spi.relational.Database;
+import org.hibernate.metamodel.spi.relational.ObjectName;
 import org.hibernate.type.Type;
 import org.jboss.logging.Logger;
 
@@ -69,7 +74,11 @@ import org.jboss.logging.Logger;
  *
  * @see TableHiLoGenerator
  * @author Gavin King
+ *
+ * @deprecated Going away in 5.0, use {@link org.hibernate.id.enhanced.SequenceStyleGenerator} or
+ * {@link org.hibernate.id.enhanced.TableGenerator} instead
  */
+@Deprecated
 public class TableGenerator implements PersistentIdentifierGenerator, Configurable {
 	/* COLUMN and TABLE should be renamed but it would break the public API */
 	/** The column parameter */
@@ -92,7 +101,7 @@ public class TableGenerator implements PersistentIdentifierGenerator, Configurab
 	private String query;
 	private String update;
 
-	public void configure(Type type, Properties params, Dialect dialect) {
+	public void configure(Type type, Properties params, Dialect dialect, ClassLoaderService classLoaderService) {
 		identifierType = type;
 
 		ObjectNameNormalizer normalizer = ( ObjectNameNormalizer ) params.get( IDENTIFIER_NORMALIZER );
@@ -101,11 +110,7 @@ public class TableGenerator implements PersistentIdentifierGenerator, Configurab
 		if ( tableName.indexOf( '.' ) < 0 ) {
 			final String schemaName = normalizer.normalizeIdentifierQuoting( params.getProperty( SCHEMA ) );
 			final String catalogName = normalizer.normalizeIdentifierQuoting( params.getProperty( CATALOG ) );
-			tableName = Table.qualify(
-					dialect.quote( catalogName ),
-					dialect.quote( schemaName ),
-					dialect.quote( tableName )
-			);
+			tableName = new ObjectName(catalogName, schemaName, tableName).toText( dialect );
 		}
 		else {
 			// if already qualified there is not much we can do in a portable manner so we pass it
@@ -121,7 +126,7 @@ public class TableGenerator implements PersistentIdentifierGenerator, Configurab
 		query = "select " +
 			columnName +
 			" from " +
-			dialect.appendLockHint(LockMode.PESSIMISTIC_WRITE, tableName) +
+			dialect.appendLockHint(new LockOptions( LockMode.PESSIMISTIC_WRITE ), tableName) +
 			dialect.getForUpdateString();
 
 		update = "update " +
@@ -137,59 +142,66 @@ public class TableGenerator implements PersistentIdentifierGenerator, Configurab
 		return generateHolder( session ).makeValue();
 	}
 
-	protected IntegralDataTypeHolder generateHolder(SessionImplementor session) {
-		final SqlStatementLogger statementLogger = session
-				.getFactory()
-				.getServiceRegistry()
+	protected IntegralDataTypeHolder generateHolder(final SessionImplementor session) {
+		final SqlStatementLogger statementLogger = session.getFactory().getServiceRegistry()
 				.getService( JdbcServices.class )
 				.getSqlStatementLogger();
+		final SessionEventListenerManager listeners = session.getEventListenerManager();
+
 		return session.getTransactionCoordinator().getTransaction().createIsolationDelegate().delegateWork(
 				new AbstractReturningWork<IntegralDataTypeHolder>() {
 					@Override
 					public IntegralDataTypeHolder execute(Connection connection) throws SQLException {
 						IntegralDataTypeHolder value = buildHolder();
 						int rows;
-						do {
-							// The loop ensures atomicity of the
-							// select + update even for no transaction
-							// or read committed isolation level
 
-							statementLogger.logStatement( query, FormatStyle.BASIC.getFormatter() );
-							PreparedStatement qps = connection.prepareStatement( query );
+						// The loop ensures atomicity of the select + update even for no transaction or
+						// read committed isolation level
+						do {
+							final PreparedStatement qps = prepareStatement(
+									connection,
+									query,
+									statementLogger,
+									listeners
+							);
 							try {
-								ResultSet rs = qps.executeQuery();
+								ResultSet rs = executeQuery( qps, listeners );
 								if ( !rs.next() ) {
 									String err = "could not read a hi value - you need to populate the table: " + tableName;
-									LOG.error(err);
-									throw new IdentifierGenerationException(err);
+									LOG.error( err );
+									throw new IdentifierGenerationException( err );
 								}
 								value.initialize( rs, 1 );
 								rs.close();
 							}
-							catch (SQLException e) {
-								LOG.error("Could not read a hi value", e);
+							catch ( SQLException e ) {
+								LOG.error( "Could not read a hi value", e );
 								throw e;
 							}
 							finally {
 								qps.close();
 							}
 
-							statementLogger.logStatement( update, FormatStyle.BASIC.getFormatter() );
-							PreparedStatement ups = connection.prepareStatement(update);
+							final PreparedStatement ups = prepareStatement(
+									connection,
+									update,
+									statementLogger,
+									listeners
+							);
 							try {
 								value.copy().increment().bind( ups, 1 );
 								value.bind( ups, 2 );
-								rows = ups.executeUpdate();
+								rows = executeUpdate( ups, listeners );
 							}
-							catch (SQLException sqle) {
-								LOG.error(LOG.unableToUpdateHiValue(tableName), sqle);
+							catch ( SQLException sqle ) {
+								LOG.error( LOG.unableToUpdateHiValue( tableName ), sqle );
 								throw sqle;
 							}
 							finally {
 								ups.close();
 							}
 						}
-						while (rows==0);
+						while ( rows == 0 );
 						return value;
 					}
 				},
@@ -197,23 +209,57 @@ public class TableGenerator implements PersistentIdentifierGenerator, Configurab
 		);
 	}
 
+	private PreparedStatement prepareStatement(
+			Connection connection,
+			String sql,
+			SqlStatementLogger statementLogger,
+			SessionEventListenerManager statsCollector) throws SQLException {
+		statementLogger.logStatement( sql, FormatStyle.BASIC.getFormatter() );
+		try {
+			statsCollector.jdbcPrepareStatementStart();
+			return connection.prepareStatement( sql );
+		}
+		finally {
+			statsCollector.jdbcPrepareStatementEnd();
+		}
+	}
+
+	private int executeUpdate(PreparedStatement ps, SessionEventListenerManager statsCollector) throws SQLException {
+		try {
+			statsCollector.jdbcExecuteStatementStart();
+			return ps.executeUpdate();
+		}
+		finally {
+			statsCollector.jdbcExecuteStatementEnd();
+		}
+
+	}
+
+	private ResultSet executeQuery(PreparedStatement ps, SessionEventListenerManager statsCollector) throws SQLException {
+		try {
+			statsCollector.jdbcExecuteStatementStart();
+			return ps.executeQuery();
+		}
+		finally {
+			statsCollector.jdbcExecuteStatementEnd();
+		}
+	}
+
+	@Override
+	public void registerExportables(Database database) {
+		// not doing anything here as I expect this to go away
+	}
+
 	public String[] sqlCreateStrings(Dialect dialect) throws HibernateException {
 		return new String[] {
-			dialect.getCreateTableString() + " " + tableName + " ( " + columnName + " " + dialect.getTypeName(Types.INTEGER) + " )",
+			dialect.getCreateTableString() + " " + tableName + " ( "
+					+ columnName + " " + dialect.getTypeName(Types.INTEGER) + " )" + dialect.getTableTypeString(),
 			"insert into " + tableName + " values ( 0 )"
 		};
 	}
 
 	public String[] sqlDropStrings(Dialect dialect) {
-		StringBuffer sqlDropString = new StringBuffer( "drop table " );
-		if ( dialect.supportsIfExistsBeforeTableName() ) {
-			sqlDropString.append( "if exists " );
-		}
-		sqlDropString.append( tableName ).append( dialect.getCascadeConstraintsString() );
-		if ( dialect.supportsIfExistsAfterTableName() ) {
-			sqlDropString.append( " if exists" );
-		}
-		return new String[] { sqlDropString.toString() };
+		return new String[] { dialect.getDropTableString( tableName ) };
 	}
 
 	public Object generatorKey() {

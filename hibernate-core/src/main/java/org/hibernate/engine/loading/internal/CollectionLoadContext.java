@@ -31,20 +31,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.CacheMode;
 import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
 import org.hibernate.cache.spi.CacheKey;
-import org.hibernate.collection.spi.PersistentCollection;
-import org.hibernate.engine.spi.CollectionKey;
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.cache.spi.entry.CollectionCacheEntry;
+import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.spi.CollectionEntry;
+import org.hibernate.engine.spi.CollectionKey;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.spi.Status;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.pretty.MessageHelper;
 
@@ -59,12 +58,11 @@ import org.hibernate.pretty.MessageHelper;
  * @author Steve Ebersole
  */
 public class CollectionLoadContext {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, CollectionLoadContext.class.getName());
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( CollectionLoadContext.class );
 
 	private final LoadContexts loadContexts;
 	private final ResultSet resultSet;
-	private Set localLoadingCollectionKeys = new HashSet();
+	private Set<CollectionKey> localLoadingCollectionKeys = new HashSet<CollectionKey>();
 
 	/**
 	 * Creates a collection load context for the given result set.
@@ -110,34 +108,36 @@ public class CollectionLoadContext {
 	public PersistentCollection getLoadingCollection(final CollectionPersister persister, final Serializable key) {
 		final EntityMode em = persister.getOwnerEntityPersister().getEntityMetamodel().getEntityMode();
 		final CollectionKey collectionKey = new CollectionKey( persister, key, em );
-        if (LOG.isTraceEnabled()) LOG.trace("Starting attempt to find loading collection ["
-                                            + MessageHelper.collectionInfoString(persister.getRole(), key) + "]");
+		if ( LOG.isTraceEnabled() ) {
+			LOG.tracev( "Starting attempt to find loading collection [{0}]",
+					MessageHelper.collectionInfoString( persister.getRole(), key ) );
+		}
 		final LoadingCollectionEntry loadingCollectionEntry = loadContexts.locateLoadingCollectionEntry( collectionKey );
 		if ( loadingCollectionEntry == null ) {
 			// look for existing collection as part of the persistence context
 			PersistentCollection collection = loadContexts.getPersistenceContext().getCollection( collectionKey );
 			if ( collection != null ) {
 				if ( collection.wasInitialized() ) {
-                    LOG.trace("Collection already initialized; ignoring");
-					return null; // ignore this row of results! Note the early exit
-                }
-                LOG.trace("Collection not yet initialized; initializing");
+					LOG.trace( "Collection already initialized; ignoring" );
+					// ignore this row of results! Note the early exit
+					return null;
+				}
+				LOG.trace( "Collection not yet initialized; initializing" );
 			}
 			else {
-				Object owner = loadContexts.getPersistenceContext().getCollectionOwner( key, persister );
+				final Object owner = loadContexts.getPersistenceContext().getCollectionOwner( key, persister );
 				final boolean newlySavedEntity = owner != null
 						&& loadContexts.getPersistenceContext().getEntry( owner ).getStatus() != Status.LOADING;
 				if ( newlySavedEntity ) {
 					// important, to account for newly saved entities in query
 					// todo : some kind of check for new status...
-                    LOG.trace("Owning entity already loaded; ignoring");
+					LOG.trace( "Owning entity already loaded; ignoring" );
 					return null;
 				}
-                // create one
-                LOG.trace("Instantiating new collection [key=" + key + ", rs=" + resultSet + "]");
-                collection = persister.getCollectionType().instantiate(loadContexts.getPersistenceContext().getSession(),
-                                                                       persister,
-                                                                       key);
+				// create one
+				LOG.tracev( "Instantiating new collection [key={0}, rs={1}]", key, resultSet );
+				collection = persister.getCollectionType().instantiate(
+						loadContexts.getPersistenceContext().getSession(), persister, key );
 			}
 			collection.beforeInitialize( persister, -1 );
 			collection.beginRead();
@@ -145,14 +145,14 @@ public class CollectionLoadContext {
 			loadContexts.registerLoadingCollectionXRef( collectionKey, new LoadingCollectionEntry( resultSet, persister, key, collection ) );
 			return collection;
 		}
-        if (loadingCollectionEntry.getResultSet() == resultSet) {
-            LOG.trace("Found loading collection bound to current result set processing; reading row");
-            return loadingCollectionEntry.getCollection();
+		if ( loadingCollectionEntry.getResultSet() == resultSet ) {
+			LOG.trace( "Found loading collection bound to current result set processing; reading row" );
+			return loadingCollectionEntry.getCollection();
 		}
-        // ignore this row, the collection is in process of
-        // being loaded somewhere further "up" the stack
-        LOG.trace("Collection is already being initialized; ignoring row");
-        return null;
+		// ignore this row, the collection is in process of
+		// being loaded somewhere further "up" the stack
+		LOG.trace( "Collection is already being initialized; ignoring row" );
+		return null;
 	}
 
 	/**
@@ -163,7 +163,7 @@ public class CollectionLoadContext {
 	 * @param persister The persister for which to complete loading.
 	 */
 	public void endLoadingCollections(CollectionPersister persister) {
-		SessionImplementor session = getLoadContext().getPersistenceContext().getSession();
+		final SessionImplementor session = getLoadContext().getPersistenceContext().getSession();
 		if ( !loadContexts.hasLoadingCollectionEntries()
 				&& localLoadingCollectionKeys.isEmpty() ) {
 			return;
@@ -175,15 +175,17 @@ public class CollectionLoadContext {
 		// internal loadingCollections map for matches and store those matches
 		// in a temp collection.  the temp collection is then used to "drive"
 		// the #endRead processing.
-		List matches = null;
-		Iterator iter = localLoadingCollectionKeys.iterator();
-		while ( iter.hasNext() ) {
-			final CollectionKey collectionKey = (CollectionKey) iter.next();
+		List<LoadingCollectionEntry> matches = null;
+		final Iterator itr = localLoadingCollectionKeys.iterator();
+		while ( itr.hasNext() ) {
+			final CollectionKey collectionKey = (CollectionKey) itr.next();
 			final LoadingCollectionEntry lce = loadContexts.locateLoadingCollectionEntry( collectionKey );
-            if (lce == null) LOG.loadingCollectionKeyNotFound(collectionKey);
+			if ( lce == null ) {
+				LOG.loadingCollectionKeyNotFound( collectionKey );
+			}
 			else if ( lce.getResultSet() == resultSet && lce.getPersister() == persister ) {
 				if ( matches == null ) {
-					matches = new ArrayList();
+					matches = new ArrayList<LoadingCollectionEntry>();
 				}
 				matches.add( lce );
 				if ( lce.getCollection().getOwner() == null ) {
@@ -196,11 +198,11 @@ public class CollectionLoadContext {
 							lce.getCollection()
 					);
 				}
-                LOG.trace("Removing collection load entry [" + lce + "]");
+				LOG.tracev( "Removing collection load entry [{0}]", lce );
 
 				// todo : i'd much rather have this done from #endLoadingCollection(CollectionPersister,LoadingCollectionEntry)...
 				loadContexts.unregisterLoadingCollectionXRef( collectionKey );
-				iter.remove();
+				itr.remove();
 			}
 		}
 
@@ -216,28 +218,35 @@ public class CollectionLoadContext {
 		}
 	}
 
-	private void endLoadingCollections(CollectionPersister persister, List matchedCollectionEntries) {
+	private void endLoadingCollections(CollectionPersister persister, List<LoadingCollectionEntry> matchedCollectionEntries) {
+		final boolean debugEnabled = LOG.isDebugEnabled();
 		if ( matchedCollectionEntries == null ) {
-            LOG.debugf("No collections were found in result set for role: %s", persister.getRole());
+			if ( debugEnabled ) {
+				LOG.debugf( "No collections were found in result set for role: %s", persister.getRole() );
+			}
 			return;
 		}
 
 		final int count = matchedCollectionEntries.size();
-        LOG.debugf("%s collections were found in result set for role: %s", count, persister.getRole());
-
-		for ( int i = 0; i < count; i++ ) {
-			LoadingCollectionEntry lce = ( LoadingCollectionEntry ) matchedCollectionEntries.get( i );
-			endLoadingCollection( lce, persister );
+		if ( debugEnabled ) {
+			LOG.debugf( "%s collections were found in result set for role: %s", count, persister.getRole() );
 		}
 
-        LOG.debugf("%s collections initialized for role: %s", count, persister.getRole());
+		for ( LoadingCollectionEntry matchedCollectionEntry : matchedCollectionEntries ) {
+			endLoadingCollection( matchedCollectionEntry, persister );
+		}
+
+		if ( debugEnabled ) {
+			LOG.debugf( "%s collections initialized for role: %s", count, persister.getRole() );
+		}
 	}
 
 	private void endLoadingCollection(LoadingCollectionEntry lce, CollectionPersister persister) {
-        LOG.trace("Ending loading collection [" + lce + "]");
+		LOG.tracev( "Ending loading collection [{0}]", lce );
 		final SessionImplementor session = getLoadContext().getPersistenceContext().getSession();
 
-		boolean hasNoQueuedAdds = lce.getCollection().endRead(); // warning: can cause a recursive calls! (proxy initialization)
+		// warning: can cause a recursive calls! (proxy initialization)
+		final boolean hasNoQueuedAdds = lce.getCollection().endRead();
 
 		if ( persister.getCollectionType().hasHolder() ) {
 			getLoadContext().getPersistenceContext().addCollectionHolder( lce.getCollection() );
@@ -249,22 +258,32 @@ public class CollectionLoadContext {
 		}
 		else {
 			ce.postInitialize( lce.getCollection() );
+//			if (ce.getLoadedPersister().getBatchSize() > 1) { // not the best place for doing this, moved into ce.postInitialize
+//				getLoadContext().getPersistenceContext().getBatchFetchQueue().removeBatchLoadableCollection(ce); 
+//			}
 		}
 
-		boolean addToCache = hasNoQueuedAdds && // there were no queued additions
-				persister.hasCache() &&             // and the role has a cache
-				session.getCacheMode().isPutEnabled() &&
-				!ce.isDoremove();                   // and this is not a forced initialization during flush
-        if (addToCache) addCollectionToCache(lce, persister);
 
-        if (LOG.isDebugEnabled()) {
+		// add to cache if:
+		boolean addToCache =
+				// there were no queued additions
+				hasNoQueuedAdds
+				// and the role has a cache
+				&& persister.hasCache()
+				// and this is not a forced initialization during flush
+				&& session.getCacheMode().isPutEnabled() && !ce.isDoremove();
+		if ( addToCache ) {
+			addCollectionToCache( lce, persister );
+		}
+
+		if ( LOG.isDebugEnabled() ) {
 			LOG.debugf(
 					"Collection fully initialized: %s",
-					MessageHelper.collectionInfoString(persister, lce.getKey(), session.getFactory())
+					MessageHelper.collectionInfoString( persister, lce.getCollection(), lce.getKey(), session )
 			);
 		}
-        if (session.getFactory().getStatistics().isStatisticsEnabled()) {
-			session.getFactory().getStatisticsImplementor().loadCollection(persister.getRole());
+		if ( session.getFactory().getStatistics().isStatisticsEnabled() ) {
+			session.getFactory().getStatisticsImplementor().loadCollection( persister.getRole() );
 		}
 	}
 
@@ -278,18 +297,23 @@ public class CollectionLoadContext {
 		final SessionImplementor session = getLoadContext().getPersistenceContext().getSession();
 		final SessionFactoryImplementor factory = session.getFactory();
 
-        if (LOG.isDebugEnabled()) LOG.debugf("Caching collection: %s",
-                                             MessageHelper.collectionInfoString(persister, lce.getKey(), factory));
+		final boolean debugEnabled = LOG.isDebugEnabled();
+		if ( debugEnabled ) {
+			LOG.debugf( "Caching collection: %s", MessageHelper.collectionInfoString( persister, lce.getCollection(), lce.getKey(), session ) );
+		}
 
 		if ( !session.getEnabledFilters().isEmpty() && persister.isAffectedByEnabledFilters( session ) ) {
 			// some filters affecting the collection are enabled on the session, so do not do the put into the cache.
-            LOG.debugf("Refusing to add to cache due to enabled filters");
+			if ( debugEnabled ) {
+				LOG.debug( "Refusing to add to cache due to enabled filters" );
+			}
 			// todo : add the notion of enabled filters to the CacheKey to differentiate filtered collections from non-filtered;
 			//      but CacheKey is currently used for both collections and entities; would ideally need to define two seperate ones;
 			//      currently this works in conjuction with the check on
 			//      DefaultInitializeCollectionEventHandler.initializeCollectionFromCache() (which makes sure to not read from
 			//      cache with enabled filters).
-			return; // EARLY EXIT!!!!!
+			// EARLY EXIT!!!!!
+			return;
 		}
 
 		final Object version;
@@ -302,7 +326,7 @@ public class CollectionLoadContext {
 				// about its owner, that owner should be the same instance as associated with the PC, but we do the
 				// resolution against the PC anyway just to be safe since the lookup should not be costly.
 				if ( lce.getCollection() != null ) {
-					Object linkedOwner = lce.getCollection().getOwner();
+					final Object linkedOwner = lce.getCollection().getOwner();
 					if ( linkedOwner != null ) {
 						final Serializable ownerKey = persister.getOwnerEntityPersister().getIdentifier( linkedOwner, session );
 						collectionOwner = getLoadContext().getPersistenceContext().getCollectionOwner( ownerKey, persister );
@@ -311,7 +335,7 @@ public class CollectionLoadContext {
 				if ( collectionOwner == null ) {
 					throw new HibernateException(
 							"Unable to resolve owner of loading collection [" +
-									MessageHelper.collectionInfoString( persister, lce.getKey(), factory ) +
+									MessageHelper.collectionInfoString( persister, lce.getCollection(), lce.getKey(), session ) +
 									"] for second level caching"
 					);
 				}
@@ -322,30 +346,39 @@ public class CollectionLoadContext {
 			version = null;
 		}
 
-		CollectionCacheEntry entry = new CollectionCacheEntry( lce.getCollection(), persister );
-		CacheKey cacheKey = session.generateCacheKey( lce.getKey(), persister.getKeyType(), persister.getRole() );
-		boolean put = persister.getCacheAccessStrategy().putFromLoad(
-				cacheKey,
-				persister.getCacheEntryStructure().structure(entry),
-				session.getTimestamp(),
-				version,
-				factory.getSettings().isMinimalPutsEnabled() && session.getCacheMode()!= CacheMode.REFRESH
-		);
+		final CollectionCacheEntry entry = new CollectionCacheEntry( lce.getCollection(), persister );
+		final CacheKey cacheKey = session.generateCacheKey( lce.getKey(), persister.getKeyType(), persister.getRole() );
 
-		if ( put && factory.getStatistics().isStatisticsEnabled() ) {
-			factory.getStatisticsImplementor().secondLevelCachePut( persister.getCacheAccessStrategy().getRegion().getName() );
+		try {
+			session.getEventListenerManager().cachePutStart();
+			final boolean put = persister.getCacheAccessStrategy().putFromLoad(
+					cacheKey,
+					persister.getCacheEntryStructure().structure( entry ),
+					session.getTimestamp(),
+					version,
+					factory.getSettings().isMinimalPutsEnabled() && session.getCacheMode()!= CacheMode.REFRESH
+			);
+
+			if ( put && factory.getStatistics().isStatisticsEnabled() ) {
+				factory.getStatisticsImplementor().secondLevelCachePut( persister.getCacheAccessStrategy().getRegion().getName() );
+			}
+		}
+		finally {
+			session.getEventListenerManager().cachePutEnd();
 		}
 	}
 
 	void cleanup() {
-        if (!localLoadingCollectionKeys.isEmpty()) LOG.localLoadingCollectionKeysCount(localLoadingCollectionKeys.size());
+		if ( !localLoadingCollectionKeys.isEmpty() ) {
+			LOG.localLoadingCollectionKeysCount( localLoadingCollectionKeys.size() );
+		}
 		loadContexts.cleanupCollectionXRefs( localLoadingCollectionKeys );
 		localLoadingCollectionKeys.clear();
 	}
 
 
 	@Override
-    public String toString() {
+	public String toString() {
 		return super.toString() + "<rs=" + resultSet + ">";
 	}
 }

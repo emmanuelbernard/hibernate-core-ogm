@@ -24,13 +24,14 @@
 package org.hibernate.cfg;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.dom4j.Element;
+
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
 import org.hibernate.engine.ResultSetMappingDefinition;
@@ -40,13 +41,14 @@ import org.hibernate.engine.query.spi.sql.NativeSQLQueryRootReturn;
 import org.hibernate.engine.query.spi.sql.NativeSQLQueryScalarReturn;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
-import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.mapping.Component;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.mapping.Property;
 import org.hibernate.mapping.ToOne;
 import org.hibernate.mapping.Value;
 import org.hibernate.type.Type;
+
+import org.dom4j.Element;
 
 /**
  * @author Emmanuel Bernard
@@ -328,7 +330,7 @@ public abstract class ResultSetMappingBinder {
 				entry.setValue( list.toArray( new String[ list.size() ] ) );
 			}
 		}
-		return propertyresults.isEmpty() ? CollectionHelper.EMPTY_MAP : propertyresults;
+		return propertyresults.isEmpty() ? Collections.EMPTY_MAP : propertyresults;
 	}
 
 	private static int getIndexOfFirstMatchingProperty(List propertyNames, String follower) {
@@ -372,6 +374,9 @@ public abstract class ResultSetMappingBinder {
 		}
 		else if ( "upgrade-nowait".equals( lockMode ) ) {
 			return LockMode.UPGRADE_NOWAIT;
+		}
+		else if ( "upgrade-skiplocked".equals( lockMode )) {
+			return LockMode.UPGRADE_SKIPLOCKED;
 		}
 		else if ( "write".equals( lockMode ) ) {
 			return LockMode.WRITE;

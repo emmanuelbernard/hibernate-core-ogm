@@ -27,12 +27,11 @@ package org.hibernate.hql.internal.ast.util;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.text.DecimalFormat;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.hql.spi.QueryTranslator;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.antlr.SqlTokenTypes;
 import org.hibernate.hql.internal.ast.HqlSqlWalker;
@@ -40,12 +39,16 @@ import org.hibernate.hql.internal.ast.InvalidPathException;
 import org.hibernate.hql.internal.ast.tree.DotNode;
 import org.hibernate.hql.internal.ast.tree.FromClause;
 import org.hibernate.hql.internal.ast.tree.IdentNode;
+import org.hibernate.hql.spi.QueryTranslator;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.persister.entity.Queryable;
 import org.hibernate.sql.InFragment;
 import org.hibernate.type.LiteralType;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
+
 import antlr.SemanticException;
 import antlr.collections.AST;
 
@@ -56,24 +59,15 @@ import antlr.collections.AST;
  * @author josh
  */
 public class LiteralProcessor implements HqlSqlTokenTypes {
-	/**
-	 * Indicates that Float and Double literal values should
-	 * be treated using the SQL "exact" format (i.e., '.001')
-	 */
-	public static final int EXACT = 0;
-	/**
-	 * Indicates that Float and Double literal values should
-	 * be treated using the SQL "approximate" format (i.e., '1E-3')
-	 */
-	public static final int APPROXIMATE = 1;
-	/**
-	 * In what format should Float and Double literal values be sent
-	 * to the database?
-	 * @see #EXACT, #APPROXIMATE
-	 */
-	public static int DECIMAL_LITERAL_FORMAT = EXACT;
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			LiteralProcessor.class.getName()
+	);
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, LiteralProcessor.class.getName());
+	/**
+	 * In what format should Float and Double literal values be sent to the database?
+	 */
+	public static DecimalLiteralFormat DECIMAL_LITERAL_FORMAT = DecimalLiteralFormat.EXACT;
 
 	private HqlSqlWalker walker;
 
@@ -84,23 +78,25 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 	public boolean isAlias(String alias) {
 		FromClause from = walker.getCurrentFromClause();
 		while ( from.isSubQuery() ) {
-			if ( from.containsClassAlias(alias) ) {
+			if ( from.containsClassAlias( alias ) ) {
 				return true;
 			}
 			from = from.getParentFromClause();
 		}
-		return from.containsClassAlias(alias);
+		return from.containsClassAlias( alias );
 	}
 
 	public void processConstant(AST constant, boolean resolveIdent) throws SemanticException {
 		// If the constant is an IDENT, figure out what it means...
 		boolean isIdent = ( constant.getType() == IDENT || constant.getType() == WEIRD_IDENT );
-		if ( resolveIdent && isIdent && isAlias( constant.getText() ) ) { // IDENT is a class alias in the FROM.
-			IdentNode ident = ( IdentNode ) constant;
+		if ( resolveIdent && isIdent && isAlias( constant.getText() ) ) {
+			// IDENT is a class alias in the FROM.
+			IdentNode ident = (IdentNode) constant;
 			// Resolve to an identity column.
-			ident.resolve(false, true);
+			ident.resolve( false, true );
 		}
-		else {	// IDENT might be the name of a class.
+		else {
+			// IDENT might be the name of a class.
 			Queryable queryable = walker.getSessionFactoryHelper().findQueryableUsingImports( constant.getText() );
 			if ( isIdent && queryable != null ) {
 				constant.setText( queryable.getDiscriminatorSQLValue() );
@@ -119,29 +115,38 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 			// the name of an entity class
 			final String discrim = persister.getDiscriminatorSQLValue();
 			node.setDataType( persister.getDiscriminatorType() );
-            if (InFragment.NULL.equals(discrim) || InFragment.NOT_NULL.equals(discrim)) throw new InvalidPathException(
-                                                                                                                       "subclass test not allowed for null or not null discriminator: '"
-                                                                                                                       + text + "'");
-            setSQLValue(node, text, discrim); // the class discriminator value
+			if ( InFragment.NULL.equals( discrim ) || InFragment.NOT_NULL.equals( discrim ) ) {
+				throw new InvalidPathException(
+						"subclass test not allowed for null or not null discriminator: '" + text + "'"
+				);
+			}
+			// the class discriminator value
+			setSQLValue( node, text, discrim );
 		}
 		else {
 			Object value = ReflectHelper.getConstantValue( text );
-            if (value == null) throw new InvalidPathException("Invalid path: '" + text + "'");
-            setConstantValue(node, text, value);
+			if ( value == null ) {
+				throw new InvalidPathException( "Invalid path: '" + text + "'" );
+			}
+			setConstantValue( node, text, value );
 		}
 	}
 
 	private void setSQLValue(DotNode node, String text, String value) {
-        LOG.debugf("setSQLValue() %s -> %s", text, value);
-		node.setFirstChild( null );	// Chop off the rest of the tree.
+		LOG.debugf( "setSQLValue() %s -> %s", text, value );
+		// Chop off the rest of the tree.
+		node.setFirstChild( null );
 		node.setType( SqlTokenTypes.SQL_TOKEN );
-		node.setText(value);
+		node.setText( value );
 		node.setResolvedConstant( text );
 	}
 
 	private void setConstantValue(DotNode node, String text, Object value) {
-        LOG.debugf("setConstantValue() %s -> %s %s", text, value, value.getClass().getName());
-		node.setFirstChild( null );	// Chop off the rest of the tree.
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf( "setConstantValue() %s -> %s %s", text, value, value.getClass().getName() );
+		}
+		// Chop off the rest of the tree.
+		node.setFirstChild( null );
 		if ( value instanceof String ) {
 			node.setType( SqlTokenTypes.QUOTED_STRING );
 		}
@@ -171,20 +176,23 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 		}
 		Type type;
 		try {
-			type = walker.getSessionFactoryHelper().getFactory().getTypeResolver().heuristicType( value.getClass().getName() );
+			type = walker.getSessionFactoryHelper().getFactory().getTypeResolver().heuristicType(
+					value.getClass().getName()
+			);
 		}
-		catch ( MappingException me ) {
+		catch (MappingException me) {
 			throw new QueryException( me );
 		}
 		if ( type == null ) {
 			throw new QueryException( QueryTranslator.ERROR_CANNOT_DETERMINE_TYPE + node.getText() );
 		}
 		try {
-			LiteralType literalType = ( LiteralType ) type;
+			LiteralType literalType = (LiteralType) type;
 			Dialect dialect = walker.getSessionFactoryHelper().getFactory().getDialect();
+			//noinspection unchecked
 			node.setText( literalType.objectToSQLString( value, dialect ) );
 		}
-		catch ( Exception e ) {
+		catch (Exception e) {
 			throw new QueryException( QueryTranslator.ERROR_CANNOT_FORMAT_LITERAL + node.getText(), e );
 		}
 		node.setDataType( type );
@@ -194,21 +202,23 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 	public void processBoolean(AST constant) {
 		// TODO: something much better - look at the type of the other expression!
 		// TODO: Have comparisonExpression and/or arithmeticExpression rules complete the resolution of boolean nodes.
-		String replacement = ( String ) walker.getTokenReplacements().get( constant.getText() );
+		String replacement = (String) walker.getTokenReplacements().get( constant.getText() );
 		if ( replacement != null ) {
 			constant.setText( replacement );
 		}
 		else {
 			boolean bool = "true".equals( constant.getText().toLowerCase() );
 			Dialect dialect = walker.getSessionFactoryHelper().getFactory().getDialect();
-			constant.setText( dialect.toBooleanValueString(bool) );
+			constant.setText( dialect.toBooleanValueString( bool ) );
 		}
 	}
 
 	private void processLiteral(AST constant) {
-		String replacement = ( String ) walker.getTokenReplacements().get( constant.getText() );
+		String replacement = (String) walker.getTokenReplacements().get( constant.getText() );
 		if ( replacement != null ) {
-            LOG.debugf("processConstant() : Replacing '%s' with '%s'", constant.getText(), replacement);
+			if ( LOG.isDebugEnabled() ) {
+				LOG.debugf( "processConstant() : Replacing '%s' with '%s'", constant.getText(), replacement );
+			}
 			constant.setText( replacement );
 		}
 	}
@@ -218,11 +228,15 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 				|| literal.getType() == NUM_LONG
 				|| literal.getType() == NUM_BIG_INTEGER ) {
 			literal.setText( determineIntegerRepresentation( literal.getText(), literal.getType() ) );
-        } else if (literal.getType() == NUM_FLOAT
+		}
+		else if ( literal.getType() == NUM_FLOAT
 				|| literal.getType() == NUM_DOUBLE
 				|| literal.getType() == NUM_BIG_DECIMAL ) {
 			literal.setText( determineDecimalRepresentation( literal.getText(), literal.getType() ) );
-        } else LOG.unexpectedLiteralTokenType(literal.getType());
+		}
+		else {
+			LOG.unexpectedLiteralTokenType( literal.getType() );
+		}
 	}
 
 	private String determineIntegerRepresentation(String text, int type) {
@@ -238,9 +252,11 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 				try {
 					return Integer.valueOf( text ).toString();
 				}
-				catch( NumberFormatException e ) {
-                    LOG.trace("Could not format incoming text [" + text
-                              + "] as a NUM_INT; assuming numeric overflow and attempting as NUM_LONG");
+				catch (NumberFormatException e) {
+					LOG.tracev(
+							"Could not format incoming text [{0}] as a NUM_INT; assuming numeric overflow and attempting as NUM_LONG",
+							text
+					);
 				}
 			}
 			String literalValue = text;
@@ -249,7 +265,7 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 			}
 			return Long.valueOf( literalValue ).toString();
 		}
-		catch( Throwable t ) {
+		catch (Throwable t) {
 			throw new HibernateException( "Could not parse literal [" + text + "] as integer", t );
 		}
 	}
@@ -272,15 +288,15 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 			}
 		}
 
-		BigDecimal number = null;
+		final BigDecimal number;
 		try {
 			number = new BigDecimal( literalValue );
 		}
-		catch( Throwable t ) {
+		catch (Throwable t) {
 			throw new HibernateException( "Could not parse literal [" + text + "] as big-decimal", t );
 		}
 
-		return formatters[ DECIMAL_LITERAL_FORMAT ].format( number );
+		return DECIMAL_LITERAL_FORMAT.getFormatter().format( number );
 	}
 
 
@@ -289,13 +305,18 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 	}
 
 	private static class ExactDecimalFormatter implements DecimalFormatter {
+		public static final ExactDecimalFormatter INSTANCE = new ExactDecimalFormatter();
+
 		public String format(BigDecimal number) {
 			return number.toString();
 		}
 	}
 
 	private static class ApproximateDecimalFormatter implements DecimalFormatter {
+		public static final ApproximateDecimalFormatter INSTANCE = new ApproximateDecimalFormatter();
+
 		private static final String FORMAT_STRING = "#0.0E0";
+
 		public String format(BigDecimal number) {
 			try {
 				// TODO : what amount of significant digits need to be supported here?
@@ -306,14 +327,39 @@ public class LiteralProcessor implements HqlSqlTokenTypes {
 				jdkFormatter.setMaximumFractionDigits( Integer.MAX_VALUE );
 				return jdkFormatter.format( number );
 			}
-			catch( Throwable t ) {
-				throw new HibernateException( "Unable to format decimal literal in approximate format [" + number.toString() + "]", t );
+			catch (Throwable t) {
+				throw new HibernateException(
+						"Unable to format decimal literal in approximate format [" + number.toString() + "]",
+						t
+				);
 			}
 		}
 	}
 
-	private static final DecimalFormatter[] formatters = new DecimalFormatter[] {
-			new ExactDecimalFormatter(),
-			new ApproximateDecimalFormatter()
-	};
+	public static enum DecimalLiteralFormat {
+		/**
+		 * Indicates that Float and Double literal values should
+		 * be treated using the SQL "exact" format (i.e., '.001')
+		 */
+		EXACT {
+			@Override
+			public DecimalFormatter getFormatter() {
+				return ExactDecimalFormatter.INSTANCE;
+			}
+		},
+		/**
+		 * Indicates that Float and Double literal values should
+		 * be treated using the SQL "approximate" format (i.e., '1E-3')
+		 */
+		@SuppressWarnings({"UnusedDeclaration"})
+		APPROXIMATE {
+			@Override
+			public DecimalFormatter getFormatter() {
+				return ApproximateDecimalFormatter.INSTANCE;
+			}
+		};
+
+		public abstract DecimalFormatter getFormatter();
+	}
+
 }

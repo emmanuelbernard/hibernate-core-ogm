@@ -1,7 +1,7 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008-2011, Red Hat Inc. or third-party contributors as
+ * Copyright (c) 2008-2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
  * distributed under license by Red Hat Inc.
@@ -32,91 +32,53 @@ import org.hibernate.AssertionFailure;
 import org.hibernate.internal.util.compare.EqualsHelper;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.pretty.MessageHelper;
-import org.hibernate.type.Type;
 
 /**
- * Uniquely identifies of an entity instance in a particular session by identifier.
+ * Uniquely identifies of an entity instance in a particular Session by identifier.
+ * Note that it's only safe to be used within the scope of a Session: it doesn't consider for example the tenantId
+ * as part of the equality definition.
  * <p/>
  * Information used to determine uniqueness consists of the entity-name and the identifier value (see {@link #equals}).
+ * <p/>
+ * Performance considerations: lots of instances of this type are created at runtime. Make sure each one is as small as possible
+ * by storing just the essential needed.
  *
  * @author Gavin King
+ * @author Sanne Grinovero
  */
 public final class EntityKey implements Serializable {
+
 	private final Serializable identifier;
-	private final String entityName;
-	private final String rootEntityName;
-	private final String tenantId;
-
 	private final int hashCode;
-
-	private final Type identifierType;
-	private final boolean isBatchLoadable;
-	private final SessionFactoryImplementor factory;
+	private final EntityPersister persister;
 
 	/**
 	 * Construct a unique identifier for an entity class instance.
-	 * <p>
+	 * <p/>
 	 * NOTE : This signature has changed to accommodate both entity mode and multi-tenancy, both of which relate to
 	 * the Session to which this key belongs.  To help minimize the impact of these changes in the future, the
 	 * {@link SessionImplementor#generateEntityKey} method was added to hide the session-specific changes.
 	 *
 	 * @param id The entity id
 	 * @param persister The entity persister
-	 * @param tenantId The tenant identifier of the session to which this key belongs
 	 */
-	public EntityKey(Serializable id, EntityPersister persister, String tenantId) {
+	public EntityKey(Serializable id, EntityPersister persister) {
+		this.persister = persister;
 		if ( id == null ) {
 			throw new AssertionFailure( "null identifier" );
 		}
-		this.identifier = id; 
-		this.rootEntityName = persister.getRootEntityName();
-		this.entityName = persister.getEntityName();
-		this.tenantId = tenantId;
-
-		this.identifierType = persister.getIdentifierType();
-		this.isBatchLoadable = persister.isBatchLoadable();
-		this.factory = persister.getFactory();
-		this.hashCode = generateHashCode();
-	}
-
-	/**
-	 * Used to reconstruct an EntityKey during deserialization.
-	 *
-	 * @param identifier The identifier value
-	 * @param rootEntityName The root entity name
-	 * @param entityName The specific entity name
-	 * @param identifierType The type of the identifier value
-	 * @param batchLoadable Whether represented entity is eligible for batch loading
-	 * @param factory The session factory
-	 * @param tenantId The entity's tenant id (from the session that loaded it).
-	 */
-	private EntityKey(
-			Serializable identifier,
-	        String rootEntityName,
-	        String entityName,
-	        Type identifierType,
-	        boolean batchLoadable,
-	        SessionFactoryImplementor factory,
-			String tenantId) {
-		this.identifier = identifier;
-		this.rootEntityName = rootEntityName;
-		this.entityName = entityName;
-		this.identifierType = identifierType;
-		this.isBatchLoadable = batchLoadable;
-		this.factory = factory;
-		this.tenantId = tenantId;
+		this.identifier = id;
 		this.hashCode = generateHashCode();
 	}
 
 	private int generateHashCode() {
 		int result = 17;
-		result = 37 * result + rootEntityName.hashCode();
-		result = 37 * result + identifierType.getHashCode( identifier, factory );
+		result = 37 * result + persister.getIdentifierType().getHashCode( identifier, persister.getFactory() );
 		return result;
 	}
 
 	public boolean isBatchLoadable() {
-		return isBatchLoadable;
+		return persister.isBatchLoadable();
 	}
 
 	public Serializable getIdentifier() {
@@ -124,15 +86,35 @@ public final class EntityKey implements Serializable {
 	}
 
 	public String getEntityName() {
-		return entityName;
+		return persister.getEntityName();
 	}
 
 	@Override
 	public boolean equals(Object other) {
-		EntityKey otherKey = (EntityKey) other;
-		return otherKey.rootEntityName.equals(this.rootEntityName) &&
-				identifierType.isEqual(otherKey.identifier, this.identifier, factory) &&
-				EqualsHelper.equals( tenantId, otherKey.tenantId );
+		if ( this == other ) {
+			return true;
+		}
+		if ( other == null || EntityKey.class != other.getClass() ) {
+			return false;
+		}
+
+		final EntityKey otherKey = (EntityKey) other;
+		return samePersistentType( otherKey )
+				&& sameIdentifier( otherKey );
+
+	}
+
+	private boolean sameIdentifier(final EntityKey otherKey) {
+		return persister.getIdentifierType().isEqual( otherKey.identifier, this.identifier, persister.getFactory() );
+	}
+
+	private boolean samePersistentType(final EntityKey otherKey) {
+		if ( otherKey.persister == persister ) {
+			return true;
+		}
+		else {
+			return EqualsHelper.equals( otherKey.persister.getRootEntityName(), persister.getRootEntityName() );
+		}
 	}
 
 	@Override
@@ -142,8 +124,8 @@ public final class EntityKey implements Serializable {
 
 	@Override
 	public String toString() {
-		return "EntityKey" + 
-			MessageHelper.infoString( factory.getEntityPersister( entityName ), identifier, factory );
+		return "EntityKey" +
+				MessageHelper.infoString( this.persister, identifier, persister.getFactory() );
 	}
 
 	/**
@@ -156,11 +138,7 @@ public final class EntityKey implements Serializable {
 	 */
 	public void serialize(ObjectOutputStream oos) throws IOException {
 		oos.writeObject( identifier );
-		oos.writeObject( rootEntityName );
-		oos.writeObject( entityName );
-		oos.writeObject( identifierType );
-		oos.writeBoolean( isBatchLoadable );
-		oos.writeObject( tenantId );
+		oos.writeObject( persister.getEntityName() );
 	}
 
 	/**
@@ -168,24 +146,17 @@ public final class EntityKey implements Serializable {
 	 * Session/PersistenceContext for increased performance.
 	 *
 	 * @param ois The stream from which to read the entry.
-	 * @param session The session being deserialized.
+	 * @param sessionFactory The SessionFactory owning the Session being deserialized.
 	 *
 	 * @return The deserialized EntityEntry
 	 *
 	 * @throws IOException Thrown by Java I/O
 	 * @throws ClassNotFoundException Thrown by Java I/O
 	 */
-	public static EntityKey deserialize(
-			ObjectInputStream ois,
-	        SessionImplementor session) throws IOException, ClassNotFoundException {
-		return new EntityKey(
-				( Serializable ) ois.readObject(),
-		        (String) ois.readObject(),
-				(String) ois.readObject(),
-		        ( Type ) ois.readObject(),
-		        ois.readBoolean(),
-		        ( session == null ? null : session.getFactory() ),
-				(String) ois.readObject()
-		);
+	public static EntityKey deserialize(ObjectInputStream ois, SessionFactoryImplementor sessionFactory) throws IOException, ClassNotFoundException {
+		final Serializable id = (Serializable) ois.readObject();
+		final String entityName = (String) ois.readObject();
+		final EntityPersister entityPersister = sessionFactory.getEntityPersister( entityName );
+		return new EntityKey(id, entityPersister);
 	}
 }

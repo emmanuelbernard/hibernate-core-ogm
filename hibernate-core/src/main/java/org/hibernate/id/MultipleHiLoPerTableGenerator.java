@@ -30,22 +30,31 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Properties;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.LockMode;
+import org.hibernate.LockOptions;
 import org.hibernate.MappingException;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.cfg.ObjectNameNormalizer;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.jdbc.internal.FormatStyle;
 import org.hibernate.engine.jdbc.spi.JdbcServices;
 import org.hibernate.engine.jdbc.spi.SqlStatementLogger;
+import org.hibernate.engine.spi.SessionEventListenerManager;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.id.enhanced.AccessCallback;
-import org.hibernate.id.enhanced.OptimizerFactory;
+import org.hibernate.id.enhanced.LegacyHiLoAlgorithmOptimizer;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.jdbc.AbstractReturningWork;
 import org.hibernate.jdbc.WorkExecutorVisitable;
-import org.hibernate.mapping.Table;
+import org.hibernate.metamodel.spi.relational.Column;
+import org.hibernate.metamodel.spi.relational.Database;
+import org.hibernate.metamodel.spi.relational.Identifier;
+import org.hibernate.metamodel.spi.relational.ObjectName;
+import org.hibernate.metamodel.spi.relational.Schema;
+import org.hibernate.metamodel.spi.relational.Table;
 import org.hibernate.type.Type;
 import org.jboss.logging.Logger;
 
@@ -96,7 +105,12 @@ public class MultipleHiLoPerTableGenerator implements PersistentIdentifierGenera
 	private static final String DEFAULT_PK_COLUMN = "sequence_name";
 	private static final String DEFAULT_VALUE_COLUMN = "sequence_next_hi_value";
 
+	private ObjectName qualifiedTableName;
+	private Identifier qualifiedPkColumnName;
+	private Identifier qualifiedValueColumnName;
+
 	private String tableName;
+	private Table table;
 	private String pkColumnName;
 	private String valueColumnName;
 	private String query;
@@ -107,7 +121,7 @@ public class MultipleHiLoPerTableGenerator implements PersistentIdentifierGenera
 	public static final String MAX_LO = "max_lo";
 
 	private int maxLo;
-	private OptimizerFactory.LegacyHiLoAlgorithmOptimizer hiloOptimizer;
+	private LegacyHiLoAlgorithmOptimizer hiloOptimizer;
 
 	private Class returnClass;
 	private int keySize;
@@ -126,51 +140,56 @@ public class MultipleHiLoPerTableGenerator implements PersistentIdentifierGenera
 					.append( valueColumnName )
 					.append( ' ' )
 					.append( dialect.getTypeName( Types.INTEGER ) )
-					.append( " ) " )
+					.append( " )" )
+					.append( dialect.getTableTypeString() )
 					.toString()
 		};
 	}
 
 	public String[] sqlDropStrings(Dialect dialect) throws HibernateException {
-		StringBuffer sqlDropString = new StringBuffer( "drop table " );
-		if ( dialect.supportsIfExistsBeforeTableName() ) {
-			sqlDropString.append( "if exists " );
-		}
-		sqlDropString.append( tableName ).append( dialect.getCascadeConstraintsString() );
-		if ( dialect.supportsIfExistsAfterTableName() ) {
-			sqlDropString.append( " if exists" );
-		}
-		return new String[] { sqlDropString.toString() };
+		return new String[] { dialect.getDropTableString( tableName ) };
 	}
 
 	public Object generatorKey() {
 		return tableName;
 	}
 
+	/**
+	 * The bound Table for this generator.
+	 *
+	 * @return The table.
+	 */
+	public final Table getTable() {
+		return table;
+	}
+
 	public synchronized Serializable generate(final SessionImplementor session, Object obj) {
+		final SqlStatementLogger statementLogger = session.getFactory().getServiceRegistry()
+				.getService( JdbcServices.class )
+				.getSqlStatementLogger();
+		final SessionEventListenerManager statsCollector = session.getEventListenerManager();
+
 		final WorkExecutorVisitable<IntegralDataTypeHolder> work = new AbstractReturningWork<IntegralDataTypeHolder>() {
 			@Override
 			public IntegralDataTypeHolder execute(Connection connection) throws SQLException {
 				IntegralDataTypeHolder value = IdentifierGeneratorHelper.getIntegralDataTypeHolder( returnClass );
-				SqlStatementLogger statementLogger = session
-						.getFactory()
-						.getServiceRegistry()
-						.getService( JdbcServices.class )
-						.getSqlStatementLogger();
+
 				int rows;
 				do {
-					statementLogger.logStatement( query, FormatStyle.BASIC.getFormatter() );
-					PreparedStatement qps = connection.prepareStatement( query );
-					PreparedStatement ips = null;
+					final PreparedStatement queryPreparedStatement = prepareStatement( connection, query, statementLogger, statsCollector );
 					try {
-						ResultSet rs = qps.executeQuery();
+						final ResultSet rs = executeQuery( queryPreparedStatement, statsCollector );
 						boolean isInitialized = rs.next();
 						if ( !isInitialized ) {
 							value.initialize( 0 );
-							statementLogger.logStatement( insert, FormatStyle.BASIC.getFormatter() );
-							ips = connection.prepareStatement( insert );
-							value.bind( ips, 1 );
-							ips.execute();
+							final PreparedStatement insertPreparedStatement = prepareStatement( connection, insert, statementLogger, statsCollector );
+							try {
+								value.bind( insertPreparedStatement, 1 );
+								executeUpdate( insertPreparedStatement, statsCollector );
+							}
+							finally {
+								insertPreparedStatement.close();
+							}
 						}
 						else {
 							value.initialize( rs, 0 );
@@ -178,29 +197,27 @@ public class MultipleHiLoPerTableGenerator implements PersistentIdentifierGenera
 						rs.close();
 					}
 					catch (SQLException sqle) {
-                        LOG.unableToReadOrInitHiValue(sqle);
+						LOG.unableToReadOrInitHiValue( sqle );
 						throw sqle;
 					}
 					finally {
-						if (ips != null) {
-							ips.close();
-						}
-						qps.close();
+						queryPreparedStatement.close();
 					}
 
-					statementLogger.logStatement( update, FormatStyle.BASIC.getFormatter() );
-					PreparedStatement ups = connection.prepareStatement( update );
+
+					final PreparedStatement updatePreparedStatement = prepareStatement( connection, update, statementLogger, statsCollector );
 					try {
-						value.copy().increment().bind( ups, 1 );
-						value.bind( ups, 2 );
-						rows = ups.executeUpdate();
+						value.copy().increment().bind( updatePreparedStatement, 1 );
+						value.bind( updatePreparedStatement, 2 );
+
+						rows = executeUpdate( updatePreparedStatement, statsCollector );
 					}
 					catch (SQLException sqle) {
-                        LOG.error(LOG.unableToUpdateHiValue(tableName), sqle);
+						LOG.error( LOG.unableToUpdateHiValue( tableName ), sqle );
 						throw sqle;
 					}
 					finally {
-						ups.close();
+						updatePreparedStatement.close();
 					}
 				} while ( rows==0 );
 
@@ -221,48 +238,92 @@ public class MultipleHiLoPerTableGenerator implements PersistentIdentifierGenera
 		return hiloOptimizer.generate(
 				new AccessCallback() {
 					public IntegralDataTypeHolder getNextValue() {
-						return session.getTransactionCoordinator().getTransaction().createIsolationDelegate().delegateWork( work, true );
+						return session.getTransactionCoordinator().getTransaction().createIsolationDelegate().delegateWork(
+								work,
+								true
+						);
+					}
+
+					@Override
+					public String getTenantIdentifier() {
+						return session.getTenantIdentifier();
 					}
 				}
 		);
 	}
 
-	public void configure(Type type, Properties params, Dialect dialect) throws MappingException {
+	private PreparedStatement prepareStatement(
+			Connection connection,
+			String sql,
+			SqlStatementLogger statementLogger,
+			SessionEventListenerManager statsCollector) throws SQLException {
+		statementLogger.logStatement( sql, FormatStyle.BASIC.getFormatter() );
+		try {
+			statsCollector.jdbcPrepareStatementStart();
+			return connection.prepareStatement( sql );
+		}
+		finally {
+			statsCollector.jdbcPrepareStatementEnd();
+		}
+	}
+
+	private int executeUpdate(PreparedStatement ps, SessionEventListenerManager statsCollector) throws SQLException {
+		try {
+			statsCollector.jdbcExecuteStatementStart();
+			return ps.executeUpdate();
+		}
+		finally {
+			statsCollector.jdbcExecuteStatementEnd();
+		}
+
+	}
+
+	private ResultSet executeQuery(PreparedStatement ps, SessionEventListenerManager statsCollector) throws SQLException {
+		try {
+			statsCollector.jdbcExecuteStatementStart();
+			return ps.executeQuery();
+		}
+		finally {
+			statsCollector.jdbcExecuteStatementEnd();
+		}
+	}
+
+	public void configure(Type type, Properties params, Dialect dialect, ClassLoaderService classLoaderService) throws MappingException {
 		ObjectNameNormalizer normalizer = ( ObjectNameNormalizer ) params.get( IDENTIFIER_NORMALIZER );
 
 		tableName = normalizer.normalizeIdentifierQuoting( ConfigurationHelper.getString( ID_TABLE, params, DEFAULT_TABLE ) );
 		if ( tableName.indexOf( '.' ) < 0 ) {
-			tableName = dialect.quote( tableName );
-			final String schemaName = dialect.quote(
-					normalizer.normalizeIdentifierQuoting( params.getProperty( SCHEMA ) )
-			);
-			final String catalogName = dialect.quote(
-					normalizer.normalizeIdentifierQuoting( params.getProperty( CATALOG ) )
-			);
-			tableName = Table.qualify( catalogName, schemaName, tableName );
+			final String normalizedTableName = tableName;
+			final String normalizedSchemaName = normalizer.normalizeIdentifierQuoting( params.getProperty( SCHEMA ) );
+			final String normalizedCatalogName = normalizer.normalizeIdentifierQuoting( params.getProperty( CATALOG ) );
+			qualifiedTableName = new ObjectName( normalizedCatalogName, normalizedSchemaName, normalizedTableName );
+			tableName = qualifiedTableName.toText( dialect );
 		}
 		else {
-			// if already qualified there is not much we can do in a portable manner so we pass it
-			// through and assume the user has set up the name correctly.
+			qualifiedTableName = ObjectName.parse( tableName );
 		}
 
-		pkColumnName = dialect.quote(
+		qualifiedPkColumnName = Identifier.toIdentifier(
 				normalizer.normalizeIdentifierQuoting(
 						ConfigurationHelper.getString( PK_COLUMN_NAME, params, DEFAULT_PK_COLUMN )
 				)
 		);
-		valueColumnName = dialect.quote(
+		pkColumnName = qualifiedPkColumnName.getText( dialect );
+
+		qualifiedValueColumnName = Identifier.toIdentifier(
 				normalizer.normalizeIdentifierQuoting(
 						ConfigurationHelper.getString( VALUE_COLUMN_NAME, params, DEFAULT_VALUE_COLUMN )
 				)
 		);
+		valueColumnName = qualifiedValueColumnName.getText( dialect );
+
 		keySize = ConfigurationHelper.getInt(PK_LENGTH_NAME, params, DEFAULT_PK_LENGTH);
 		String keyValue = ConfigurationHelper.getString(PK_VALUE_NAME, params, params.getProperty(TABLE) );
 
 		query = "select " +
 			valueColumnName +
 			" from " +
-			dialect.appendLockHint( LockMode.PESSIMISTIC_WRITE, tableName ) +
+			dialect.appendLockHint( new LockOptions( LockMode.PESSIMISTIC_WRITE ), tableName ) +
 			" where " + pkColumnName + " = '" + keyValue + "'" +
 			dialect.getForUpdateString();
 
@@ -288,7 +349,23 @@ public class MultipleHiLoPerTableGenerator implements PersistentIdentifierGenera
 		returnClass = type.getReturnedClass();
 
 		if ( maxLo >= 1 ) {
-			hiloOptimizer = new OptimizerFactory.LegacyHiLoAlgorithmOptimizer( returnClass, maxLo );
+			hiloOptimizer = new LegacyHiLoAlgorithmOptimizer( returnClass, maxLo );
 		}
+	}
+
+	@Override
+	public void registerExportables(Database database) {
+		final Dialect dialect = database.getJdbcEnvironment().getDialect();
+
+		final Schema schema = database.getSchemaFor( qualifiedTableName );
+		table = schema.createTable( qualifiedTableName.getName(), qualifiedTableName.getName() );
+
+		final Column pkColumn = table.createColumn( qualifiedPkColumnName );
+		table.getPrimaryKey().addColumn( pkColumn );
+		// todo : leverage TypeInfo-like info from JdbcEnvironment
+		pkColumn.setSqlType( dialect.getTypeName( Types.VARCHAR, keySize, 0, 0 ) );
+
+		final Column valueColumn = table.createColumn( qualifiedValueColumnName );
+		valueColumn.setSqlType( dialect.getTypeName( Types.INTEGER ) );
 	}
 }

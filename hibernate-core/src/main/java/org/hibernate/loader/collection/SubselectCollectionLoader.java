@@ -27,6 +27,7 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
+
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.EntityKey;
@@ -34,6 +35,7 @@ import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.TypedValue;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.type.Type;
 
@@ -46,15 +48,15 @@ public class SubselectCollectionLoader extends BasicCollectionLoader {
 	private final Serializable[] keys;
 	private final Type[] types;
 	private final Object[] values;
-	private final Map namedParameters;
-	private final Map namedParameterLocMap;
+	private final Map<String, TypedValue> namedParameters;
+	private final Map<String, int[]> namedParameterLocMap;
 
 	public SubselectCollectionLoader(
 			QueryableCollection persister, 
 			String subquery,
 			Collection entityKeys,
 			QueryParameters queryParameters,
-			Map namedParameterLocMap,
+			Map<String, int[]> namedParameterLocMap,
 			SessionFactoryImplementor factory, 
 			LoadQueryInfluencers loadQueryInfluencers) throws MappingException {
 		super( persister, 1, subquery, factory, loadQueryInfluencers );
@@ -73,6 +75,7 @@ public class SubselectCollectionLoader extends BasicCollectionLoader {
 		
 	}
 
+	@Override
 	public void initialize(Serializable id, SessionImplementor session)
 			throws HibernateException {
 		loadCollectionSubselect( 
@@ -85,8 +88,9 @@ public class SubselectCollectionLoader extends BasicCollectionLoader {
 		);
 	}
 
+	@Override
 	public int[] getNamedParameterLocs(String name) {
-		return (int[]) namedParameterLocMap.get( name );
+		return namedParameterLocMap.get( name );
 	}
 
 }

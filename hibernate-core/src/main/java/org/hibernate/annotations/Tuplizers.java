@@ -22,16 +22,25 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.annotations;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 /**
- * Define a set of tuplizer for an entity or a component
+ * Grouping of tuplizers.
+ *
  * @author Emmanuel Bernard
+ *
+ * @deprecated Specifying multiple entity modes and/or tuplizers for a thing
+ * is no longer supported
  */
 @java.lang.annotation.Target( {ElementType.TYPE, ElementType.FIELD, ElementType.METHOD} )
 @Retention( RetentionPolicy.RUNTIME )
+@Deprecated
 public @interface Tuplizers {
+	/**
+	 * The grouping of tuplizers.
+	 */
 	Tuplizer[] value();
 }

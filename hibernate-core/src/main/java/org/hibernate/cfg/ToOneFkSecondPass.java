@@ -24,6 +24,7 @@
 package org.hibernate.cfg;
 
 import java.util.Iterator;
+
 import org.hibernate.AnnotationException;
 import org.hibernate.AssertionFailure;
 import org.hibernate.MappingException;
@@ -120,7 +121,7 @@ public class ToOneFkSecondPass extends FkSecondPass {
 			if ( !manyToOne.isIgnoreNotFound() ) manyToOne.createPropertyRefConstraints( persistentClasses );
 		}
 		else if ( value instanceof OneToOne ) {
-			( (OneToOne) value ).createForeignKey();
+			value.createForeignKey();
 		}
 		else {
 			throw new AssertionFailure( "FkSecondPass for a wrong value type: " + value.getClass().getName() );

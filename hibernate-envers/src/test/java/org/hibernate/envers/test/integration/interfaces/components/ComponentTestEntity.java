@@ -22,10 +22,12 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.envers.test.integration.interfaces.components;
+
 import javax.persistence.Embedded;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
+
 import org.hibernate.annotations.Target;
 import org.hibernate.envers.Audited;
 
@@ -33,18 +35,18 @@ import org.hibernate.envers.Audited;
  * @author Adam Warski (adam at warski dot org)
  */
 @Entity
-    @Audited
+@Audited
 public class ComponentTestEntity {
-    @Id
-    @GeneratedValue
-    private Integer id;
+	@Id
+	@GeneratedValue
+	private Integer id;
 
-    @Embedded
+	@Embedded
 	@Target(Component1.class)
-    private IComponent comp1;
+	private IComponent comp1;
 
-    public ComponentTestEntity() {
-    }
+	public ComponentTestEntity() {
+	}
 
 	public ComponentTestEntity(IComponent comp1) {
 		this.comp1 = comp1;
@@ -56,12 +58,12 @@ public class ComponentTestEntity {
 	}
 
 	public Integer getId() {
-        return id;
-    }
+		return id;
+	}
 
-    public void setId(Integer id) {
-        this.id = id;
-    }
+	public void setId(Integer id) {
+		this.id = id;
+	}
 
 	public IComponent getComp1() {
 		return comp1;
@@ -73,12 +75,18 @@ public class ComponentTestEntity {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o) return true;
-		if (!(o instanceof ComponentTestEntity)) return false;
+		if ( this == o ) {
+			return true;
+		}
+		if ( !(o instanceof ComponentTestEntity) ) {
+			return false;
+		}
 
 		ComponentTestEntity that = (ComponentTestEntity) o;
 
-		if (comp1 != null ? !comp1.equals(that.comp1) : that.comp1 != null) return false;
+		if ( comp1 != null ? !comp1.equals( that.comp1 ) : that.comp1 != null ) {
+			return false;
+		}
 
 		return true;
 	}

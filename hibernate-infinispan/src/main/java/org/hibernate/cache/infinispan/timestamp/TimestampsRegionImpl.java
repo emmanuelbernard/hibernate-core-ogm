@@ -1,149 +1,121 @@
+/*
+ * Hibernate, Relational Persistence for Idiomatic Java
+ *
+ * Copyright (c) 2013, Red Hat Inc. or third-party contributors as
+ * indicated by the @author tags or express copyright attribution
+ * statements applied by the authors.  All third-party contributions are
+ * distributed under license by Red Hat Inc.
+ *
+ * This copyrighted material is made available to anyone wishing to use, modify,
+ * copy, or redistribute it subject to the terms and conditions of the GNU
+ * Lesser General Public License, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this distribution; if not, write to:
+ * Free Software Foundation, Inc.
+ * 51 Franklin Street, Fifth Floor
+ * Boston, MA  02110-1301  USA
+ */
 package org.hibernate.cache.infinispan.timestamp;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+
 import javax.transaction.Transaction;
-import javax.transaction.TransactionManager;
+
 import org.hibernate.cache.CacheException;
+import org.hibernate.cache.infinispan.impl.BaseGeneralDataRegion;
+import org.hibernate.cache.infinispan.util.Caches;
 import org.hibernate.cache.spi.RegionFactory;
 import org.hibernate.cache.spi.TimestampsRegion;
-import org.hibernate.cache.infinispan.impl.BaseGeneralDataRegion;
-import org.hibernate.cache.infinispan.util.CacheAdapter;
-import org.hibernate.cache.infinispan.util.CacheHelper;
-import org.hibernate.cache.infinispan.util.FlagAdapter;
-import org.infinispan.notifications.Listener;
-import org.infinispan.notifications.cachelistener.annotation.CacheEntryModified;
-import org.infinispan.notifications.cachelistener.annotation.CacheEntryRemoved;
-import org.infinispan.notifications.cachelistener.event.CacheEntryInvalidatedEvent;
-import org.infinispan.notifications.cachelistener.event.CacheEntryModifiedEvent;
-import org.infinispan.notifications.cachelistener.event.CacheEntryRemovedEvent;
+
+import org.infinispan.AdvancedCache;
+import org.infinispan.context.Flag;
 
 /**
  * Defines the behavior of the timestamps cache region for Infinispan.
- * 
+ *
  * @author Chris Bredesen
  * @author Galder Zamarreño
  * @since 3.5
  */
-@Listener
 public class TimestampsRegionImpl extends BaseGeneralDataRegion implements TimestampsRegion {
 
-   private Map localCache = new ConcurrentHashMap();
-
-   public TimestampsRegionImpl(CacheAdapter cacheAdapter, String name, TransactionManager transactionManager, RegionFactory factory) {
-      super(cacheAdapter, name, transactionManager, factory);
-      cacheAdapter.addListener(this);
-      populateLocalCache();
-   }
-
-   @Override
-   public void evict(Object key) throws CacheException {
-      // TODO Is this a valid operation on a timestamps cache?
-      cacheAdapter.remove(key);
-   }
-
-   public void evictAll() throws CacheException {
-      // TODO Is this a valid operation on a timestamps cache?
-      Transaction tx = suspend();
-      try {        
-         CacheHelper.sendEvictAllNotification(cacheAdapter, getAddress());
-      } finally {
-         resume(tx);
-      }
-   }
-
-   public Object get(Object key) throws CacheException {
-      Object value = localCache.get(key);
-
-      // If the region is not valid, skip cache store to avoid going remote to retrieve the query.
-      // The aim of this is to maintain same logic/semantics as when state transfer was configured.
-      // TODO: Once https://issues.jboss.org/browse/ISPN-835 has been resolved, revert to state transfer and remove workaround
-      boolean skipCacheStore = false;
-      if (!isValid())
-         skipCacheStore = true;
-
-      if (value == null && checkValid()) {
-         if (skipCacheStore)
-            value = get(key, false, FlagAdapter.SKIP_CACHE_STORE);
-         else
-            value = get(key, false);
-
-         if (value != null)
-            localCache.put(key, value);
-      }
-      return value;
-   }
-
-   public void put(Object key, Object value) throws CacheException {
-      // Don't hold the JBC node lock throughout the tx, as that
-      // prevents reads and other updates
-      Transaction tx = suspend();
-      try {
-         // We ensure ASYNC semantics (JBCACHE-1175) and make sure previous
-         // value is not loaded from cache store cos it's not needed.
-         cacheAdapter.withFlags(FlagAdapter.FORCE_ASYNCHRONOUS).put(key, value);
-      } catch (Exception e) {
-         throw new CacheException(e);
-      } finally {
-         resume(tx);
-      }
-   }
-
-   @Override
-   public void destroy() throws CacheException {
-      localCache.clear();
-      cacheAdapter.removeListener(this);
-      super.destroy();
-   }
+	private final AdvancedCache removeCache;
+	private final AdvancedCache timestampsPutCache;
 
    /**
-    * Monitors cache events and updates the local cache
-    * 
-    * @param event
+    * Local timestamps region constructor.
+    *
+    * @param cache instance to store update timestamps
+    * @param name of the update timestamps region
+    * @param factory for the update timestamps region
     */
-   @CacheEntryModified
-   public void nodeModified(CacheEntryModifiedEvent event) {
-      if (!handleEvictAllModification(event) && !event.isPre()) {
-         localCache.put(event.getKey(), event.getValue());
-      }
-   }
+	public TimestampsRegionImpl(
+			AdvancedCache cache, String name,
+			RegionFactory factory) {
+		super( cache, name, factory );
+		this.removeCache = Caches.ignoreReturnValuesCache( cache );
 
-   /**
-    * Monitors cache events and updates the local cache
-    * 
-    * @param event
-    */
-   @CacheEntryRemoved
-   public void nodeRemoved(CacheEntryRemovedEvent event) {
-      if (event.isPre()) return;
-      localCache.remove(event.getKey());
-   }
+		// Skip locking when updating timestamps to provide better performance
+		// under highly concurrent insert scenarios, where update timestamps
+		// for an entity/collection type are constantly updated, creating
+		// contention.
+		//
+		// The worst it can happen is that an earlier an earlier timestamp
+		// (i.e. ts=1) will override a later on (i.e. ts=2), so it means that
+		// in highly concurrent environments, queries might be considered stale
+		// earlier in time. The upside is that inserts/updates are way faster
+		// in local set ups.
+		this.timestampsPutCache = getTimestampsPutCache( cache );
+	}
 
-   @Override
-   protected boolean handleEvictAllModification(CacheEntryModifiedEvent event) {
-      boolean result = super.handleEvictAllModification(event);
-      if (result) {
-         localCache.clear();
-      }
-      return result;
-   }
+	protected AdvancedCache getTimestampsPutCache(AdvancedCache cache) {
+		return Caches.ignoreReturnValuesCache( cache, Flag.SKIP_LOCKING );
+	}
 
-   @Override
-   protected boolean handleEvictAllInvalidation(CacheEntryInvalidatedEvent event) {
-      boolean result = super.handleEvictAllInvalidation(event);
-      if (result) {
-         localCache.clear();
-      }
-      return result;
-   }
+	@Override
+	public void evict(Object key) throws CacheException {
+		// TODO Is this a valid operation on a timestamps cache?
+		removeCache.remove( key );
+	}
 
-   /**
-    * Brings all data from the distributed cache into our local cache.
-    */
-   private void populateLocalCache() {
-      Set children = cacheAdapter.keySet();
-      for (Object key : children)
-         get(key);
-   }
+	@Override
+	public void evictAll() throws CacheException {
+		// TODO Is this a valid operation on a timestamps cache?
+		final Transaction tx = suspend();
+		try {
+			// Invalidate the local region
+			invalidateRegion();
+		}
+		finally {
+			resume( tx );
+		}
+	}
+
+
+	@Override
+	public Object get(Object key) throws CacheException {
+		if ( checkValid() ) {
+			return cache.get( key );
+		}
+
+		return null;
+	}
+
+	@Override
+	@SuppressWarnings("unchecked")
+	public void put(final Object key, final Object value) throws CacheException {
+		try {
+			// We ensure ASYNC semantics (JBCACHE-1175) and make sure previous
+			// value is not loaded from cache store cos it's not needed.
+			timestampsPutCache.put( key, value );
+		}
+		catch (Exception e) {
+			throw new CacheException( e );
+		}
+	}
 
 }

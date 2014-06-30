@@ -1,8 +1,10 @@
 /*
- * Copyright (c) 2009, Red Hat Middleware LLC or third-party contributors as
+ * Hibernate, Relational Persistence for Idiomatic Java
+ *
+ * Copyright (c) 2009, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -22,17 +24,19 @@
 package org.hibernate.hql.internal.ast.tree;
 
 import java.util.Map;
+
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ColumnHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.type.CollectionType;
 import org.hibernate.type.Type;
+
 import antlr.SemanticException;
 import antlr.collections.AST;
 
 /**
- * TODO : javadoc
+ * Basic support for KEY, VALUE and ENTRY based "qualified identification variables".
  *
  * @author Steve Ebersole
  */
@@ -40,17 +44,19 @@ public abstract class AbstractMapComponentNode extends FromReferenceNode impleme
 	private String[] columns;
 
 	public FromReferenceNode getMapReference() {
-		return ( FromReferenceNode ) getFirstChild();
+		return (FromReferenceNode) getFirstChild();
 	}
 
 	public String[] getColumns() {
 		return columns;
 	}
 
+	@Override
 	public void setScalarColumnText(int i) throws SemanticException {
 		ColumnHelper.generateScalarColumns( this, getColumns(), i );
 	}
 
+	@Override
 	public void resolve(
 			boolean generateJoin,
 			boolean implicitJoin,
@@ -60,22 +66,38 @@ public abstract class AbstractMapComponentNode extends FromReferenceNode impleme
 			throw attemptedDereference();
 		}
 
-		FromReferenceNode mapReference = getMapReference();
+		final FromReferenceNode mapReference = getMapReference();
 		mapReference.resolve( true, true );
-		if ( mapReference.getDataType().isCollectionType() ) {
-			CollectionType collectionType = (CollectionType) mapReference.getDataType();
-			if ( Map.class.isAssignableFrom( collectionType.getReturnedClass() ) ) {
-				FromElement sourceFromElement = mapReference.getFromElement();
-				setFromElement( sourceFromElement );
-				setDataType( resolveType( sourceFromElement.getQueryableCollection() ) );
-				this.columns = resolveColumns( sourceFromElement.getQueryableCollection() );
-				initText( this.columns );
-				setFirstChild( null );
-				return;
+
+		FromElement sourceFromElement = null;
+		if ( isAliasRef( mapReference ) ) {
+			final QueryableCollection collectionPersister = mapReference.getFromElement().getQueryableCollection();
+			if ( Map.class.isAssignableFrom( collectionPersister.getCollectionType().getReturnedClass() ) ) {
+				sourceFromElement = mapReference.getFromElement();
+			}
+		}
+		else {
+			if ( mapReference.getDataType().isCollectionType() ) {
+				final CollectionType collectionType = (CollectionType) mapReference.getDataType();
+				if ( Map.class.isAssignableFrom( collectionType.getReturnedClass() ) ) {
+					sourceFromElement = mapReference.getFromElement();
+				}
 			}
 		}
 
-		throw nonMap();
+		if ( sourceFromElement == null ) {
+			throw nonMap();
+		}
+
+		setFromElement( sourceFromElement );
+		setDataType( resolveType( sourceFromElement.getQueryableCollection() ) );
+		this.columns = resolveColumns( sourceFromElement.getQueryableCollection() );
+		initText( this.columns );
+		setFirstChild( null );
+	}
+
+	private boolean isAliasRef(FromReferenceNode mapReference) {
+		return ALIAS_REF == mapReference.getType();
 	}
 
 	private void initText(String[] columns) {
@@ -98,6 +120,7 @@ public abstract class AbstractMapComponentNode extends FromReferenceNode impleme
 		return new SemanticException( expressionDescription() + " expression did not reference map property" );
 	}
 
+	@Override
 	public void resolveIndex(AST parent) throws SemanticException {
 		throw new UnsupportedOperationException( expressionDescription() + " expression cannot be the source for an index operation" );
 	}

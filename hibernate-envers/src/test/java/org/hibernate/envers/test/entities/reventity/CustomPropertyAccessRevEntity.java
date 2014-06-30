@@ -22,9 +22,13 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.envers.test.entities.reventity;
+
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
+
+import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Parameter;
 import org.hibernate.envers.RevisionEntity;
 import org.hibernate.envers.RevisionNumber;
 import org.hibernate.envers.RevisionTimestamp;
@@ -33,48 +37,65 @@ import org.hibernate.envers.RevisionTimestamp;
  * @author Adam Warski (adam at warski dot org)
  */
 @Entity
+@GenericGenerator(name = "EnversTestingRevisionGenerator",
+				  strategy = "org.hibernate.id.enhanced.TableGenerator",
+				  parameters = {
+						  @Parameter(name = "table_name", value = "REVISION_GENERATOR"),
+						  @Parameter(name = "initial_value", value = "1"),
+						  @Parameter(name = "increment_size", value = "1"),
+						  @Parameter(name = "prefer_entity_table_as_segment_value", value = "true")
+				  }
+)
 @RevisionEntity
 public class CustomPropertyAccessRevEntity {
-    private int customId;
+	private int customId;
 
-    private long customTimestamp;
+	private long customTimestamp;
 
-    @Id
-    @GeneratedValue
-    @RevisionNumber
-    public int getCustomId() {
-        return customId;
-    }
+	@Id
+	@GeneratedValue(generator = "EnversTestingRevisionGenerator")
+	@RevisionNumber
+	public int getCustomId() {
+		return customId;
+	}
 
-    public void setCustomId(int customId) {
-        this.customId = customId;
-    }
+	public void setCustomId(int customId) {
+		this.customId = customId;
+	}
 
-    @RevisionTimestamp
-    public long getCustomTimestamp() {
-        return customTimestamp;
-    }
+	@RevisionTimestamp
+	public long getCustomTimestamp() {
+		return customTimestamp;
+	}
 
-    public void setCustomTimestamp(long customTimestamp) {
-        this.customTimestamp = customTimestamp;
-    }
+	public void setCustomTimestamp(long customTimestamp) {
+		this.customTimestamp = customTimestamp;
+	}
 
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof CustomPropertyAccessRevEntity)) return false;
+	public boolean equals(Object o) {
+		if ( this == o ) {
+			return true;
+		}
+		if ( !(o instanceof CustomPropertyAccessRevEntity) ) {
+			return false;
+		}
 
-        CustomPropertyAccessRevEntity that = (CustomPropertyAccessRevEntity) o;
+		CustomPropertyAccessRevEntity that = (CustomPropertyAccessRevEntity) o;
 
-        if (customId != that.customId) return false;
-        if (customTimestamp != that.customTimestamp) return false;
+		if ( customId != that.customId ) {
+			return false;
+		}
+		if ( customTimestamp != that.customTimestamp ) {
+			return false;
+		}
 
-        return true;
-    }
+		return true;
+	}
 
-    public int hashCode() {
-        int result;
-        result = customId;
-        result = 31 * result + (int) (customTimestamp ^ (customTimestamp >>> 32));
-        return result;
-    }
+	public int hashCode() {
+		int result;
+		result = customId;
+		result = 31 * result + (int) (customTimestamp ^ (customTimestamp >>> 32));
+		return result;
+	}
 }
