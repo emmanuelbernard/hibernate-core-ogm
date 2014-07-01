@@ -61,7 +61,6 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 	private Status previousStatus;
 	private final Serializable id;
 	private Object[] loadedState;
-	private Object[] deletedState;
 	private boolean existsInDatabase;
 	private Object version;
 	private transient EntityPersister persister; // for convenience to save some lookups
@@ -150,7 +149,7 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 		this.status = status;
 		this.previousStatus = previousStatus;
 		this.loadedState = loadedState;
-		this.deletedState = deletedState;
+		setDeletedState( deletedState );
 		this.version = version;
 		this.lockMode = lockMode;
 		this.existsInDatabase = existsInDatabase;
@@ -190,12 +189,24 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 		return loadedState;
 	}
 
+	private static final Object[] DEFAULT_DELETED_STATE = null;
+
 	@Override public Object[] getDeletedState() {
-		return deletedState;
+		EntityEntryExtraStateHolder extra = getExtraState( EntityEntryExtraStateHolder.class );
+		return extra != null ? extra.getDeletedState() : DEFAULT_DELETED_STATE;
 	}
 
 	@Override public void setDeletedState(Object[] deletedState) {
-		this.deletedState = deletedState;
+		EntityEntryExtraStateHolder extra = getExtraState( EntityEntryExtraStateHolder.class );
+		if ( extra == null && deletedState == DEFAULT_DELETED_STATE ) {
+			//this is the default value and we do not store the extra state
+			return;
+		}
+		if ( extra == null ) {
+			extra = new EntityEntryExtraStateHolder();
+			addExtraState( extra );
+		}
+		extra.setDeletedState( deletedState );
 	}
 
 	@Override public boolean isExistsInDatabase() {
@@ -432,7 +443,7 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 		oos.writeObject( (previousStatus == null ? "" : previousStatus.name()) );
 		// todo : potentially look at optimizing these two arrays
 		oos.writeObject( loadedState );
-		oos.writeObject( deletedState );
+		oos.writeObject( getDeletedState() );
 		oos.writeObject( version );
 		oos.writeObject( lockMode.toString() );
 		oos.writeBoolean( existsInDatabase );
