@@ -36,6 +36,7 @@ import org.hibernate.Session;
 import org.hibernate.bytecode.instrumentation.spi.FieldInterceptor;
 import org.hibernate.engine.spi.CachedNaturalIdValueSource;
 import org.hibernate.engine.spi.EntityEntry;
+import org.hibernate.engine.spi.EntityEntryExtraState;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.SelfDirtinessTracker;
@@ -70,6 +71,7 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 	private boolean loadedWithLazyPropertiesUnfetched; //NOTE: this is not updated when properties are fetched lazily!
 	private final transient Object rowId;
 	private final transient PersistenceContext persistenceContext;
+	private EntityEntryExtraState next;
 
 	/**
 	 * @deprecated the tenantId and entityMode parameters where removed: this constructor accepts but ignores them.
@@ -474,5 +476,31 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 				ois.readBoolean(),
 				persistenceContext
 		);
+	}
+
+	//the following methods are handling extraState contracts.
+	//they are not shared by a common superclass to avoid alignment padding
+	//we are trading off duplication for padding efficiency
+	@Override
+	public void addExtraState(EntityEntryExtraState extraState) {
+		if ( next == null ) {
+			next = extraState;
+		}
+		else {
+			next.addExtraState( extraState );
+		}
+	}
+
+	@Override
+	public <T extends EntityEntryExtraState> T getExtraState(Class<T> extraStateType) {
+		if ( next == null ) {
+			return null;
+		}
+		if ( extraStateType.isAssignableFrom( next.getClass() ) ) {
+			return (T) next;
+		}
+		else {
+			return next.getExtraState( extraStateType );
+		}
 	}
 }
