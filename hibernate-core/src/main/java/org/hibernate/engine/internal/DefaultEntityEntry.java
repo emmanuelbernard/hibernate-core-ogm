@@ -63,8 +63,7 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 	private Object[] loadedState;
 	private boolean existsInDatabase;
 	private Object version;
-	private transient EntityPersister persister; // for convenience to save some lookups
-	private final String entityName;
+	private final EntityPersister persister; // permanent but we only need the entityName state in a non transient way
 	private transient EntityKey cachedEntityKey; // cached EntityKey (lazy-initialized)
 	private boolean isBeingReplicated;
 	private boolean loadedWithLazyPropertiesUnfetched; //NOTE: this is not updated when properties are fetched lazily!
@@ -121,7 +120,6 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 		this.isBeingReplicated=disableVersionIncrement;
 		this.loadedWithLazyPropertiesUnfetched = lazyPropertiesAreUnfetched;
 		this.persister=persister;
-		this.entityName = persister == null ? null : persister.getEntityName();
 		this.persistenceContext = persistenceContext;
 	}
 
@@ -143,7 +141,6 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 			final boolean isBeingReplicated,
 			final boolean loadedWithLazyPropertiesUnfetched,
 			final PersistenceContext persistenceContext) {
-		this.entityName = entityName;
 		this.persister = ( factory == null ? null : factory.getEntityPersister( entityName ) );
 		this.id = id;
 		this.status = status;
@@ -237,7 +234,8 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 	}
 
 	@Override public String getEntityName() {
-		return entityName;
+		return persister == null ? null : persister.getEntityName();
+
 	}
 
 	@Override public boolean isBeingReplicated() {
@@ -420,7 +418,7 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 
 	public String toString() {
 		return "EntityEntry" + 
-				MessageHelper.infoString(entityName, id) + 
+				MessageHelper.infoString( getEntityName(), id ) +
 				'(' + status + ')';
 	}
 
@@ -437,7 +435,7 @@ public final class DefaultEntityEntry implements Serializable, EntityEntry {
 	 * @throws java.io.IOException If a stream error occurs
 	 */
 	@Override public void serialize(ObjectOutputStream oos) throws IOException {
-		oos.writeObject( entityName );
+		oos.writeObject( getEntityName() );
 		oos.writeObject( id );
 		oos.writeObject( status.name() );
 		oos.writeObject( (previousStatus == null ? "" : previousStatus.name()) );
