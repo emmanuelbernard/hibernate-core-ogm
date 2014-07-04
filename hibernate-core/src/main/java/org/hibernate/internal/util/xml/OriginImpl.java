@@ -30,6 +30,7 @@ import java.io.Serializable;
  *
  * @author Steve Ebersole
  */
+@Deprecated
 public class OriginImpl implements Origin, Serializable {
 	private final String type;
 	private final String name;
@@ -39,16 +40,12 @@ public class OriginImpl implements Origin, Serializable {
 		this.name = name;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String getType() {
 		return type;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String getName() {
 		return name;
 	}

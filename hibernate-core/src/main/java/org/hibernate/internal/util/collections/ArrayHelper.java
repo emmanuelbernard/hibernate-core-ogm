@@ -24,6 +24,7 @@
  */
 package org.hibernate.internal.util.collections;
 
+import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,22 +32,21 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
+import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.type.Type;
 
 public final class ArrayHelper {
 	
-	/*public static boolean contains(Object[] array, Object object) {
-		for ( int i=0; i<array.length; i++ ) {
-			if ( array[i].equals(object) ) return true;
-		}
-		return false;
-	}*/
+	public static boolean contains(Object[] array, Object object) {
+		return indexOf( array, object ) > -1;
+	}
 	
 	public static int indexOf(Object[] array, Object object) {
-		for ( int i=0; i<array.length; i++ ) {
-			if ( array[i].equals(object) ) return i;
+		for ( int i = 0; i < array.length; i++ ) {
+			if ( array[i].equals( object ) )
+				return i;
 		}
 		return -1;
 	}
@@ -111,7 +111,7 @@ public final class ArrayHelper {
 		int[] arr = new int[ coll.size() ];
 		int i=0;
 		while( iter.hasNext() ) {
-			arr[i++] = ( (Integer) iter.next() ).intValue();
+			arr[i++] = (Integer) iter.next();
 		}
 		return arr;
 	}
@@ -121,7 +121,7 @@ public final class ArrayHelper {
 		boolean[] arr = new boolean[ coll.size() ];
 		int i=0;
 		while( iter.hasNext() ) {
-			arr[i++] = ( (Boolean) iter.next() ).booleanValue();
+			arr[i++] = (Boolean) iter.next();
 		}
 		return arr;
 	}
@@ -188,7 +188,7 @@ public final class ArrayHelper {
 	}
 
 	@SuppressWarnings( {"unchecked"})
-	public static <T> T[] join(T[] x, T[] y) {
+	public static <T> T[] join(T[] x, T... y) {
 		T[] result = (T[]) Array.newInstance( x.getClass().getComponentType(), x.length + y.length );
 		System.arraycopy( x, 0, result, 0, x.length );
 		System.arraycopy( y, 0, result, x.length, y.length );
@@ -201,7 +201,7 @@ public final class ArrayHelper {
 	private ArrayHelper() {}
 
 	public static String toString( Object[] array ) {
-		StringBuffer sb = new StringBuffer();
+		StringBuilder sb = new StringBuilder();
 		sb.append("[");
 		for (int i = 0; i < array.length; i++) {
 			sb.append( array[i] );
@@ -212,23 +212,29 @@ public final class ArrayHelper {
 	}
 
 	public static boolean isAllNegative(int[] array) {
-		for ( int i=0; i<array.length; i++ ) {
-			if ( array[i] >=0 ) return false;
+		for ( int anArray : array ) {
+			if ( anArray >= 0 ) {
+				return false;
+			}
 		}
 		return true;
 	}
 
 	public static boolean isAllTrue(boolean[] array) {
-		for ( int i=0; i<array.length; i++ ) {
-			if ( !array[i] ) return false;
+		for ( boolean anArray : array ) {
+			if ( !anArray ) {
+				return false;
+			}
 		}
 		return true;
 	}
 
 	public static int countTrue(boolean[] array) {
 		int result=0;
-		for ( int i=0; i<array.length; i++ ) {
-			if ( array[i] ) result++;
+		for ( boolean anArray : array ) {
+			if ( anArray ) {
+				result++;
+			}
 		}
 		return result;
 	}
@@ -242,8 +248,10 @@ public final class ArrayHelper {
 	}*/
 
 	public static boolean isAllFalse(boolean[] array) {
-		for ( int i=0; i<array.length; i++ ) {
-			if ( array[i] ) return false;
+		for ( boolean anArray : array ) {
+			if ( anArray ) {
+				return false;
+			}
 		}
 		return true;
 	}
@@ -297,8 +305,8 @@ public final class ArrayHelper {
 	public static int hash(Object[] array) {
 		int length = array.length;
 		int seed = SEED;
-		for (int index = 0 ; index < length ; index++) {
-			seed = hash( seed, array[index] == null ? 0 : array[index].hashCode() );
+		for ( Object anArray : array ) {
+			seed = hash( seed, anArray == null ? 0 : anArray.hashCode() );
 		}
 		return seed;
 	}
@@ -309,8 +317,8 @@ public final class ArrayHelper {
 	public static int hash(char[] array) {
 		int length = array.length;
 		int seed = SEED;
-		for (int index = 0 ; index < length ; index++) {
-			seed = hash( seed, array[index] ) ;
+		for ( char anArray : array ) {
+			seed = hash( seed, anArray );
 		}
 		return seed;
 	}
@@ -321,14 +329,25 @@ public final class ArrayHelper {
 	public static int hash(byte[] bytes) {
 		int length = bytes.length;
 		int seed = SEED;
-		for (int index = 0 ; index < length ; index++) {
-			seed = hash( seed, bytes[index] ) ;
+		for ( byte aByte : bytes ) {
+			seed = hash( seed, aByte );
 		}
 		return seed;
 	}
 
 	private static int hash(int seed, int i) {
 		return PRIME_NUMER * seed + i;
+	}
+
+	/**
+	 * Returns {@code true} if the specified array is {@code null} or empty.
+	 *
+	 * @param array the array to check.
+	 * @return {@code true} if the specified array is {@code null} or empty.
+	 */
+
+	public static boolean isEmpty(final Object[] array) {
+		return array == null || array.length == 0;
 	}
 
 	/**
@@ -373,11 +392,52 @@ public final class ArrayHelper {
         return true;
 	}
 
+	public static Serializable[] extractNonNull(Serializable[] array) {
+		final int nonNullCount = countNonNull( array );
+		final Serializable[] result = new Serializable[nonNullCount];
+		int i = 0;
+		for ( Serializable element : array ) {
+			if ( element != null ) {
+				result[i++] = element;
+			}
+		}
+		if ( i != nonNullCount ) {
+			throw new HibernateException( "Number of non-null elements varied between iterations" );
+		}
+		return result;
+	}
 
+	public static int countNonNull(Serializable[] array) {
+		int i = 0;
+		for ( Serializable element : array ) {
+			if ( element != null ) {
+				i++;
+			}
+		}
+		return i;
+	}
+
+	public static String[] reverse(String[] source) {
+		final int length = source.length;
+		final String[] destination = new String[length];
+		for ( int i = 0; i < length; i++ ) {
+			final int x = length - i - 1;
+			destination[x] = source[i];
+		}
+		return destination;
+	}
+
+	public static void main(String... args) {
+		int[] batchSizes = ArrayHelper.getBatchSizes( 32 );
+
+		System.out.println( "Forward ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" );
+		for ( int i = 0; i < batchSizes.length; i++ ) {
+			System.out.println( "[" + i + "] -> " + batchSizes[i] );
+		}
+
+		System.out.println( "Backward ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" );
+		for ( int i = batchSizes.length-1; i >= 0; i-- ) {
+			System.out.println( "[" + i + "] -> " + batchSizes[i] );
+		}
+	}
 }
-
-
-
-
-
-

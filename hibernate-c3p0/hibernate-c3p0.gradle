@@ -1,7 +1,23 @@
-apply plugin: 'java'
-
 dependencies {
-    compile( project( ':hibernate-core' ) )
-    compile( [group: 'c3p0', name: 'c3p0', version: '0.9.1'] )
-    testCompile( project(':hibernate-testing') )
+    provided( libraries.validation )
+    compile project( ':hibernate-core' )
+    compile( libraries.c3p0 )
+
+    testCompile( libraries.validator ) {
+        // for test runtime
+        transitive = true
+    }
+    testCompile project( ':hibernate-testing' )
+}
+
+def pomName() {
+    return 'Hibernate/c3p0 Integration'
+}
+
+def pomDescription() {
+    return 'Integration for c3p0 Connection pooling into Hibernate O/RM'
+}
+
+def osgiDescription() {
+	return pomDescription()
 }

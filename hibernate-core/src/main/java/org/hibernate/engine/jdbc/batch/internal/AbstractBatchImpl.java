@@ -28,28 +28,37 @@ import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.engine.jdbc.batch.spi.Batch;
 import org.hibernate.engine.jdbc.batch.spi.BatchKey;
 import org.hibernate.engine.jdbc.batch.spi.BatchObserver;
 import org.hibernate.engine.jdbc.spi.JdbcCoordinator;
+import org.hibernate.engine.jdbc.spi.JdbcServices;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
 import org.hibernate.engine.jdbc.spi.SqlStatementLogger;
+import org.hibernate.engine.transaction.spi.TransactionContext;
+import org.hibernate.internal.CoreMessageLogger;
 
 import org.jboss.logging.Logger;
 
 /**
- * Convenience base class for implementors of the Batch interface.
+ * Convenience base class for implementers of the Batch interface.
  *
  * @author Steve Ebersole
  * @author Lukasz Antoniak (lukasz dot antoniak at gmail dot com)
  */
 public abstract class AbstractBatchImpl implements Batch {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, AbstractBatchImpl.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			AbstractBatchImpl.class.getName()
+	);
 
 	private final BatchKey key;
 	private final JdbcCoordinator jdbcCoordinator;
+
+	private final TransactionContext transactionContext;
+	private final SqlStatementLogger sqlStatementLogger;
+	private final SqlExceptionHelper sqlExceptionHelper;
+
 	private LinkedHashMap<String,PreparedStatement> statements = new LinkedHashMap<String,PreparedStatement>();
 	private LinkedHashSet<BatchObserver> observers = new LinkedHashSet<BatchObserver>();
 
@@ -62,6 +71,11 @@ public abstract class AbstractBatchImpl implements Batch {
 		}
 		this.key = key;
 		this.jdbcCoordinator = jdbcCoordinator;
+
+		this.transactionContext = jdbcCoordinator.getTransactionCoordinator().getTransactionContext();
+		final JdbcServices jdbcServices = transactionContext.getTransactionEnvironment().getJdbcServices();
+		this.sqlStatementLogger = jdbcServices.getSqlStatementLogger();
+		this.sqlExceptionHelper = jdbcServices.getSqlExceptionHelper();
 	}
 
 	/**
@@ -72,17 +86,17 @@ public abstract class AbstractBatchImpl implements Batch {
 	 */
 	protected abstract void doExecuteBatch();
 
+	public TransactionContext transactionContext() {
+		return transactionContext;
+	}
+
 	/**
 	 * Convenience access to the SQLException helper.
 	 *
 	 * @return The underlying SQLException helper.
 	 */
 	protected SqlExceptionHelper sqlExceptionHelper() {
-		return jdbcCoordinator.getTransactionCoordinator()
-				.getTransactionContext()
-				.getTransactionEnvironment()
-				.getJdbcServices()
-				.getSqlExceptionHelper();
+		return sqlExceptionHelper;
 	}
 
 	/**
@@ -91,11 +105,11 @@ public abstract class AbstractBatchImpl implements Batch {
 	 * @return The underlying JDBC services.
 	 */
 	protected SqlStatementLogger sqlStatementLogger() {
-		return jdbcCoordinator.getTransactionCoordinator()
-				.getTransactionContext()
-				.getTransactionEnvironment()
-				.getJdbcServices()
-				.getSqlStatementLogger();
+		return sqlStatementLogger;
+	}
+
+	protected void abortBatch() {
+		jdbcCoordinator.abortBatch();
 	}
 
 	/**
@@ -128,58 +142,46 @@ public abstract class AbstractBatchImpl implements Batch {
 			statements.put( sql, statement );
 		}
 		else {
-            LOG.debugf("Reusing batch statement");
+			LOG.debug( "Reusing batch statement" );
 			sqlStatementLogger().logStatement( sql );
 		}
 		return statement;
 	}
 
 	private PreparedStatement buildBatchStatement(String sql, boolean callable) {
-		sql = jdbcCoordinator.getTransactionCoordinator().getTransactionContext().onPrepareStatement( sql );
-		try {
-			if ( callable ) {
-				return jdbcCoordinator.getLogicalConnection().getShareableConnectionProxy().prepareCall( sql );
-			}
-			else {
-				return jdbcCoordinator.getLogicalConnection().getShareableConnectionProxy().prepareStatement( sql );
-			}
-		}
-		catch ( SQLException sqle ) {
-            LOG.sqlExceptionEscapedProxy(sqle);
-			throw sqlExceptionHelper().convert( sqle, "could not prepare batch statement", sql );
-		}
+		return jdbcCoordinator.getStatementPreparer().prepareStatement( sql, callable );
 	}
 
 	@Override
 	public final void execute() {
 		notifyObserversExplicitExecution();
-		if ( statements.isEmpty() ) {
+		if ( getStatements().isEmpty() ) {
 			return;
 		}
+
 		try {
-			try {
-				doExecuteBatch();
-			}
-			finally {
-				releaseStatements();
-			}
+			doExecuteBatch();
 		}
 		finally {
-			statements.clear();
+			releaseStatements();
 		}
 	}
 
-	private void releaseStatements() {
+	protected void releaseStatements() {
 		for ( PreparedStatement statement : getStatements().values() ) {
-			try {
-				statement.close();
-			}
-			catch ( SQLException e ) {
-                LOG.unableToReleaseBatchStatement();
-                LOG.sqlExceptionEscapedProxy(e);
-			}
+			clearBatch( statement );
+			jdbcCoordinator.release( statement );
 		}
 		getStatements().clear();
+	}
+
+	protected void clearBatch(PreparedStatement statement) {
+		try {
+			statement.clearBatch();
+		}
+		catch ( SQLException e ) {
+			LOG.unableToReleaseBatchStatement();
+		}
 	}
 
 	/**
@@ -202,7 +204,9 @@ public abstract class AbstractBatchImpl implements Batch {
 
 	@Override
 	public void release() {
-        if (getStatements() != null && !getStatements().isEmpty()) LOG.batchContainedStatementsOnRelease();
+		if ( getStatements() != null && !getStatements().isEmpty() ) {
+			LOG.batchContainedStatementsOnRelease();
+		}
 		releaseStatements();
 		observers.clear();
 	}

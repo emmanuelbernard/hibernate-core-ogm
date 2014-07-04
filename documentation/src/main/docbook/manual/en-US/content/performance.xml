@@ -1,36 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  ~ Hibernate, Relational Persistence for Idiomatic Java
-  ~
-  ~ Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
-  ~ indicated by the @author tags or express copyright attribution
-  ~ statements applied by the authors.  All third-party contributions are
-  ~ distributed under license by Red Hat Middleware LLC.
-  ~
-  ~ This copyrighted material is made available to anyone wishing to use, modify,
-  ~ copy, or redistribute it subject to the terms and conditions of the GNU
-  ~ Lesser General Public License, as published by the Free Software Foundation.
-  ~
-  ~ This program is distributed in the hope that it will be useful,
-  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-  ~ or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
-  ~ for more details.
-  ~
-  ~ You should have received a copy of the GNU Lesser General Public License
-  ~ along with this distribution; if not, write to:
-  ~ Free Software Foundation, Inc.
-  ~ 51 Franklin Street, Fifth Floor
-  ~ Boston, MA  02110-1301  USA
-  -->
-<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
-"http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd" [
-<!ENTITY % BOOK_ENTITIES SYSTEM "../HIBERNATE_-_Relational_Persistence_for_Idiomatic_Java.ent">
-%BOOK_ENTITIES;
-]>
-<chapter id="performance">
+
+<chapter xml:id="performance" xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink">
   <title>Improving performance</title>
 
-  <section id="performance-fetching" revision="2">
+  <section xml:id="performance-fetching" revision="2">
     <title>Fetching strategies</title>
 
     <para>Hibernate uses a <emphasis>fetching strategy</emphasis> to retrieve
@@ -39,7 +12,7 @@
     over-ridden by a particular HQL or <literal>Criteria</literal>
     query.</para>
 
-    <para>Hibernate3 defines the following fetching strategies:</para>
+    <para>Hibernate defines the following fetching strategies:</para>
 
     <itemizedlist>
       <listitem>
@@ -128,10 +101,10 @@
     for what data is always available in any detached instance of a particular
     class.</para>
 
-    <section id="performance-fetching-lazy">
+    <section xml:id="performance-fetching-lazy">
       <title>Working with lazy associations</title>
 
-      <para>By default, Hibernate3 uses lazy select fetching for collections
+      <para>By default, Hibernate uses lazy select fetching for collections
       and lazy proxy fetching for single-valued associations. These defaults
       make sense for most associations in the majority of applications.</para>
 
@@ -171,12 +144,12 @@ Integer accessLevel = (Integer) permissions.get("accounts");  // Error!</program
 
       <para>On the other hand, you can use join fetching, which is non-lazy by
       nature, instead of select fetching in a particular transaction. We will
-      now explain how to customize the fetching strategy. In Hibernate3, the
+      now explain how to customize the fetching strategy. In Hibernate, the
       mechanisms for choosing a fetch strategy are identical for single-valued
       associations and collections.</para>
     </section>
 
-    <section id="performance-fetching-custom" revision="4">
+    <section xml:id="performance-fetching-custom" revision="4">
       <title>Tuning fetch strategies</title>
 
       <para>Select fetching (the default) is extremely vulnerable to N+1
@@ -243,7 +216,7 @@ Integer accessLevel = (Integer) permissions.get("accounts");  // Error!</program
       use the second-level cache.</para>
     </section>
 
-    <section id="performance-fetching-proxies" revision="2">
+    <section xml:id="performance-fetching-proxies" revision="2">
       <title>Single-ended association proxies</title>
 
       <para>Lazy fetching for collections is implemented using Hibernate's own
@@ -251,9 +224,9 @@ Integer accessLevel = (Integer) permissions.get("accounts");  // Error!</program
       is needed for lazy behavior in single-ended associations. The target
       entity of the association must be proxied. Hibernate implements lazy
       initializing proxies for persistent objects using runtime bytecode
-      enhancement which is accessed via the CGLIB library.</para>
+      enhancement which is accessed via the bytecode provider.</para>
 
-      <para>At startup, Hibernate3 generates proxies by default for all
+      <para>At startup, Hibernate generates proxies by default for all
       persistent classes and uses them to enable lazy fetching of
       <literal>many-to-one</literal> and <literal>one-to-one</literal>
       associations.</para>
@@ -300,7 +273,7 @@ System.out.println(cat==dc);                            // false</programlisting
       <programlisting role="JAVA">cat.setWeight(11.0);  // hit the db to initialize the proxy
 System.out.println( dc.getWeight() );  // 11.0</programlisting>
 
-      <para>Third, you cannot use a CGLIB proxy for a <literal>final</literal>
+      <para>Third, you cannot use a bytecode provider generated proxy for a <literal>final</literal>
       class or a class with any <literal>final</literal> methods.</para>
 
       <para>Finally, if your persistent object acquires any resources upon
@@ -371,7 +344,7 @@ Cat fritz = (Cat) iter.next();</programlisting>
       initialization.</para>
     </section>
 
-    <section id="performance-fetching-initialization" revision="1">
+    <section xml:id="performance-fetching-initialization" revision="1">
       <title>Initializing collections and proxies</title>
 
       <para>A <literal>LazyInitializationException</literal> will be thrown by
@@ -460,7 +433,7 @@ Cat fritz = (Cat) iter.next();</programlisting>
       <programlisting role="JAVA">s.createFilter( lazyCollection, "").setFirstResult(0).setMaxResults(10).list();</programlisting>
     </section>
 
-    <section id="performance-fetching-batch">
+    <section xml:id="performance-fetching-batch">
       <title>Using batch fetching</title>
 
       <para>Using batch fetching, Hibernate can load several uninitialized
@@ -483,10 +456,57 @@ Cat fritz = (Cat) iter.next();</programlisting>
 
       <programlisting role="XML">&lt;class name="Person" batch-size="10"&gt;...&lt;/class&gt;</programlisting>
 
-      <para>Hibernate will now execute only three queries: the pattern is 10,
-      10, 5.</para>
+      <para>With this <literal>batch-size</literal> specified, Hibernate will now execute queries on demand when need to access the
+          uninitialized proxy, as above, but the difference is that instead of querying the exactly proxy entity that
+          being accessed, it will query more Person's owner at once, so, when accessing other person's owner, it may
+          already been initialized by this batch fetch with only a few ( much less than 25) queries will be executed.
+      </para>
 
-      <para>You can also enable batch fetching of collections. For example, if
+        <para>This behavior is controlled by the <literal>batch-size</literal> and batch fetch style configuration.
+            The batch fetch style configuration ( <literal>hibernate.batch_fetch_style</literal> ) is a new performance
+            improvement since 4.2.0, there are 3 different strategies provided, which is <literal>legacy</literal>,
+            <literal>padded</literal> and <literal>dynamic</literal>.
+        </para>
+
+        <itemizedlist>
+            <listitem>
+                <para><literal>LEGACY</literal></para>
+                <para>The legacy algorithm where we keep a set of pre-built batch sizes based on
+                    <classname>org.hibernate.internal.util.collections.ArrayHelper#getBatchSizes</classname>.
+                    Batches are performed using the next-smaller pre-built batch size from the number of existing batchable identifiers.</para>
+                <para>In the above example, with a batch-size setting of 25 the pre-built batch sizes would be [25, 12, 10, 9, 8, 7, .., 1].</para>
+                <para>And since there are 25 persons' owner to be initialized, then only one query will be executed using these 25 owners' identifier.</para>
+                <para>But in another case, suppose there are only 24 persons, there will be 3 queries (12, 10, 2) will
+                    be executed to go through all person's owner, and the query will looks like :
+                </para>
+                <programlisting role="SQL">select * from owner where id in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      select * from owner where id in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      select * from owner where id in (?, ?)
+                </programlisting>
+            </listitem>
+
+            <listitem>
+                <para><literal>PADDED</literal></para>
+                <para> This is kind of similar with the legacy algorithm, it uses the pre-build batch sizes based on same
+                <classname>org.hibernate.internal.util.collections.ArrayHelper#getBatchSizes</classname>. The difference
+                is that here hibernate will use the next-bigger batch size and pads the extra  identifier placeholders.</para>
+                <para>So, using the same example above, initializing 25 persons the query would be same as above,
+                    only 1 query will be executed to batch query all the owners.
+                </para>
+                <para>However, the attempt to batch load 24 owners would result just a single batch of size 25, the
+                    identifiers to load would be "padded" (aka, repeated) to make up the difference.
+                </para>
+            </listitem>
+
+            <listitem>
+                <para><literal>DYNAMIC</literal></para>
+                <para>Dynamically builds its SQL based on the actual number of available ids.  Does still limit to the batch-size defined on the entity.</para>
+            </listitem>
+
+        </itemizedlist>
+
+
+        <para>You can also enable batch fetching of collections. For example, if
       each <literal>Person</literal> has a lazy collection of
       <literal>Cat</literal>s, and 10 persons are currently loaded in the
       <literal>Session</literal>, iterating through all persons will generate
@@ -501,8 +521,8 @@ Cat fritz = (Cat) iter.next();</programlisting>
     &lt;/set&gt;
 &lt;/class&gt;</programlisting>
 
-      <para>With a <literal>batch-size</literal> of 3, Hibernate will load 3,
-      3, 3, 1 collections in four <literal>SELECT</literal>s. Again, the value
+      <para>For example, with a <literal>batch-size</literal> of 3 and using <literal>legacy</literal> batch style,
+      Hibernate will load 3, 3, 3, 1 collections in four <literal>SELECT</literal>s. Again, the value
       of the attribute depends on the expected number of uninitialized
       collections in a particular <literal>Session</literal>.</para>
 
@@ -512,7 +532,7 @@ Cat fritz = (Cat) iter.next();</programlisting>
       path</emphasis> might be a better option for read-mostly trees.</para>
     </section>
 
-    <section id="performance-fetching-subselect">
+    <section xml:id="performance-fetching-subselect">
       <title>Using subselect fetching</title>
 
       <para>If one lazy collection or single-valued proxy has to be fetched,
@@ -523,7 +543,7 @@ Cat fritz = (Cat) iter.next();</programlisting>
       <!-- TODO: Write more about this -->
     </section>
 
-    <section id="performance-fetching-profiles">
+    <section xml:id="performance-fetching-profiles">
       <title>Fetch profiles</title>
 
       <para>Another way to affect the fetching strategy for loading associated
@@ -640,16 +660,17 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
         <classname>@FetchProfiles</classname> can be used.</para>
       </note>
 
-      <para>Currently only join style fetch profiles are supported, but they
-      plan is to support additional styles. See <ulink
-      url="http://opensource.atlassian.com/projects/hibernate/browse/HHH-3414">HHH-3414</ulink>
-      for details.</para>
+      <para>
+          Currently only join style fetch profiles are supported, but they plan is to support additional styles. See
+          <link xlink:href="http://opensource.atlassian.com/projects/hibernate/browse/HHH-3414">HHH-3414</link>
+          for details.
+      </para>
     </section>
 
-    <section id="performance-fetching-lazyproperties">
+    <section xml:id="performance-fetching-lazyproperties">
       <title>Using lazy property fetching</title>
 
-      <para>Hibernate3 supports the lazy fetching of individual properties.
+      <para>Hibernate supports the lazy fetching of individual properties.
       This optimization technique is also known as <emphasis>fetch
       groups</emphasis>. Please note that this is mostly a marketing feature;
       optimizing row reads is much more important than optimization of column
@@ -679,7 +700,7 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
     &lt;taskdef name="instrument" classname="org.hibernate.tool.instrument.InstrumentTask"&gt;
         &lt;classpath path="${jar.path}"/&gt;
         &lt;classpath path="${classes.dir}"/&gt;
-        &lt;classpath refid="lib.class.path"/&gt;
+        &lt;classpath refxml:id="lib.class.path"/&gt;
     &lt;/taskdef&gt;
 
     &lt;instrument verbose="true"&gt;
@@ -699,7 +720,7 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
     </section>
   </section>
 
-  <section id="performance-cache" revision="1">
+  <section xml:id="performance-cache" revision="1">
     <title>The Second Level Cache</title>
 
     <para>A Hibernate <literal>Session</literal> is a transaction-level cache
@@ -720,7 +741,7 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
     versions prior to Hibernate 3.2 use EhCache as the default cache
     provider.</para>
 
-    <table frame="topbot" id="cacheproviders" revision="1">
+    <table frame="topbot" xml:id="cacheproviders" revision="1">
       <title>Cache Providers</title>
 
       <tgroup align="left" cols="5" colsep="1" rowsep="1">
@@ -773,53 +794,6 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
             <entry>yes</entry>
           </row>
 
-<!--          <row>
-            <entry>OSCache</entry>
-
-            <entry><literal>org.hibernate.cache.OSCacheProvider</literal></entry>
-
-            <entry>memory, disk</entry>
-
-            <entry></entry>
-
-            <entry>yes</entry>
-          </row>
-
-          <row>
-            <entry>SwarmCache</entry>
-
-            <entry><literal>org.hibernate.cache.SwarmCacheProvider</literal></entry>
-
-            <entry>clustered (ip multicast)</entry>
-
-            <entry>yes (clustered invalidation)</entry>
-
-            <entry></entry>
-          </row>
-
-          <row>
-            <entry>JBoss Cache 1.x</entry>
-
-            <entry><literal>org.hibernate.cache.TreeCacheProvider</literal></entry>
-
-            <entry>clustered (ip multicast), transactional</entry>
-
-            <entry>yes (replication)</entry>
-
-            <entry>yes (clock sync req.)</entry>
-          </row>
-
-          <row>
-            <entry>JBoss Cache 2</entry>
-
-            <entry><literal>org.hibernate.cache.jbc.JBossCacheRegionFactory</literal></entry>
-
-            <entry>clustered (ip multicast), transactional</entry>
-
-            <entry>yes (replication or invalidation)</entry>
-
-            <entry>yes (clock sync req.)</entry>
-          </row> -->
           <row>
             <entry>Infinispan</entry>
 
@@ -835,7 +809,7 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
       </tgroup>
     </table>
 
-    <section id="performance-cache-mapping" revision="2">
+    <section xml:id="performance-cache-mapping" revision="2">
       <title>Cache mappings</title>
 
       <para>As we have done in previous chapters we are looking at the two
@@ -903,7 +877,7 @@ Customer customer = (Customer) session.get( Customer.class, customerId );
         that.</para>
       </note>
 
-      <example id="example-cache-concurrency-with-cache-annotation">
+      <example xml:id="example-cache-concurrency-with-cache-annotation">
         <title>Definition of cache concurrency strategy via
         <classname>@Cache</classname></title>
 
@@ -934,17 +908,17 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       its attributes. It allows you to define the caching strategy and region
       of a given second level cache.</para>
 
-      <example id="example-cache-annotation-with-attributes">
+      <example xml:id="example-cache-annotation-with-attributes">
         <title><classname>@Cache</classname> annotation with
         attributes</title>
 
         <programlistingco>
           <areaspec>
-            <area coords="2" id="cache-hm1" />
+            <area coords="2" xml:id="cache-hm1" />
 
-            <area coords="3" id="cache-hm2" />
+            <area coords="3" xml:id="cache-hm2" />
 
-            <area coords="4" id="cache-hm3" />
+            <area coords="4" xml:id="cache-hm3" />
           </areaspec>
 
           <programlisting>@Cache(
@@ -980,17 +954,17 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       linkend="example-hibernate-cache-mapping-element" /> the parallels to
       anotations is obvious.</para>
 
-      <example id="example-hibernate-cache-mapping-element">
+      <example xml:id="example-hibernate-cache-mapping-element">
         <title>The Hibernate <literal>&lt;cache&gt;</literal> mapping
         element</title>
 
         <programlistingco>
           <areaspec>
-            <area coords="2" id="cache1" />
+            <area coords="2" xml:id="cache1" />
 
-            <area coords="3" id="cache2" />
+            <area coords="3" xml:id="cache2" />
 
-            <area coords="4" id="cache3" />
+            <area coords="4" xml:id="cache3" />
           </areaspec>
 
           <programlisting>&lt;cache
@@ -1034,7 +1008,7 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       strategies</para>
     </section>
 
-    <section id="performance-cache-readonly">
+    <section xml:id="performance-cache-readonly">
       <title>Strategy: read only</title>
 
       <para>If your application needs to read, but not modify, instances of a
@@ -1043,7 +1017,7 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       in a cluster.</para>
     </section>
 
-    <section id="performance-cache-readwrite">
+    <section xml:id="performance-cache-readwrite">
       <title>Strategy: read/write</title>
 
       <para>If the application needs to update data, a
@@ -1061,7 +1035,7 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       <emphasis>do not</emphasis> support locking.</para>
     </section>
 
-    <section id="performance-cache-nonstrict">
+    <section xml:id="performance-cache-nonstrict">
       <title>Strategy: nonstrict read/write</title>
 
       <para>If the application only occasionally needs to update data (i.e. if
@@ -1075,7 +1049,7 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       <literal>Session.disconnect()</literal> is called.</para>
     </section>
 
-    <section id="performance-cache-transactional">
+    <section xml:id="performance-cache-transactional">
       <title>Strategy: transactional</title>
 
       <para>The <literal>transactional</literal> cache strategy provides
@@ -1084,7 +1058,7 @@ public SortedSet&lt;Ticket&gt; getTickets() {
       <literal>hibernate.transaction.manager_lookup_class</literal>.</para>
     </section>
 
-    <section id="performance-cache-compat-matrix">
+    <section xml:id="performance-cache-compat-matrix">
       <title>Cache-provider/concurrency-strategy compatibility</title>
 
       <important>
@@ -1148,53 +1122,6 @@ public SortedSet&lt;Ticket&gt; getTickets() {
               <entry>yes</entry>
             </row>
 
- <!--           <row>
-              <entry>OSCache</entry>
-
-              <entry>yes</entry>
-
-              <entry>yes</entry>
-
-              <entry>yes</entry>
-
-              <entry></entry>
-            </row>
-
-            <row>
-              <entry>SwarmCache</entry>
-
-              <entry>yes</entry>
-
-              <entry>yes</entry>
-
-              <entry></entry>
-
-              <entry></entry>
-            </row>
-
-            <row>
-              <entry>JBoss Cache 1.x</entry>
-
-              <entry>yes</entry>
-
-              <entry></entry>
-
-              <entry></entry>
-
-              <entry>yes</entry>
-            </row>
-
-            <row>
-              <entry>JBoss Cache 2</entry>
-
-              <entry>yes</entry>
-
-              <entry></entry>
-
-              <entry></entry>
-
-              <entry>yes</entry>
-            </row> -->
             <row>
               <entry>Infinispan</entry>
 
@@ -1212,7 +1139,7 @@ public SortedSet&lt;Ticket&gt; getTickets() {
     </section>
   </section>
 
-  <section id="performance-sessioncache" revision="2">
+  <section xml:id="performance-sessioncache" revision="2">
     <title>Managing the caches</title>
 
     <para>Whenever you pass an object to <literal>save()</literal>,
@@ -1316,13 +1243,13 @@ hibernate.cache.use_structured_entries true</programlisting>
     </example>
   </section>
 
-  <section id="performance-querycache" revision="1">
+  <section xml:id="performance-querycache" revision="1">
     <title>The Query Cache</title>
 
     <para>Query result sets can also be cached. This is only useful for
     queries that are run frequently with the same parameters.</para>
 
-    <section id="performance-querycache-enable">
+    <section xml:id="performance-querycache-enable">
       <title>Enabling query caching</title>
 
       <para>Caching of query results introduces some overhead in terms of your
@@ -1377,7 +1304,7 @@ hibernate.cache.use_structured_entries true</programlisting>
       </note>
     </section>
 
-    <section id="performance-querycache-regions">
+    <section xml:id="performance-querycache-regions">
       <title>Query cache regions</title>
 
       <para>If you require fine-grained control over query cache expiration
@@ -1402,15 +1329,125 @@ hibernate.cache.use_structured_entries true</programlisting>
       <literal>org.hibernate.SessionFactory.evictQueries()</literal>.</para>
     </section>
   </section>
+  <section xml:id="bytecode-enhancement" revision="1">
+      <title>Bytecode Enhancement</title>
+      <para>Hibernate internally needs an entry ( <classname>org.hibernate.engine.spi.EntityEntry</classname> ) to tell
+          the current state of an object with respect to its persistent state, when the object is associated with a
+          <classname>Session</classname>. However, maintaining this association was kind of heavy operation due to lots of
+          other rules must by applied, since 4.2.0, there is a new improvement designed for this purpose, which will reduce
+          session-related memory and CPU overloads.
+      </para>
+      <para>Basically, the idea is, instead of having a customized ( kind of heavy and which was usually identified as hotspot )
+          map to do the look up, we change it to </para>
+      <programlisting role="JAVA"><![CDATA[EntityEntry entry = (ManagedEntity)entity.$$_hibernate_getEntityEntry();
+]]></programlisting>
 
-  <section id="performance-collections">
+      <para>There are three ways to get benefits from this new improvement:</para>
+
+      <section xml:id="entityentry-lookup-impl-interface">
+         <title>Implementing <classname>org.hibernate.engine.spi.ManagedEntity</classname> interface</title>
+         <para>An entity can choose to implement this interface by itself, then it is the entity's responsibility to maintain
+         the bi-association that essentially provides access to information about an instance's association to a
+         Session/EntityManager.
+         More info about <classname>org.hibernate.engine.spi.ManagedEntity</classname> please find from its javadoc.
+         </para>
+      </section>
+
+      <section xml:id="entityentry-lookup-impl-interface-by-wrapper">
+          <title>Runtime instrument</title>
+          <para>Sometimes, you probably don't want to implement an intrusive interface, maybe due to portable concern,
+          which is fine and Hibernate will take care of this internally with a wrapper class which implements that interface,
+          and also an internal cache that maps this entity instance and the wrapper together.</para>
+
+          <para>Obviously, this is the easiest way to choose, since it doesn't require any change of the project source code,
+          but it also cost more memory and CUP usage, comparing to the first one.</para>
+      </section>
+
+      <section xml:id="entityentry-lookup-buildtime-instrument">
+          <title>Build-time instrument</title>
+          <para>Besides the above two approaches, Hibernate also provides a 
+          third choice which is build time bytecode enhancement. Applications 
+          can use enhanced entity classes, annotated with either <classname>javax.persistence.Entity</classname> 
+          or composite <classname>javax.persistence.Embeddable</classname>.
+
+          <section xml:id="entityentry-lookup-buildtime-instrument-ant">
+             <title>Ant Task</title>
+             <para>To use the task <classname>org.hibernate.tool.enhance.EnhancementTask</classname> 
+             define a taskdef and call the task, as shown below. This code uses a
+             pre-defined classpathref and a property referencing the compiled classes
+             directory.
+             <programlisting role="XML">&lt;taskdef name="enhance" classname="org.hibernate.tool.enhance.EnhancementTask" classpathref="enhancement.classpath" /&gt;
+&lt;enhance&gt;
+    &lt;fileset dir="${ejb-classes}/org/hibernate/auction/model" includes="**/*.class"/&gt;
+&lt;/enhance&gt;</programlisting>
+             </para>
+             <note>
+              <para>The EnhancementTask is intended as a total replacement for <link linkend="performance-fetching-lazyproperties">InstrumentTask</link>.
+              Further, it is also incompatible with <link linkend="performance-fetching-lazyproperties">InstrumentTask</link>, so any existing instrumented classes
+              will need to be built from source again.</para>
+             </note>
+          </section>
+          <section xml:id="entityentry-lookup-buildtime-instrument-maven">
+          <title>Maven Plugin</title>
+          <para>The Maven Plugin uses a Mojo descriptor to attach the Mojo to the compile 
+          phase for your project.
+          <programlisting role="XML">&lt;dependencies&gt;
+   &lt;dependency&gt;
+      &lt;groupId&gt;org.hibernate.javax.persistence&lt;/groupId&gt;
+      &lt;artifactId&gt;hibernate-jpa-[SPEC-VERSION]-api&lt;/artifactId&gt;
+      &lt;version&gt;[IMPL-VERSION]&lt;/version&gt;
+      &lt;scope&gt;compile&lt;/scope&gt;
+   &lt;/dependency&gt;
+&lt;/dependencies&gt;
+&lt;plugins&gt;
+&lt;plugin&gt;
+  &lt;groupId&gt;org.hibernate.orm.tooling&lt;/groupId&gt;
+  &lt;artifactId&gt;hibernate-enhance-maven-plugin&lt;/artifactId&gt;
+  &lt;version&gt;VERSION&lt;/version&gt;
+  &lt;executions&gt;
+    &lt;execution&gt;
+      &lt;goals&gt;
+        &lt;goal&gt;enhance&lt;/goal&gt;
+      &lt;/goals&gt;
+    &lt;/execution&gt;
+  &lt;/executions&gt;
+&lt;/plugin&gt;</programlisting>
+          </para>
+          </section>
+          <section xml:id="entityentry-lookup-buildtime-instrument-gradle">
+          <title>Gradle Plugin</title>
+          <para>The Gradle plugin adds an enhance task using the output directory of 
+          the compile task as the source location of entity class files to enhance.
+          <programlisting>apply plugin: 'java'
+apply plugin: 'maven'
+apply plugin: 'enhance'
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.hibernate:hibernate-gradle-plugin:VERSION'
+    }
+}
+dependencies {
+   compile group: 'org.hibernate.javax.persistence', name: 'hibernate-jpa-[SPEC-VERSION]-api', version: '[IMPL-VERSION]'
+   compile group: 'org.hibernate', name: 'hibernate-gradle-plugin', version: 'VERSION'
+}
+          </programlisting>
+          </para>
+          </section>
+          </para>
+      </section>
+
+  </section>
+  <section xml:id="performance-collections">
     <title>Understanding Collection performance</title>
 
     <para>In the previous sections we have covered collections and their
     applications. In this section we explore some more issues in relation to
     collections at runtime.</para>
 
-    <section id="performance-collections-taxonomy">
+    <section xml:id="performance-collections-taxonomy">
       <title>Taxonomy</title>
 
       <para>Hibernate defines three basic kinds of collections:</para>
@@ -1484,7 +1521,7 @@ hibernate.cache.use_structured_entries true</programlisting>
       individual rows of the collection.</para>
     </section>
 
-    <section id="performance-collections-mostefficientupdate">
+    <section xml:id="performance-collections-mostefficientupdate">
       <title>Lists, maps, idbags and sets are the most efficient collections
       to update</title>
 
@@ -1513,7 +1550,7 @@ hibernate.cache.use_structured_entries true</programlisting>
       of collection update performance simply do not apply.</para>
     </section>
 
-    <section id="performance-collections-mostefficentinverse">
+    <section xml:id="performance-collections-mostefficentinverse">
       <title>Bags and lists are the most efficient inverse collections</title>
 
       <para>There is a particular case, however, in which bags, and also
@@ -1534,7 +1571,7 @@ p.getChildren().add(c);  //no need to fetch the collection!
 sess.flush();</programlisting>
     </section>
 
-    <section id="performance-collections-oneshotdelete">
+    <section xml:id="performance-collections-oneshotdelete">
       <title>One shot delete</title>
 
       <para>Deleting collection elements one by one can sometimes be extremely
@@ -1580,7 +1617,7 @@ sess.flush();</programlisting>
     </section>
   </section>
 
-  <section id="performance-monitoring" revision="1">
+  <section xml:id="performance-monitoring" revision="1">
     <title>Monitoring performance</title>
 
     <para>Optimization is not much use without monitoring and access to
@@ -1588,7 +1625,7 @@ sess.flush();</programlisting>
     internal operations. Statistics in Hibernate are available per
     <literal>SessionFactory</literal>.</para>
 
-    <section id="performance-monitoring-sf" revision="2">
+    <section xml:id="performance-monitoring-sf" revision="2">
       <title>Monitoring a SessionFactory</title>
 
       <para>You can access <literal>SessionFactory</literal> metrics in two
@@ -1644,7 +1681,7 @@ server.registerMBean(stats, on); // Register the MBean on the server</programlis
       (info level) using the <literal>logSummary()</literal> method.</para>
     </section>
 
-    <section id="performance-monitoring-metrics" revision="1">
+    <section xml:id="performance-monitoring-metrics" revision="1">
       <title>Metrics</title>
 
       <para>Hibernate provides a number of metrics, from basic information to

@@ -22,7 +22,9 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.dialect.function;
+
 import java.util.List;
+
 import org.hibernate.QueryException;
 import org.hibernate.engine.spi.Mapping;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -68,7 +70,6 @@ public interface SQLFunction {
 	 * @throws org.hibernate.QueryException Indicates an issue resolving the return type.
 	 */
 	public Type getReturnType(Type firstArgumentType, Mapping mapping) throws QueryException;
-
 
 	/**
 	 * Render the function call as SQL fragment.

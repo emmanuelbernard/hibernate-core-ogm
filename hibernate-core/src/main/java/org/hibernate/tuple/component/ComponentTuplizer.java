@@ -25,6 +25,7 @@
 package org.hibernate.tuple.component;
 import java.io.Serializable;
 import java.lang.reflect.Method;
+
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.tuple.Tuplizer;
 
@@ -32,9 +33,12 @@ import org.hibernate.tuple.Tuplizer;
  * Defines further responsibilities regarding tuplization based on
  * a mapped components.
  * </p>
- * ComponentTuplizer implementations should have the following constructor signature:
- *      (org.hibernate.mapping.Component)
- * 
+ * ComponentTuplizer implementations should have the following constructor with the following arguments:<ol>
+ *     <li>{@link org.hibernate.service.ServiceRegistry}</li>
+ *     <li>{@link org.hibernate.metamodel.spi.binding.EmbeddedAttributeBinding}</li>
+ *     <li>boolean (whether the composite is a mapped identifier)</li>
+ * </ol>
+ *
  * @author Gavin King
  * @author Steve Ebersole
  */

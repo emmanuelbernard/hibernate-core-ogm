@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2008, 2012, 2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,20 +20,24 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.id.enhanced;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
+import org.jboss.logging.Logger;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.id.IdentifierGeneratorHelper;
 import org.hibernate.id.IntegralDataTypeHolder;
-
-import org.jboss.logging.Logger;
+import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.metamodel.spi.relational.Database;
+import org.hibernate.metamodel.spi.relational.ObjectName;
+import org.hibernate.metamodel.spi.relational.Schema;
+import org.hibernate.metamodel.spi.relational.Sequence;
 
 /**
  * Describes a sequence.
@@ -41,9 +45,12 @@ import org.jboss.logging.Logger;
  * @author Steve Ebersole
  */
 public class SequenceStructure implements DatabaseStructure {
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			SequenceStructure.class.getName()
+	);
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, SequenceStructure.class.getName());
-
+	private ObjectName qualifiedSequenceName;
 	private final String sequenceName;
 	private final int initialValue;
 	private final int incrementSize;
@@ -54,66 +61,60 @@ public class SequenceStructure implements DatabaseStructure {
 
 	public SequenceStructure(
 			Dialect dialect,
-			String sequenceName,
+			ObjectName qualifiedSequenceName,
 			int initialValue,
 			int incrementSize,
 			Class numberType) {
-		this.sequenceName = sequenceName;
+		this.qualifiedSequenceName = qualifiedSequenceName;
+		this.sequenceName = qualifiedSequenceName.toText( dialect );
 		this.initialValue = initialValue;
 		this.incrementSize = incrementSize;
 		this.numberType = numberType;
 		sql = dialect.getSequenceNextValString( sequenceName );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String getName() {
 		return sequenceName;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public int getIncrementSize() {
 		return incrementSize;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public int getTimesAccessed() {
 		return accessCounter;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public int getInitialValue() {
 		return initialValue;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public AccessCallback buildCallback(final SessionImplementor session) {
 		return new AccessCallback() {
+			@Override
 			public IntegralDataTypeHolder getNextValue() {
 				accessCounter++;
 				try {
-					PreparedStatement st = session.getTransactionCoordinator().getJdbcCoordinator().getStatementPreparer().prepareStatement( sql );
+					final PreparedStatement st = session.getTransactionCoordinator().getJdbcCoordinator().getStatementPreparer().prepareStatement( sql );
 					try {
-						ResultSet rs = st.executeQuery();
+						final ResultSet rs = session.getTransactionCoordinator().getJdbcCoordinator().getResultSetReturn().extract( st );
 						try {
 							rs.next();
-							IntegralDataTypeHolder value = IdentifierGeneratorHelper.getIntegralDataTypeHolder( numberType );
+							final IntegralDataTypeHolder value = IdentifierGeneratorHelper.getIntegralDataTypeHolder( numberType );
 							value.initialize( rs, 1 );
-                            LOG.debugf("Sequence value obtained: %s", value.makeValue());
+							if ( LOG.isDebugEnabled() ) {
+								LOG.debugf( "Sequence value obtained: %s", value.makeValue() );
+							}
 							return value;
 						}
 						finally {
 							try {
-								rs.close();
+								session.getTransactionCoordinator().getJdbcCoordinator().release( rs, st );
 							}
 							catch( Throwable ignore ) {
 								// intentionally empty
@@ -121,7 +122,7 @@ public class SequenceStructure implements DatabaseStructure {
 						}
 					}
 					finally {
-						st.close();
+						session.getTransactionCoordinator().getJdbcCoordinator().release( st );
 					}
 
 				}
@@ -133,28 +134,45 @@ public class SequenceStructure implements DatabaseStructure {
 					);
 				}
 			}
+
+			@Override
+			public String getTenantIdentifier() {
+				return session.getTenantIdentifier();
+			}
 		};
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public void prepare(Optimizer optimizer) {
 		applyIncrementSizeToSourceValues = optimizer.applyIncrementSizeToSourceValues();
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
+	public void registerExportables(Database database) {
+		final int sourceIncrementSize = applyIncrementSizeToSourceValues ? incrementSize : 1;
+		final Schema schema = database.getSchemaFor( qualifiedSequenceName );
+		Sequence sequence = schema.locateSequence( qualifiedSequenceName.getName() );
+		if ( sequence != null ) {
+			sequence.validate( initialValue, sourceIncrementSize );
+		}
+		else {
+			schema.createSequence( qualifiedSequenceName.getName(), initialValue, sourceIncrementSize );
+		}
+	}
+
+	@Override
 	public String[] sqlCreateStrings(Dialect dialect) throws HibernateException {
-		int sourceIncrementSize = applyIncrementSizeToSourceValues ? incrementSize : 1;
+		final int sourceIncrementSize = applyIncrementSizeToSourceValues ? incrementSize : 1;
 		return dialect.getCreateSequenceStrings( sequenceName, initialValue, sourceIncrementSize );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String[] sqlDropStrings(Dialect dialect) throws HibernateException {
 		return dialect.getDropSequenceStrings( sequenceName );
+	}
+
+	@Override
+	public boolean isPhysicalSequence() {
+		return true;
 	}
 }

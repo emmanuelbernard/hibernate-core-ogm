@@ -23,6 +23,7 @@
  */
 package org.hibernate.dialect.function;
 import java.util.List;
+
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.type.Type;
 
@@ -34,18 +35,22 @@ import org.hibernate.type.Type;
  * @author Steve Ebersole
  */
 public class StandardJDBCEscapeFunction extends StandardSQLFunction {
-	public StandardJDBCEscapeFunction(String name) {
-		super( name );
-	}
-
+	/**
+	 * Constructs a StandardJDBCEscapeFunction
+	 *
+	 * @param name The function name
+	 * @param typeValue The function return type
+	 */
 	public StandardJDBCEscapeFunction(String name, Type typeValue) {
 		super( name, typeValue );
 	}
 
+	@Override
 	public String render(Type argumentType, List args, SessionFactoryImplementor factory) {
 		return "{fn " + super.render( argumentType, args, factory ) + "}";
 	}
 
+	@Override
 	public String toString() {
 		return "{fn " + getName() + "...}";
 	}

@@ -27,17 +27,19 @@ package org.hibernate.criterion;
 import org.hibernate.Criteria;
 import org.hibernate.HibernateException;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.dialect.PostgreSQLDialect;
+import org.hibernate.dialect.PostgreSQL81Dialect;
 import org.hibernate.engine.spi.TypedValue;
 
 /**
- * A case-insensitive "like"
+ * A case-insensitive "like".
  *
  * @author Gavin King
+ *
+ * @deprecated Prefer {@link LikeExpression} which now has case-insensitivity capability.
  */
 @Deprecated
+@SuppressWarnings({"deprecation", "UnusedDeclaration"})
 public class IlikeExpression implements Criterion {
-
 	private final String propertyName;
 	private final Object value;
 
@@ -50,25 +52,23 @@ public class IlikeExpression implements Criterion {
 		this( propertyName, matchMode.toMatchString( value ) );
 	}
 
-	public String toSqlString(Criteria criteria, CriteriaQuery criteriaQuery)
-			throws HibernateException {
-		Dialect dialect = criteriaQuery.getFactory().getDialect();
-		String[] columns = criteriaQuery.findColumns( propertyName, criteria );
+	@Override
+	public String toSqlString(Criteria criteria, CriteriaQuery criteriaQuery) {
+		final Dialect dialect = criteriaQuery.getFactory().getDialect();
+		final String[] columns = criteriaQuery.findColumns( propertyName, criteria );
 		if ( columns.length != 1 ) {
 			throw new HibernateException( "ilike may only be used with single-column properties" );
 		}
-		if ( dialect instanceof PostgreSQLDialect ) {
+		if ( dialect instanceof PostgreSQL81Dialect) {
 			return columns[0] + " ilike ?";
 		}
 		else {
 			return dialect.getLowercaseFunction() + '(' + columns[0] + ") like ?";
 		}
-
-		//TODO: get SQL rendering out of this package!
 	}
 
-	public TypedValue[] getTypedValues(Criteria criteria, CriteriaQuery criteriaQuery)
-			throws HibernateException {
+	@Override
+	public TypedValue[] getTypedValues(Criteria criteria, CriteriaQuery criteriaQuery) {
 		return new TypedValue[] {
 				criteriaQuery.getTypedValue(
 						criteria,
@@ -78,6 +78,7 @@ public class IlikeExpression implements Criterion {
 		};
 	}
 
+	@Override
 	public String toString() {
 		return propertyName + " ilike " + value;
 	}

@@ -23,35 +23,40 @@
  */
 package org.hibernate.hql.internal.ast.tree;
 
-import antlr.SemanticException;
-import antlr.collections.AST;
+import java.util.Arrays;
 
 import org.hibernate.HibernateException;
 import org.hibernate.TypeMismatchException;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
+import org.hibernate.hql.internal.ast.util.ColumnHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.param.ParameterSpecification;
 import org.hibernate.type.OneToOneType;
 import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.Type;
 
+import antlr.SemanticException;
+import antlr.collections.AST;
+
 /**
  * Contract for nodes representing binary operators.
  *
  * @author Steve Ebersole
  */
-public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryOperatorNode {
+public class BinaryLogicOperatorNode extends AbstractSelectExpression implements BinaryOperatorNode {
 	/**
 	 * Performs the operator node initialization by seeking out any parameter
 	 * nodes and setting their expected type, if possible.
 	 */
+	@Override
 	public void initialize() throws SemanticException {
-		Node lhs = getLeftHandOperand();
+		final Node lhs = getLeftHandOperand();
 		if ( lhs == null ) {
 			throw new SemanticException( "left-hand operand of a binary operator was null" );
 		}
-		Node rhs = getRightHandOperand();
+
+		final Node rhs = getRightHandOperand();
 		if ( rhs == null ) {
 			throw new SemanticException( "right-hand operand of a binary operator was null" );
 		}
@@ -67,10 +72,10 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 		}
 
 		if ( ExpectedTypeAwareNode.class.isAssignableFrom( lhs.getClass() ) ) {
-			( ( ExpectedTypeAwareNode ) lhs ).setExpectedType( rhsType );
+			( (ExpectedTypeAwareNode) lhs ).setExpectedType( rhsType );
 		}
 		if ( ExpectedTypeAwareNode.class.isAssignableFrom( rhs.getClass() ) ) {
-			( ( ExpectedTypeAwareNode ) rhs ).setExpectedType( lhsType );
+			( (ExpectedTypeAwareNode) rhs ).setExpectedType( lhsType );
 		}
 
 		mutateRowValueConstructorSyntaxesIfNecessary( lhsType, rhsType );
@@ -86,7 +91,7 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 			if ( lhsColumnSpan != getColumnSpan( rhsType, sessionFactory ) ) {
 				throw new TypeMismatchException(
 						"left and right hand sides of a binary logic operator were incompatibile [" +
-						lhsType.getName() + " : "+ rhsType.getName() + "]"
+								lhsType.getName() + " : " + rhsType.getName() + "]"
 				);
 			}
 			if ( lhsColumnSpan > 1 ) {
@@ -102,7 +107,7 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 	private int getColumnSpan(Type type, SessionFactoryImplementor sfi) {
 		int columnSpan = type.getColumnSpan( sfi );
 		if ( columnSpan == 0 && type instanceof OneToOneType ) {
-			columnSpan = ( ( OneToOneType ) type ).getIdentifierOrUniqueKeyType( sfi ).getColumnSpan( sfi );
+			columnSpan = ( (OneToOneType) type ).getIdentifierOrUniqueKeyType( sfi ).getColumnSpan( sfi );
 		}
 		return columnSpan;
 	}
@@ -130,26 +135,33 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 		ParameterSpecification lhsEmbeddedCompositeParameterSpecification =
 				getLeftHandOperand() == null || ( !ParameterNode.class.isInstance( getLeftHandOperand() ) )
 						? null
-						: ( ( ParameterNode ) getLeftHandOperand() ).getHqlParameterSpecification();
+						: ( (ParameterNode) getLeftHandOperand() ).getHqlParameterSpecification();
 
 		ParameterSpecification rhsEmbeddedCompositeParameterSpecification =
 				getRightHandOperand() == null || ( !ParameterNode.class.isInstance( getRightHandOperand() ) )
 						? null
-						: ( ( ParameterNode ) getRightHandOperand() ).getHqlParameterSpecification();
+						: ( (ParameterNode) getRightHandOperand() ).getHqlParameterSpecification();
 
-		translate( valueElements, comparisonType, comparisonText,
-                lhsElementTexts, rhsElementTexts,
-                lhsEmbeddedCompositeParameterSpecification,
-                rhsEmbeddedCompositeParameterSpecification, this );
+		translate(
+				valueElements,
+				comparisonType,
+				comparisonText,
+				lhsElementTexts,
+				rhsElementTexts,
+				lhsEmbeddedCompositeParameterSpecification,
+				rhsEmbeddedCompositeParameterSpecification,
+				this
+		);
 	}
 
-    protected void translate( int valueElements, int comparisonType,
-            String comparisonText, String[] lhsElementTexts,
-            String[] rhsElementTexts,
-            ParameterSpecification lhsEmbeddedCompositeParameterSpecification,
-            ParameterSpecification rhsEmbeddedCompositeParameterSpecification,
-            AST container ) {
-        for ( int i = valueElements - 1; i > 0; i-- ) {
+	protected void translate(
+			int valueElements, int comparisonType,
+			String comparisonText, String[] lhsElementTexts,
+			String[] rhsElementTexts,
+			ParameterSpecification lhsEmbeddedCompositeParameterSpecification,
+			ParameterSpecification rhsEmbeddedCompositeParameterSpecification,
+			AST container) {
+		for ( int i = valueElements - 1; i > 0; i-- ) {
 			if ( i == 1 ) {
 				AST op1 = getASTFactory().create( comparisonType, comparisonText );
 				AST lhs1 = getASTFactory().create( HqlSqlTokenTypes.SQL_TOKEN, lhsElementTexts[0] );
@@ -166,7 +178,7 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 
 				// "pass along" our initial embedded parameter node(s) to the first generated
 				// sql fragment so that it can be handled later for parameter binding...
-				SqlFragment fragment = ( SqlFragment ) lhs1;
+				SqlFragment fragment = (SqlFragment) lhs1;
 				if ( lhsEmbeddedCompositeParameterSpecification != null ) {
 					fragment.addEmbeddedParameter( lhsEmbeddedCompositeParameterSpecification );
 				}
@@ -186,22 +198,20 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 				container = newContainer;
 			}
 		}
-    }
+	}
 
 	protected static String[] extractMutationTexts(Node operand, int count) {
 		if ( operand instanceof ParameterNode ) {
 			String[] rtn = new String[count];
-			for ( int i = 0; i < count; i++ ) {
-				rtn[i] = "?";
-			}
+			Arrays.fill( rtn, "?" );
 			return rtn;
 		}
 		else if ( operand.getType() == HqlSqlTokenTypes.VECTOR_EXPR ) {
-			String[] rtn = new String[ operand.getNumberOfChildren() ];
+			String[] rtn = new String[operand.getNumberOfChildren()];
 			int x = 0;
 			AST node = operand.getFirstChild();
 			while ( node != null ) {
-				rtn[ x++ ] = node.getText();
+				rtn[x++] = node.getText();
 				node = node.getNextSibling();
 			}
 			return rtn;
@@ -228,16 +238,16 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 	protected Type extractDataType(Node operand) {
 		Type type = null;
 		if ( operand instanceof SqlNode ) {
-			type = ( ( SqlNode ) operand ).getDataType();
+			type = ( (SqlNode) operand ).getDataType();
 		}
 		if ( type == null && operand instanceof ExpectedTypeAwareNode ) {
-			type = ( ( ExpectedTypeAwareNode ) operand ).getExpectedType();
+			type = ( (ExpectedTypeAwareNode) operand ).getExpectedType();
 		}
 		return type;
 	}
 
 	@Override
-    public Type getDataType() {
+	public Type getDataType() {
 		// logic operators by definition resolve to booleans
 		return StandardBasicTypes.BOOLEAN;
 	}
@@ -248,7 +258,7 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 	 * @return The left-hand operand
 	 */
 	public Node getLeftHandOperand() {
-		return ( Node ) getFirstChild();
+		return (Node) getFirstChild();
 	}
 
 	/**
@@ -257,6 +267,10 @@ public class BinaryLogicOperatorNode extends HqlSqlWalkerNode implements BinaryO
 	 * @return The right-hand operand
 	 */
 	public Node getRightHandOperand() {
-		return ( Node ) getFirstChild().getNextSibling();
+		return (Node) getFirstChild().getNextSibling();
+	}
+
+	public void setScalarColumnText(int i) throws SemanticException {
+		ColumnHelper.generateSingleScalarColumn( this, i );
 	}
 }

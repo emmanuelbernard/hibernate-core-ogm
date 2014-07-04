@@ -22,7 +22,9 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.cfg.beanvalidation;
+
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,16 +34,17 @@ import javax.validation.TraversableResolver;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import javax.validation.ValidatorFactory;
+
 import org.hibernate.EntityMode;
-import org.hibernate.event.spi.PreDeleteEvent;
-import org.hibernate.event.spi.PreInsertEventListener;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.event.spi.PreDeleteEvent;
 import org.hibernate.event.spi.PreDeleteEventListener;
 import org.hibernate.event.spi.PreInsertEvent;
+import org.hibernate.event.spi.PreInsertEventListener;
 import org.hibernate.event.spi.PreUpdateEvent;
 import org.hibernate.event.spi.PreUpdateEventListener;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.persister.entity.EntityPersister;
 
 import org.jboss.logging.Logger;
@@ -77,15 +80,14 @@ public class BeanValidationEventListener
 	 * @param factory The {@code ValidatorFactory} to use to create {@code Validator} instance(s)
 	 * @param properties Configued properties
 	 */
-	public BeanValidationEventListener(ValidatorFactory factory, Properties properties) {
+	public BeanValidationEventListener(ValidatorFactory factory, Map properties) {
 		init( factory, properties );
 	}
 
-	public void initialize(Configuration cfg) {
+	public void initialize(Map settings) {
 		if ( !initialized ) {
 			ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
-			Properties props = cfg.getProperties();
-			init( factory, props );
+			init( factory, settings );
 		}
 	}
 
@@ -113,7 +115,7 @@ public class BeanValidationEventListener
 		return false;
 	}
 
-	private void init(ValidatorFactory factory, Properties properties) {
+	private void init(ValidatorFactory factory, Map properties) {
 		this.factory = factory;
 		groupsPerOperation = new GroupsPerOperation( properties );
 		initialized = true;
@@ -138,7 +140,7 @@ public class BeanValidationEventListener
 						new HashSet<ConstraintViolation<?>>( constraintViolations.size() );
 				Set<String> classNames = new HashSet<String>();
 				for ( ConstraintViolation<?> violation : constraintViolations ) {
-                    LOG.trace(violation);
+					LOG.trace( violation );
 					propagatedViolations.add( violation );
 					classNames.add( violation.getLeafBean().getClass().getName() );
 				}

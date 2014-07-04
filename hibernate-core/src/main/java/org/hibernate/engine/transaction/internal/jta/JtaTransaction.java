@@ -27,16 +27,16 @@ import javax.transaction.Status;
 import javax.transaction.SystemException;
 import javax.transaction.TransactionManager;
 import javax.transaction.UserTransaction;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.TransactionException;
 import org.hibernate.engine.transaction.spi.AbstractTransactionImpl;
 import org.hibernate.engine.transaction.spi.IsolationDelegate;
 import org.hibernate.engine.transaction.spi.JoinStatus;
 import org.hibernate.engine.transaction.spi.LocalStatus;
 import org.hibernate.engine.transaction.spi.TransactionCoordinator;
-
-import org.jboss.logging.Logger;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
 
 /**
  * Implements a transaction strategy based on transaction management through a JTA {@link UserTransaction}.
@@ -46,8 +46,7 @@ import org.jboss.logging.Logger;
  * @author Les Hazlewood
  */
 public class JtaTransaction extends AbstractTransactionImpl {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, JtaTransaction.class.getName());
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( JtaTransaction.class );
 
 	private UserTransaction userTransaction;
 
@@ -65,24 +64,28 @@ public class JtaTransaction extends AbstractTransactionImpl {
 
 	@Override
 	protected void doBegin() {
-        LOG.debug("begin");
+		LOG.debug( "begin" );
 
-		userTransaction = jtaPlatform().retrieveUserTransaction();
-		if ( userTransaction == null ) {
-			throw new TransactionException( "Unable to locate JTA UserTransaction" );
-		}
+		userTransaction = locateUserTransaction();
 
 		try {
 			if ( userTransaction.getStatus() == Status.STATUS_NO_TRANSACTION ) {
 				userTransaction.begin();
 				isInitiator = true;
-                LOG.debug("Began a new JTA transaction");
+				LOG.debug( "Began a new JTA transaction" );
 			}
 		}
 		catch ( Exception e ) {
 			throw new TransactionException( "JTA transaction begin failed", e );
 		}
+	}
 
+	private UserTransaction locateUserTransaction() {
+		final UserTransaction userTransaction = jtaPlatform().retrieveUserTransaction();
+		if ( userTransaction == null ) {
+			throw new TransactionException( "Unable to locate JTA UserTransaction" );
+		}
+		return userTransaction;
 	}
 
 	@Override
@@ -109,7 +112,7 @@ public class JtaTransaction extends AbstractTransactionImpl {
 				}
 			}
 			else {
-                LOG.debug("Unable to apply requested transaction timeout; no UserTransaction.  Will try later");
+				LOG.debug( "Unable to apply requested transaction timeout; no UserTransaction.  Will try later" );
 			}
 		}
 	}
@@ -147,14 +150,11 @@ public class JtaTransaction extends AbstractTransactionImpl {
 		try {
 			if ( isInitiator ) {
 				userTransaction.commit();
-                LOG.debug("Committed JTA UserTransaction");
+				LOG.debug( "Committed JTA UserTransaction" );
 			}
 		}
 		catch ( Exception e ) {
 			throw new TransactionException( "JTA commit failed: ", e );
-		}
-		finally {
-			isInitiator = false;
 		}
 	}
 
@@ -166,16 +166,21 @@ public class JtaTransaction extends AbstractTransactionImpl {
 	@Override
 	protected void afterAfterCompletion() {
 		// this method is a noop if there is a Synchronization!
-		if ( isDriver ) {
-			if ( !isInitiator ) {
-                LOG.setManagerLookupClass();
+		try {
+			if ( isDriver ) {
+				if ( !isInitiator ) {
+					LOG.setManagerLookupClass();
+				}
+				try {
+					transactionCoordinator().afterTransaction( this, userTransaction.getStatus() );
+				}
+				catch (SystemException e) {
+					throw new TransactionException( "Unable to determine UserTransaction status", e );
+				}
 			}
-			try {
-				transactionCoordinator().afterTransaction( this, userTransaction.getStatus() );
-			}
-			catch (SystemException e) {
-				throw new TransactionException( "Unable to determine UserTransaction status", e );
-			}
+		}
+		finally {
+			isInitiator = false;
 		}
 	}
 
@@ -191,7 +196,7 @@ public class JtaTransaction extends AbstractTransactionImpl {
 				// failed commits automatically rollback the transaction per JTA spec
 				if ( getLocalStatus() != LocalStatus.FAILED_COMMIT  ) {
 					userTransaction.rollback();
-                    LOG.debug("Rolled back JTA UserTransaction");
+					LOG.debug( "Rolled back JTA UserTransaction" );
 				}
 			}
 			else {
@@ -205,13 +210,16 @@ public class JtaTransaction extends AbstractTransactionImpl {
 
 	@Override
 	public void markRollbackOnly() {
-        LOG.trace("Marking transaction for rollback only");
+		LOG.trace( "Marking transaction for rollback only" );
 		try {
+			if ( userTransaction == null ) {
+				userTransaction = locateUserTransaction();
+			}
 			userTransaction.setRollbackOnly();
-            LOG.debug("set JTA UserTransaction to rollback only");
+			LOG.debug( "set JTA UserTransaction to rollback only" );
 		}
 		catch (SystemException e) {
-            LOG.debug("Unable to mark transaction for rollback only", e);
+			LOG.debug( "Unable to mark transaction for rollback only", e );
 		}
 	}
 

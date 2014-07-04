@@ -29,11 +29,14 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.StringTokenizer;
+
 import org.hibernate.EntityMode;
 import org.hibernate.MappingException;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.OptimisticLockStyle;
 import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
 import org.hibernate.engine.spi.Mapping;
+import org.hibernate.internal.FilterConfiguration;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.EmptyIterator;
@@ -56,7 +59,10 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	private String entityName;
 
 	private String className;
+	private transient Class mappedClass;
+	
 	private String proxyInterfaceName;
+	private transient Class proxyInterface;
 	
 	private String nodeName;
 	private String jpaEntityName;
@@ -75,7 +81,7 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	private java.util.Map metaAttributes;
 	private ArrayList joins = new ArrayList();
 	private final ArrayList subclassJoins = new ArrayList();
-	private final java.util.Map filters = new HashMap();
+	private final java.util.List filters = new ArrayList();
 	protected final java.util.Set synchronizedTables = new HashSet();
 	private String loaderName;
 	private Boolean isAbstract;
@@ -98,9 +104,9 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 
 	private java.util.Map tuplizerImpls;
 
-	protected int optimisticLockMode;
 	private MappedSuperclass superMappedSuperclass;
 	private Component declaredIdentifierMapper;
+	private OptimisticLockStyle optimisticLockStyle;
 
 	public String getClassName() {
 		return className;
@@ -108,6 +114,7 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 
 	public void setClassName(String className) {
 		this.className = className==null ? null : className.intern();
+		this.mappedClass = null;
 	}
 
 	public String getProxyInterfaceName() {
@@ -116,12 +123,16 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 
 	public void setProxyInterfaceName(String proxyInterfaceName) {
 		this.proxyInterfaceName = proxyInterfaceName;
+		this.proxyInterface = null;
 	}
 
 	public Class getMappedClass() throws MappingException {
 		if (className==null) return null;
 		try {
-			return ReflectHelper.classForName(className);
+			if(mappedClass == null) {
+				mappedClass = ReflectHelper.classForName(className);
+			}
+			return mappedClass;
 		}
 		catch (ClassNotFoundException cnfe) {
 			throw new MappingException("entity class not found: " + className, cnfe);
@@ -131,7 +142,10 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	public Class getProxyInterface() {
 		if (proxyInterfaceName==null) return null;
 		try {
-			return ReflectHelper.classForName( proxyInterfaceName );
+			if(proxyInterface == null) {
+				proxyInterface = ReflectHelper.classForName( proxyInterfaceName );
+			}
+			return proxyInterface;
 		}
 		catch (ClassNotFoundException cnfe) {
 			throw new MappingException("proxy class not found: " + proxyInterfaceName, cnfe);
@@ -225,7 +239,7 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	}
 
 	public void addProperty(Property p) {
-		properties.add(p);
+		properties.add( p );
 		declaredProperties.add(p);
 		p.setPersistentClass(this);
 	}
@@ -247,6 +261,7 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	public abstract boolean isInherited();
 	public abstract boolean isPolymorphic();
 	public abstract boolean isVersioned();
+	public abstract String getNaturalIdCacheRegionName();
 	public abstract String getCacheConcurrencyStrategy();
 	public abstract PersistentClass getSuperclass();
 	public abstract boolean isExplicitPolymorphism();
@@ -431,10 +446,13 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	}
 
 	private Property getProperty(String propertyName, Iterator iterator) throws MappingException {
-		while ( iterator.hasNext() ) {
-			Property prop = (Property) iterator.next();
-			if ( prop.getName().equals( StringHelper.root(propertyName) ) ) {
-				return prop;
+		if(iterator.hasNext()) {
+			String root = StringHelper.root(propertyName);
+			while ( iterator.hasNext() ) {
+				Property prop = (Property) iterator.next();
+				if ( prop.getName().equals( root ) ) {
+					return prop;
+				}
 			}
 		}
 		throw new MappingException( "property [" + propertyName + "] not found on entity [" + getEntityName() + "]" );
@@ -453,10 +471,22 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 		}
 	}
 
-	abstract public int getOptimisticLockMode();
+	@Deprecated
+	public int getOptimisticLockMode() {
+		return getOptimisticLockStyle().getOldCode();
+	}
 
+	@Deprecated
 	public void setOptimisticLockMode(int optimisticLockMode) {
-		this.optimisticLockMode = optimisticLockMode;
+		setOptimisticLockStyle( OptimisticLockStyle.interpretOldCode( optimisticLockMode ) );
+	}
+
+	public OptimisticLockStyle getOptimisticLockStyle() {
+		return optimisticLockStyle;
+	}
+
+	public void setOptimisticLockStyle(OptimisticLockStyle optimisticLockStyle) {
+		this.optimisticLockStyle = optimisticLockStyle;
 	}
 
 	public void validate(Mapping mapping) throws MappingException {
@@ -633,11 +663,11 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 		return deleteCheckStyle;
 	}
 
-	public void addFilter(String name, String condition) {
-		filters.put(name, condition);
+	public void addFilter(String name, String condition, boolean autoAliasInjection, java.util.Map<String,String> aliasTableMap, java.util.Map<String,String> aliasEntityMap) {
+		filters.add(new FilterConfiguration(name, condition, autoAliasInjection, aliasTableMap, aliasEntityMap,  this));
 	}
 
-	public java.util.Map getFilterMap() {
+	public java.util.List getFilters() {
 		return filters;
 	}
 
@@ -765,14 +795,14 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	}
 
 	public void prepareTemporaryTables(Mapping mapping, Dialect dialect) {
+		temporaryIdTableName = dialect.generateTemporaryTableName( getTable().getName() );
 		if ( dialect.supportsTemporaryTables() ) {
-			temporaryIdTableName = dialect.generateTemporaryTableName( getTable().getName() );
 			Table table = new Table();
 			table.setName( temporaryIdTableName );
 			Iterator itr = getTable().getPrimaryKey().getColumnIterator();
 			while( itr.hasNext() ) {
 				Column column = (Column) itr.next();
-				table.addColumn( (Column) column.clone()  );
+				table.addColumn( column.clone()  );
 			}
 			temporaryIdTableDDL = table.sqlTemporaryTableCreateString( dialect, mapping );
 		}
@@ -849,7 +879,7 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	}
 
 	public void addMappedsuperclassProperty(Property p) {
-		properties.add(p);
+		properties.add( p );
 		p.setPersistentClass(this);
 	}
 

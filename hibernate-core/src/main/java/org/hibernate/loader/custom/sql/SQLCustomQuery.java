@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2008, 2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,9 +20,10 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.loader.custom.sql;
+
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -30,10 +31,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.query.spi.sql.NativeSQLQueryReturn;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.loader.custom.CustomQuery;
 import org.hibernate.persister.collection.SQLLoadableCollection;
 import org.hibernate.persister.entity.SQLLoadable;
@@ -49,9 +51,9 @@ import org.jboss.logging.Logger;
  * @author Max Andersen
  * @author Steve Ebersole
  */
-public class SQLCustomQuery implements CustomQuery {
+public class SQLCustomQuery implements CustomQuery, Serializable {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, SQLCustomQuery.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, SQLCustomQuery.class.getName() );
 
 	private final String sql;
 	private final Set querySpaces = new HashSet();
@@ -81,7 +83,7 @@ public class SQLCustomQuery implements CustomQuery {
 			final Collection additionalQuerySpaces,
 			final SessionFactoryImplementor factory) throws HibernateException {
 
-        LOG.trace("Starting processing of sql query [" + sqlQuery + "]");
+		LOG.tracev( "Starting processing of sql query [{0}]", sqlQuery );
 		SQLQueryReturnProcessor processor = new SQLQueryReturnProcessor(queryReturns, factory);
 		SQLQueryReturnProcessor.ResultAliasContext aliasContext = processor.process();
 

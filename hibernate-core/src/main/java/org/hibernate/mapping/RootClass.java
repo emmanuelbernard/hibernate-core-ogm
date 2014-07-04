@@ -22,16 +22,18 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.mapping;
+
 import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
+import org.hibernate.MappingException;
 import org.hibernate.engine.spi.Mapping;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.MappingException;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.collections.SingletonIterator;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -45,23 +47,24 @@ public class RootClass extends PersistentClass implements TableOwner {
 	public static final String DEFAULT_IDENTIFIER_COLUMN_NAME = "id";
 	public static final String DEFAULT_DISCRIMINATOR_COLUMN_NAME = "class";
 
-	private Property identifierProperty; //may be final
-	private KeyValue identifier; //may be final
-	private Property version; //may be final
+	private Property identifierProperty;
+	private KeyValue identifier;
+	private Property version;
 	private boolean polymorphic;
 	private String cacheConcurrencyStrategy;
 	private String cacheRegionName;
+	private String naturalIdCacheRegionName;
 	private boolean lazyPropertiesCacheable = true;
-	private Value discriminator; //may be final
+	private Value discriminator;
 	private boolean mutable = true;
-	private boolean embeddedIdentifier = false; // may be final
+	private boolean embeddedIdentifier;
 	private boolean explicitPolymorphism;
 	private Class entityPersisterClass;
-	private boolean forceDiscriminator = false;
+	private boolean forceDiscriminator;
 	private String where;
 	private Table table;
 	private boolean discriminatorInsertable = true;
-	private int nextSubclassId = 0;
+	private int nextSubclassId;
 	private Property declaredIdentifierProperty;
 	private Property declaredVersion;
 
@@ -280,12 +283,13 @@ public class RootClass extends PersistentClass implements TableOwner {
 		if ( getIdentifier() instanceof Component ) {
 			Component id = (Component) getIdentifier();
 			if ( !id.isDynamic() ) {
-				Class idClass = id.getComponentClass();
-                if (idClass != null && !ReflectHelper.overridesEquals(idClass)) LOG.compositeIdClassDoesNotOverrideEquals(id.getComponentClass().getName());
-                if (!ReflectHelper.overridesHashCode(idClass)) LOG.compositeIdClassDoesNotOverrideHashCode(id.getComponentClass().getName());
+				final Class idClass = id.getComponentClass();
+				final String idComponendClassName = idClass.getName();
+                if (idClass != null && !ReflectHelper.overridesEquals(idClass)) LOG.compositeIdClassDoesNotOverrideEquals( idComponendClassName );
+                if (!ReflectHelper.overridesHashCode(idClass)) LOG.compositeIdClassDoesNotOverrideHashCode( idComponendClassName );
                 if (!Serializable.class.isAssignableFrom(idClass)) throw new MappingException(
                                                                                               "Composite-id class must implement Serializable: "
-                                                                                              + id.getComponentClass().getName());
+                                                                                              + idComponendClassName);
 			}
 		}
 	}
@@ -305,7 +309,15 @@ public class RootClass extends PersistentClass implements TableOwner {
 	public void setCacheRegionName(String cacheRegionName) {
 		this.cacheRegionName = cacheRegionName;
 	}
-
+	
+	@Override
+	public String getNaturalIdCacheRegionName() {
+		return naturalIdCacheRegionName;
+	}
+	public void setNaturalIdCacheRegionName(String naturalIdCacheRegionName) {
+		this.naturalIdCacheRegionName = naturalIdCacheRegionName;
+	}
+	
 	@Override
     public boolean isLazyPropertiesCacheable() {
 		return lazyPropertiesCacheable;
@@ -339,10 +351,4 @@ public class RootClass extends PersistentClass implements TableOwner {
     public Object accept(PersistentClassVisitor mv) {
 		return mv.accept(this);
 	}
-
-	@Override
-    public int getOptimisticLockMode() {
-		return optimisticLockMode;
-	}
-
 }

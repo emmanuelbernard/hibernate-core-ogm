@@ -37,6 +37,9 @@ import org.hibernate.dialect.function.DerbyConcatFunction;
  * @author Scott Marlow
  */
 public class DerbyTenFiveDialect extends DerbyDialect {
+	/**
+	 * Constructs a DerbyTenFiveDialect
+	 */
 	public DerbyTenFiveDialect() {
 		super();
 		registerFunction( "concat", new DerbyConcatFunction() );
@@ -46,15 +49,5 @@ public class DerbyTenFiveDialect extends DerbyDialect {
 	@Override
 	public boolean supportsSequences() {
 		return false;
-	}
-
-	@Override
-	public boolean supportsLimit() {
-		return true;
-	}
-
-	@Override
-	public boolean supportsLimitOffset() {
-		return true;
 	}
 }

@@ -29,14 +29,12 @@ import org.infinispan.Cache;
 import org.infinispan.manager.CacheContainer;
 import org.infinispan.test.TestingUtil;
 import org.jboss.logging.Logger;
+import org.junit.Test;
 
 import org.hibernate.SessionFactory;
 import org.hibernate.cache.infinispan.InfinispanRegionFactory;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
-
-import org.junit.Test;
-
 import org.hibernate.test.cache.infinispan.functional.classloader.Account;
 import org.hibernate.test.cache.infinispan.functional.classloader.ClassLoaderTestDAO;
 
@@ -92,8 +90,6 @@ public class SessionRefreshTestCase extends DualNodeTestCase {
 		SessionFactory localFactory = sessionFactory();
 
 		// Second session factory doesn't; just needs a transaction manager
-		// However, start at least the cache to avoid issues with replication and cache not being there
-		ClusterAwareRegionFactory.getCacheManager( DualNodeTestCase.REMOTE ).getCache( Account.class.getName() );
 		TransactionManager remoteTM = DualNodeJtaTransactionManagerImpl.getInstance( DualNodeTestCase.REMOTE );
 		SessionFactory remoteFactory = secondNodeEnvironment().getSessionFactory();
 

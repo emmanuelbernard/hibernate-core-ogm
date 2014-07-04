@@ -71,10 +71,16 @@ public interface EventSource extends SessionImplementor, Session {
 	/**
 	 * Cascade refresh an entity instance
 	 */
-	public void refresh(Object object, Map refreshedAlready) throws HibernateException;
+	public void refresh(String entityName, Object object, Map refreshedAlready) throws HibernateException;
 	/**
 	 * Cascade delete an entity instance
 	 */
 	public void delete(String entityName, Object child, boolean isCascadeDeleteEnabled, Set transientEntities);
+	/**
+	 * A specialized type of deletion for orphan removal that must occur prior to queued inserts and updates.
+	 */
+	// TODO: The removeOrphan concept is a temporary "hack" for HHH-6484.  This should be removed once action/task
+	// ordering is improved.
+	public void removeOrphanBeforeUpdates(String entityName, Object child);
 
 }

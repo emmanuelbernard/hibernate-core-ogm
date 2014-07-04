@@ -35,10 +35,14 @@ import org.hibernate.engine.query.spi.sql.NativeSQLQueryReturn;
  * @author Emmanuel Bernard
  */
 public class ResultSetMappingDefinition implements Serializable {
-
 	private final String name;
 	private final List<NativeSQLQueryReturn> queryReturns = new ArrayList<NativeSQLQueryReturn>();
 
+	/**
+	 * Constructs a ResultSetMappingDefinition
+	 *
+	 * @param name The mapping name
+	 */
 	public ResultSetMappingDefinition(String name) {
 		this.name = name;
 	}
@@ -47,6 +51,11 @@ public class ResultSetMappingDefinition implements Serializable {
 		return name;
 	}
 
+	/**
+	 * Adds a return.
+	 *
+	 * @param queryReturn The return
+	 */
 	public void addQueryReturn(NativeSQLQueryReturn queryReturn) {
 		queryReturns.add( queryReturn );
 	}
@@ -65,4 +74,25 @@ public class ResultSetMappingDefinition implements Serializable {
 		return queryReturns.toArray( new NativeSQLQueryReturn[queryReturns.size()] );
 	}
 
+	public String traceLoggableFormat() {
+		final StringBuilder buffer = new StringBuilder()
+				.append( "ResultSetMappingDefinition[\n" )
+				.append( "    name=" ).append( name ).append( "\n" )
+				.append( "    returns=[\n" );
+
+		for ( NativeSQLQueryReturn rtn : queryReturns ) {
+			rtn.traceLog(
+					new NativeSQLQueryReturn.TraceLogger() {
+						@Override
+						public void writeLine(String traceLine) {
+							buffer.append( "        " ).append( traceLine ).append( "\n" );
+						}
+					}
+			);
+		}
+
+		buffer.append( "    ]\n" ).append( "]" );
+
+		return buffer.toString();
+	}
 }

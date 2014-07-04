@@ -23,22 +23,32 @@
  */
 package org.hibernate.testing.junit4;
 
-import org.junit.runners.model.FrameworkMethod;
-import org.junit.runners.model.TestClass;
-
-import org.hibernate.testing.FailureExpected;
-
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import org.hibernate.cfg.Configuration;
+import org.hibernate.cfg.Environment;
+
+import org.hibernate.testing.FailureExpected;
+import org.hibernate.testing.SkipForDialect;
+import org.hibernate.testing.SkipForDialects;
+import org.junit.runners.model.FrameworkMethod;
+import org.junit.runners.model.TestClass;
 
 /**
  * Centralized utility functionality
  *
  * @author Steve Ebersole
  */
-public class Helper {
+public final class Helper {
 	public static final String VALIDATE_FAILURE_EXPECTED = "hibernate.test.validatefailureexpected";
 
+	private Helper() {
+	}
 
 	/**
 	 * Standard string content checking.
@@ -81,6 +91,38 @@ public class Helper {
 		return annotation;
 	}
 
+	/**
+	 * @param singularAnnotationClass Singular annotation class (e.g. {@link SkipForDialect}).
+	 * @param pluralAnnotationClass Plural annotation class (e.g. {@link SkipForDialects}). Assuming that the only
+	 * 								declared method is an array of singular annotations.
+	 * @param frameworkMethod Test method.
+	 * @param testClass Test class.
+	 * @param <S> Singular annotation type.
+	 * @param <P> Plural annotation type.
+	 * @return Collection of all singular annotations or an empty list.
+	 */
+	@SuppressWarnings("unchecked")
+	public static <S extends Annotation, P extends Annotation> List<S> collectAnnotations(Class<S> singularAnnotationClass,
+																						  Class<P> pluralAnnotationClass,
+																						  FrameworkMethod frameworkMethod,
+																						  TestClass testClass) {
+		final List<S> collection = new LinkedList<S>();
+		final S singularAnn = Helper.locateAnnotation( singularAnnotationClass, frameworkMethod, testClass );
+		if ( singularAnn != null ) {
+			collection.add( singularAnn );
+		}
+		final P pluralAnn = Helper.locateAnnotation( pluralAnnotationClass, frameworkMethod, testClass );
+		if ( pluralAnn != null ) {
+			try {
+				collection.addAll( Arrays.asList( (S[]) pluralAnnotationClass.getDeclaredMethods()[0].invoke(pluralAnn) ) );
+			}
+			catch ( Exception e ) {
+				throw new RuntimeException( e );
+			}
+		}
+		return collection;
+	}
+
 	public static String extractMessage(FailureExpected failureExpected) {
 		StringBuilder buffer = new StringBuilder();
 		buffer.append( '(' ).append( failureExpected.jiraKey() ).append( ')' );
@@ -98,4 +140,23 @@ public class Helper {
 				.toString();
 	}
 
+	/**
+	 * @see #createH2Schema(String, Map)
+	 */
+	public static void createH2Schema(String schemaName, Configuration cfg) {
+		createH2Schema( schemaName, cfg.getProperties() );
+	}
+
+	/**
+	 * Create additional H2 schema.
+	 *
+	 * @param schemaName New schema name.
+	 * @param settings Current settings.
+	 */
+	public static void createH2Schema(String schemaName, Map settings) {
+		settings.put(
+				Environment.URL,
+				settings.get( Environment.URL ) + ";INIT=CREATE SCHEMA IF NOT EXISTS " + schemaName
+		);
+	}
 }

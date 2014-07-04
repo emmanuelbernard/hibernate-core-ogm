@@ -24,7 +24,6 @@
 package org.hibernate.testing.cache;
 
 import org.hibernate.cache.spi.CollectionRegion;
-import org.hibernate.cache.spi.GeneralDataRegion;
 import org.hibernate.cache.spi.access.CollectionRegionAccessStrategy;
 
 /**
@@ -32,7 +31,9 @@ import org.hibernate.cache.spi.access.CollectionRegionAccessStrategy;
  */
 class BaseCollectionRegionAccessStrategy extends BaseRegionAccessStrategy implements CollectionRegionAccessStrategy {
 	private final CollectionRegionImpl region;
-
+	BaseCollectionRegionAccessStrategy(CollectionRegionImpl region) {
+		this.region = region;
+	}
 	@Override
 	protected BaseGeneralDataRegion getInternalRegion() {
 		return region;
@@ -46,9 +47,5 @@ class BaseCollectionRegionAccessStrategy extends BaseRegionAccessStrategy implem
 	@Override
 	public CollectionRegion getRegion() {
 		return region;
-	}
-
-	BaseCollectionRegionAccessStrategy(CollectionRegionImpl region) {
-		this.region = region;
 	}
 }

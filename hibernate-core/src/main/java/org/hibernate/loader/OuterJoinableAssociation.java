@@ -22,8 +22,10 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.loader;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+
 import org.hibernate.MappingException;
 import org.hibernate.engine.internal.JoinHelper;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -33,7 +35,6 @@ import org.hibernate.sql.JoinFragment;
 import org.hibernate.sql.JoinType;
 import org.hibernate.type.AssociationType;
 import org.hibernate.type.EntityType;
-import org.hibernate.internal.util.collections.CollectionHelper;
 
 /**
  * Part of the Hibernate SQL rendering internals.  This class represents
@@ -68,7 +69,7 @@ public final class OuterJoinableAssociation {
 				null,
 				false,
 				factory,
-				CollectionHelper.EMPTY_MAP
+				Collections.EMPTY_MAP
 		);
 	}
 

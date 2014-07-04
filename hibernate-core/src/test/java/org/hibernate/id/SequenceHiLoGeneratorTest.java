@@ -30,47 +30,49 @@ import java.sql.SQLException;
 import java.util.Properties;
 
 import org.hibernate.Session;
-import org.hibernate.TestingDatabaseInfo;
-import org.hibernate.cfg.Configuration;
-import org.hibernate.cfg.Environment;
+import org.hibernate.boot.registry.BootstrapServiceRegistry;
+import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
+import org.hibernate.boot.registry.StandardServiceRegistry;
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
+import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.cfg.EJB3NamingStrategy;
 import org.hibernate.cfg.NamingStrategy;
 import org.hibernate.cfg.ObjectNameNormalizer;
-import org.hibernate.dialect.Dialect;
-import org.hibernate.dialect.H2Dialect;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.SessionImpl;
 import org.hibernate.jdbc.Work;
-import org.hibernate.mapping.SimpleAuxiliaryDatabaseObject;
-import org.hibernate.service.ServiceRegistry;
+import org.hibernate.metamodel.MetadataSources;
+import org.hibernate.metamodel.spi.MetadataImplementor;
+import org.hibernate.metamodel.spi.relational.Database;
 import org.hibernate.type.StandardBasicTypes;
 
+import org.hibernate.testing.junit4.BaseUnitTestCase;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
-import org.hibernate.testing.ServiceRegistryBuilder;
-import org.hibernate.testing.junit4.BaseUnitTestCase;
 
 import static org.junit.Assert.assertEquals;
 
 /**
  * I went back to 3.3 source and grabbed the code/logic as it existed back then and crafted this
  * unit test so that we can make sure the value keep being generated in the expected manner
- *
+ * 
  * @author Steve Ebersole
  */
 @SuppressWarnings({ "deprecation" })
 public class SequenceHiLoGeneratorTest extends BaseUnitTestCase {
 	private static final String TEST_SEQUENCE = "test_sequence";
 
-	private Configuration cfg;
-	private ServiceRegistry serviceRegistry;
+	private StandardServiceRegistry ssr;
 	private SessionFactoryImplementor sessionFactory;
 	private SequenceHiLoGenerator generator;
 
 	@Before
 	public void setUp() throws Exception {
 		Properties properties = new Properties();
+		properties.setProperty( AvailableSettings.HBM2DDL_AUTO, "create-drop" );
 		properties.setProperty( SequenceGenerator.SEQUENCE, TEST_SEQUENCE );
 		properties.setProperty( SequenceHiLoGenerator.MAX_LO, "3" );
 		properties.put(
@@ -83,26 +85,30 @@ public class SequenceHiLoGeneratorTest extends BaseUnitTestCase {
 
 					@Override
 					protected NamingStrategy getNamingStrategy() {
-						return cfg.getNamingStrategy();
+						return EJB3NamingStrategy.INSTANCE;
 					}
 				}
 		);
 
-		Dialect dialect = new H2Dialect();
+		BootstrapServiceRegistry bsr = new BootstrapServiceRegistryBuilder().build();
+		StandardServiceRegistryBuilder ssrBuilder = new StandardServiceRegistryBuilder( bsr );
+		ssrBuilder.applySettings( properties );
+
+		ssr = ssrBuilder.build();
+
+		MetadataImplementor metadata = (MetadataImplementor) new MetadataSources( bsr ).buildMetadata( ssr );
+		Database database = metadata.getDatabase();
 
 		generator = new SequenceHiLoGenerator();
-		generator.configure( StandardBasicTypes.LONG, properties, dialect );
-
-		cfg = TestingDatabaseInfo.buildBaseConfiguration()
-				.setProperty( Environment.HBM2DDL_AUTO, "create-drop" );
-		cfg.addAuxiliaryDatabaseObject(
-				new SimpleAuxiliaryDatabaseObject(
-						generator.sqlCreateStrings( dialect )[0],
-						generator.sqlDropStrings( dialect )[0]
-				)
+		generator.configure(
+				StandardBasicTypes.LONG,
+				properties,
+				database.getJdbcEnvironment().getDialect(),
+				ssr.getService( ClassLoaderService.class )
 		);
-		serviceRegistry = ServiceRegistryBuilder.buildServiceRegistry( cfg.getProperties() );
-		sessionFactory = (SessionFactoryImplementor) cfg.buildSessionFactory( serviceRegistry );
+		generator.registerExportables( database );
+
+		sessionFactory = (SessionFactoryImplementor) metadata.buildSessionFactory();
 	}
 
 	@After
@@ -110,8 +116,8 @@ public class SequenceHiLoGeneratorTest extends BaseUnitTestCase {
 		if ( sessionFactory != null ) {
 			sessionFactory.close();
 		}
-		if ( serviceRegistry != null ) {
-			ServiceRegistryBuilder.destroy( serviceRegistry );
+		if ( ssr != null ) {
+			StandardServiceRegistryBuilder.destroy( ssr );
 		}
 	}
 
@@ -126,7 +132,7 @@ public class SequenceHiLoGeneratorTest extends BaseUnitTestCase {
 
 		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		// historically the hilo generators skipped the initial block of values;
-		// 		so the first generated id value is maxlo + 1, here be 4
+		// so the first generated id value is maxlo + 1, here be 4
 		Long generatedValue = (Long) generator.generate( session, null );
 		assertEquals( 4L, generatedValue.longValue() );
 		// which should also perform the first read on the sequence which should set it to its "start with" value (1)
@@ -145,8 +151,8 @@ public class SequenceHiLoGeneratorTest extends BaseUnitTestCase {
 		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		generatedValue = (Long) generator.generate( session, null );
 		assertEquals( 7L, generatedValue.longValue() );
-		// unlike the newer strategies, the db value will not get update here.  It gets updated on the next invocation
-		// 	after a clock over
+		// unlike the newer strategies, the db value will not get update here. It gets updated on the next invocation
+		// after a clock over
 		assertEquals( 1L, extractSequenceValue( session ) );
 
 		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -159,18 +165,19 @@ public class SequenceHiLoGeneratorTest extends BaseUnitTestCase {
 		session.close();
 	}
 
-	private long extractSequenceValue(Session session) {
+	private long extractSequenceValue(final SessionImplementor session) {
 		class WorkImpl implements Work {
 			private long value;
+
 			public void execute(Connection connection) throws SQLException {
-				PreparedStatement query = connection.prepareStatement( "select currval('" + TEST_SEQUENCE + "');" );
-				ResultSet resultSet = query.executeQuery();
+				PreparedStatement query = session.getTransactionCoordinator().getJdbcCoordinator().getStatementPreparer().prepareStatement( "select currval('" + TEST_SEQUENCE + "');" );
+				ResultSet resultSet = session.getTransactionCoordinator().getJdbcCoordinator().getResultSetReturn().extract( query );
 				resultSet.next();
 				value = resultSet.getLong( 1 );
 			}
 		}
 		WorkImpl work = new WorkImpl();
-		session.doWork( work );
+		( (Session) session ).doWork( work );
 		return work.value;
 	}
 }

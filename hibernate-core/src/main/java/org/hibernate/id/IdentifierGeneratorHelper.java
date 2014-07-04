@@ -23,16 +23,19 @@
  *
  */
 package org.hibernate.id;
+
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
 import org.hibernate.HibernateException;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.type.CustomType;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -54,7 +57,7 @@ public final class IdentifierGeneratorHelper {
 	 */
 	public static final Serializable SHORT_CIRCUIT_INDICATOR = new Serializable() {
 		@Override
-        public String toString() {
+		public String toString() {
 			return "SHORT_CIRCUIT_INDICATOR";
 		}
 	};
@@ -65,7 +68,7 @@ public final class IdentifierGeneratorHelper {
 	 */
 	public static final Serializable POST_INSERT_INDICATOR = new Serializable() {
 		@Override
-        public String toString() {
+		public String toString() {
 			return "POST_INSERT_INDICATOR";
 		}
 	};
@@ -75,17 +78,20 @@ public final class IdentifierGeneratorHelper {
 	 * Get the generated identifier when using identity columns
 	 *
 	 * @param rs The result set from which to extract the the generated identity.
+	 * @param identifier The name of the identifier column
 	 * @param type The expected type mapping for the identity value.
+	 *
 	 * @return The generated identity value
+	 *
 	 * @throws SQLException Can be thrown while accessing the result set
 	 * @throws HibernateException Indicates a problem reading back a generated identity value.
 	 */
-	public static Serializable getGeneratedIdentity(ResultSet rs, Type type) throws SQLException, HibernateException {
+	public static Serializable getGeneratedIdentity(ResultSet rs, String identifier, Type type) throws SQLException, HibernateException {
 		if ( !rs.next() ) {
 			throw new HibernateException( "The database returned no natively generated identity value" );
 		}
-		final Serializable id = get( rs, type );
-        LOG.debugf("Natively generated identity: %s", id);
+		final Serializable id = get( rs, identifier, type );
+		LOG.debugf( "Natively generated identity: %s", id );
 		return id;
 	}
 
@@ -94,12 +100,15 @@ public final class IdentifierGeneratorHelper {
 	 * and wrp it in the appropriate Java numeric type.
 	 *
 	 * @param rs The result set from which to extract the value.
+	 * @param identifier The name of the identifier column
 	 * @param type The expected type of the value.
+	 *
 	 * @return The extracted value.
+	 *
 	 * @throws SQLException Indicates problems access the result set
 	 * @throws IdentifierGenerationException Indicates an unknown type.
 	 */
-	public static Serializable get(ResultSet rs, Type type) throws SQLException, IdentifierGenerationException {
+	public static Serializable get(ResultSet rs, String identifier, Type type) throws SQLException, IdentifierGenerationException {
 		if ( ResultSetIdentifierConsumer.class.isInstance( type ) ) {
 			return ( ( ResultSetIdentifierConsumer ) type ).consumeIdentifier( rs );
 		}
@@ -109,30 +118,63 @@ public final class IdentifierGeneratorHelper {
 				return ( (ResultSetIdentifierConsumer) customType.getUserType() ).consumeIdentifier( rs );
 			}
 		}
-
+		int columnCount = 1;
+		try {
+			columnCount = rs.getMetaData().getColumnCount();
+		}
+		catch (Exception e) {
+			// Oracle driver can throw NPE on rs.getMetaData()
+		}
 		Class clazz = type.getReturnedClass();
-		if ( clazz == Long.class ) {
-			return new Long( rs.getLong( 1 ) );
-		}
-		else if ( clazz == Integer.class ) {
-			return new Integer( rs.getInt( 1 ) );
-		}
-		else if ( clazz == Short.class ) {
-			return new Short( rs.getShort( 1 ) );
-		}
-		else if ( clazz == String.class ) {
-			return rs.getString( 1 );
-		}
-		else if ( clazz == BigInteger.class ) {
-			return rs.getBigDecimal( 1 ).setScale( 0, BigDecimal.ROUND_UNNECESSARY ).toBigInteger();
-		}
-		else if ( clazz == BigDecimal.class ) {
-			return rs.getBigDecimal( 1 ).setScale( 0, BigDecimal.ROUND_UNNECESSARY );
+		if (columnCount == 1) {
+			if ( clazz == Long.class ) {
+				return rs.getLong( 1 );
+			}
+			else if ( clazz == Integer.class ) {
+				return rs.getInt( 1 );
+			}
+			else if ( clazz == Short.class ) {
+				return rs.getShort( 1 );
+			}
+			else if ( clazz == String.class ) {
+				return rs.getString( 1 );
+			}
+			else if ( clazz == BigInteger.class ) {
+				return rs.getBigDecimal( 1 ).setScale( 0, BigDecimal.ROUND_UNNECESSARY ).toBigInteger();
+			}
+			else if ( clazz == BigDecimal.class ) {
+				return rs.getBigDecimal( 1 ).setScale( 0, BigDecimal.ROUND_UNNECESSARY );
+			}
+			else {
+				throw new IdentifierGenerationException(
+						"unrecognized id type : " + type.getName() + " -> " + clazz.getName()
+				);
+			}
 		}
 		else {
-			throw new IdentifierGenerationException(
-					"unrecognized id type : " + type.getName() + " -> " + clazz.getName()
-			);
+			if ( clazz == Long.class ) {
+				return rs.getLong(identifier);
+			}
+			else if ( clazz == Integer.class ) {
+				return rs.getInt(identifier);
+			}
+			else if ( clazz == Short.class ) {
+				return rs.getShort(identifier);
+			}
+			else if ( clazz == String.class ) {
+				return rs.getString(identifier);
+			}
+			else if ( clazz == BigInteger.class ) {
+				return rs.getBigDecimal(identifier).setScale( 0, BigDecimal.ROUND_UNNECESSARY ).toBigInteger();
+			}
+			else if ( clazz == BigDecimal.class ) {
+				return rs.getBigDecimal(identifier).setScale( 0, BigDecimal.ROUND_UNNECESSARY );
+			}
+			else {
+				throw new IdentifierGenerationException(
+						"unrecognized id type : " + type.getName() + " -> " + clazz.getName()
+				);
+			}
 		}
 	}
 
@@ -151,13 +193,13 @@ public final class IdentifierGeneratorHelper {
 	@Deprecated
     public static Number createNumber(long value, Class clazz) throws IdentifierGenerationException {
 		if ( clazz == Long.class ) {
-			return new Long( value );
+			return value;
 		}
 		else if ( clazz == Integer.class ) {
-			return new Integer( ( int ) value );
+			return ( int ) value;
 		}
 		else if ( clazz == Short.class ) {
-			return new Short( ( short ) value );
+			return ( short ) value;
 		}
 		else {
 			throw new IdentifierGenerationException( "unrecognized id type : " + clazz.getName() );
@@ -343,13 +385,13 @@ public final class IdentifierGeneratorHelper {
 			// TODO : should we check for truncation?
 			checkInitialized();
 			if ( exactType == Long.class ) {
-				return new Long( value );
+				return value;
 			}
 			else if ( exactType == Integer.class ) {
-				return new Integer( ( int ) value );
+				return ( int ) value;
 			}
 			else {
-				return new Short( ( short ) value );
+				return ( short ) value;
 			}
 		}
 

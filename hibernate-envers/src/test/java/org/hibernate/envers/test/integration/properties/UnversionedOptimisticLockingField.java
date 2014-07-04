@@ -23,70 +23,75 @@
  */
 package org.hibernate.envers.test.integration.properties;
 
-import org.hibernate.ejb.Ejb3Configuration;
-import org.hibernate.envers.test.AbstractEntityTest;
-import org.hibernate.envers.test.Priority;
-import org.hibernate.mapping.PersistentClass;
-import org.hibernate.mapping.Property;
-import org.junit.Test;
-
 import javax.persistence.EntityManager;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Map;
+
+import org.hibernate.envers.configuration.EnversSettings;
+import org.hibernate.envers.test.BaseEnversJPAFunctionalTestCase;
+import org.hibernate.envers.test.Priority;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
+
+import org.junit.Test;
 
 /**
  * @author Nicolas Doroskevich
  */
-public class UnversionedOptimisticLockingField extends AbstractEntityTest {
+public class UnversionedOptimisticLockingField extends BaseEnversJPAFunctionalTestCase {
 	private Integer id1;
 
-	public void configure(Ejb3Configuration cfg) {
-		cfg.addAnnotatedClass(UnversionedOptimisticLockingFieldEntity.class);
+	@Override
+	protected Class<?>[] getAnnotatedClasses() {
+		return new Class[] {UnversionedOptimisticLockingFieldEntity.class};
+	}
 
-		cfg.setProperty("org.hibernate.envers.doNotAuditOptimisticLockingField", "true");
+	@Override
+	public void addConfigOptions(Map configuration) {
+		super.addConfigOptions( configuration );
+		configuration.put( EnversSettings.DO_NOT_AUDIT_OPTIMISTIC_LOCKING_FIELD, "true" );
 	}
 
 	@Test
-    @Priority(10)
+	@Priority(10)
 	public void initData() {
 		EntityManager em = getEntityManager();
 		em.getTransaction().begin();
-		UnversionedOptimisticLockingFieldEntity olfe = new UnversionedOptimisticLockingFieldEntity("x");
-		em.persist(olfe);
+		UnversionedOptimisticLockingFieldEntity olfe = new UnversionedOptimisticLockingFieldEntity( "x" );
+		em.persist( olfe );
 		id1 = olfe.getId();
 		em.getTransaction().commit();
 
 		em.getTransaction().begin();
-		olfe = em.find(UnversionedOptimisticLockingFieldEntity.class, id1);
-		olfe.setStr("y");
+		olfe = em.find( UnversionedOptimisticLockingFieldEntity.class, id1 );
+		olfe.setStr( "y" );
 		em.getTransaction().commit();
 	}
 
 	@Test
 	public void testRevisionCounts() {
-		assert Arrays.asList(1, 2).equals(
-				getAuditReader().getRevisions(UnversionedOptimisticLockingFieldEntity.class,
-						id1));
+		assert Arrays.asList( 1, 2 ).equals(
+				getAuditReader().getRevisions(
+						UnversionedOptimisticLockingFieldEntity.class,
+						id1
+				)
+		);
 	}
 
 	@Test
 	public void testHistoryOfId1() {
-		UnversionedOptimisticLockingFieldEntity ver1 = new UnversionedOptimisticLockingFieldEntity(id1, "x");
-		UnversionedOptimisticLockingFieldEntity ver2 = new UnversionedOptimisticLockingFieldEntity(id1, "y");
-		
-		assert getAuditReader().find(UnversionedOptimisticLockingFieldEntity.class, id1, 1)
-				.equals(ver1);
-		assert getAuditReader().find(UnversionedOptimisticLockingFieldEntity.class, id1, 2)
-				.equals(ver2);
+		UnversionedOptimisticLockingFieldEntity ver1 = new UnversionedOptimisticLockingFieldEntity( id1, "x" );
+		UnversionedOptimisticLockingFieldEntity ver2 = new UnversionedOptimisticLockingFieldEntity( id1, "y" );
+
+		assert getAuditReader().find( UnversionedOptimisticLockingFieldEntity.class, id1, 1 )
+				.equals( ver1 );
+		assert getAuditReader().find( UnversionedOptimisticLockingFieldEntity.class, id1, 2 )
+				.equals( ver2 );
 	}
-	
+
 	@Test
 	public void testMapping() {
-		PersistentClass pc = getCfg().getClassMapping(UnversionedOptimisticLockingFieldEntity.class.getName() + "_AUD");
-		Iterator pi = pc.getPropertyIterator();
-		while(pi.hasNext()) {
-			Property p = (Property) pi.next();
-			assert !"optLocking".equals(p.getName());
-		}
+		EntityBinding entityBinding = getMetadata().getEntityBinding( UnversionedOptimisticLockingFieldEntity.class.getName() + "_AUD" );
+		assert entityBinding.locateAttributeBinding( "optLocking" ) == null;
 	}
 }

@@ -25,20 +25,30 @@ package org.hibernate.testing.junit4;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
-
-import org.jboss.logging.Logger;
 
 import org.hibernate.dialect.Dialect;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.testing.DialectCheck;
 import org.hibernate.testing.FailureExpected;
+import org.hibernate.testing.FailureExpectedUtil;
+import org.hibernate.testing.FailureExpectedWithNewMetamodel;
+import org.hibernate.testing.FailureExpectedWithNewUnifiedXsd;
 import org.hibernate.testing.RequiresDialect;
 import org.hibernate.testing.RequiresDialectFeature;
+import org.hibernate.testing.RequiresDialects;
 import org.hibernate.testing.Skip;
 import org.hibernate.testing.SkipForDialect;
+import org.hibernate.testing.SkipForDialects;
+import org.jboss.logging.Logger;
+import org.junit.BeforeClass;
 import org.junit.Ignore;
+import org.junit.Test;
 import org.junit.runner.manipulation.NoTestsRemainException;
+import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
@@ -55,6 +65,7 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 	private static final Logger log = Logger.getLogger( CustomRunner.class );
 
 	private TestClassMetadata testClassMetadata;
+	private boolean beforeClassMethodFailed;
 
 	public CustomRunner(Class<?> clazz) throws InitializationError, NoTestsRemainException {
 		super( clazz );
@@ -67,11 +78,19 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 		testClassMetadata.validate( errors );
 	}
 
+	boolean beforeClassMethodFailed() {
+		return beforeClassMethodFailed;
+	}
+
+	void setBeforeClassMethodFailed() {
+		beforeClassMethodFailed = true;
+	}
+
 	public TestClassMetadata getTestClassMetadata() {
 		return testClassMetadata;
 	}
 
-    private Boolean isAllTestsIgnored = null;
+    private Boolean isAllTestsIgnored;
 
     private boolean isAllTestsIgnored() {
         if ( isAllTestsIgnored == null ) {
@@ -114,12 +133,29 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 		);
 	}
 
+	@Override
+	protected Statement classBlock( RunNotifier notifier ) {
+		log.info( BeforeClass.class.getSimpleName() + ": " + getName() );
+
+		if ( FailureExpectedUtil.hasFailureExpectedMarker( getTestClass().getJavaClass().getAnnotations() ) ) {
+			log.info( FailureExpected.class.getSimpleName() );
+		}
+
+		return super.classBlock( notifier );
+	}
 
 	@Override
 	protected Statement methodBlock(FrameworkMethod method) {
+		log.info( Test.class.getSimpleName() + ": " + method.getName() );
+
+		if ( FailureExpectedUtil.hasFailureExpectedMarker( method.getAnnotations() ) ) {
+			log.info( FailureExpected.class.getSimpleName() );
+		}
+
+
 		final Statement originalMethodBlock = super.methodBlock( method );
 		final ExtendedFrameworkMethod extendedFrameworkMethod = (ExtendedFrameworkMethod) method;
-		return new FailureExpectedHandler( originalMethodBlock, testClassMetadata, extendedFrameworkMethod, testInstance );
+		return new FailureExpectedHandler( this, originalMethodBlock, testClassMetadata, extendedFrameworkMethod, testInstance );
 	}
 
 	private Object testInstance;
@@ -142,8 +178,21 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 	protected List<FrameworkMethod> computeTestMethods() {
 		if ( computedTestMethods == null ) {
 			computedTestMethods = doComputation();
+			sortMethods(computedTestMethods);
 		}
 		return computedTestMethods;
+	}
+
+	protected void sortMethods(List<FrameworkMethod> computedTestMethods) {
+		if ( CollectionHelper.isEmpty( computedTestMethods ) ) {
+			return;
+		}
+		Collections.sort( computedTestMethods, new Comparator<FrameworkMethod>() {
+			@Override
+			public int compare(FrameworkMethod o1, FrameworkMethod o2) {
+				return o1.getName().compareTo( o2.getName() );
+			}
+		} );
 	}
 
 	protected List<FrameworkMethod> doComputation() {
@@ -158,8 +207,25 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 		Ignore virtualIgnore;
 
 		for ( FrameworkMethod frameworkMethod : methods ) {
+			FailureExpected failureExpected = Helper.locateAnnotation( FailureExpected.class, frameworkMethod, getTestClass() );
+			// TODO: Re-think what's given to the ExtendedFrameworkMethod, rather than mocking the FailureExpected?
+			if ( failureExpected == null ) {
+				final FailureExpectedWithNewMetamodel failureExpectedWithNewMetamodel
+						= Helper.locateAnnotation( FailureExpectedWithNewMetamodel.class, frameworkMethod, getTestClass() );
+				if ( failureExpectedWithNewMetamodel != null ) {
+					failureExpected = new FailureExpectedAdapter( failureExpectedWithNewMetamodel.message(),
+							failureExpectedWithNewMetamodel.jiraKey() );
+				}
+			}
+			if ( failureExpected == null ) {
+				final FailureExpectedWithNewUnifiedXsd failureExpectedWithNewUnifiedXsd
+						= Helper.locateAnnotation( FailureExpectedWithNewUnifiedXsd.class, frameworkMethod, getTestClass() );
+				if ( failureExpectedWithNewUnifiedXsd != null ) {
+					failureExpected = new FailureExpectedAdapter( failureExpectedWithNewUnifiedXsd.message(),
+							failureExpectedWithNewUnifiedXsd.jiraKey() );
+				}
+			}
 			// potentially ignore based on expected failure
-            final FailureExpected failureExpected = Helper.locateAnnotation( FailureExpected.class, frameworkMethod, getTestClass() );
 			if ( failureExpected != null && !doValidation ) {
 				virtualIgnore = new IgnoreImpl( Helper.extractIgnoreMessage( failureExpected, frameworkMethod ) );
 			}
@@ -172,25 +238,6 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 			result.add( new ExtendedFrameworkMethod( frameworkMethod, virtualIgnore, failureExpected ) );
 		}
 		return result;
-	}
-
-	@SuppressWarnings( {"ClassExplicitlyAnnotation"})
-	public static class IgnoreImpl implements Ignore {
-		private final String value;
-
-		public IgnoreImpl(String value) {
-			this.value = value;
-		}
-
-		@Override
-		public String value() {
-			return value;
-		}
-
-		@Override
-		public Class<? extends Annotation> annotationType() {
-			return Ignore.class;
-		}
 	}
 
 	private static Dialect dialect = determineDialect();
@@ -214,9 +261,10 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 			}
 		}
 
-		// @SkipForDialect
-		SkipForDialect skipForDialectAnn = Helper.locateAnnotation( SkipForDialect.class, frameworkMethod, getTestClass() );
-		if ( skipForDialectAnn != null ) {
+		// @SkipForDialects & @SkipForDialect
+		for ( SkipForDialect skipForDialectAnn : Helper.collectAnnotations(
+				SkipForDialect.class, SkipForDialects.class, frameworkMethod, getTestClass()
+		) ) {
 			for ( Class<? extends Dialect> dialectClass : skipForDialectAnn.value() ) {
 				if ( skipForDialectAnn.strictMatching() ) {
 					if ( dialectClass.equals( dialect.getClass() ) ) {
@@ -231,9 +279,10 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 			}
 		}
 
-		// @RequiresDialect
-		RequiresDialect requiresDialectAnn = Helper.locateAnnotation( RequiresDialect.class, frameworkMethod, getTestClass() );
-		if ( requiresDialectAnn != null ) {
+		// @RequiresDialects & @RequiresDialect
+		for ( RequiresDialect requiresDialectAnn : Helper.collectAnnotations(
+				RequiresDialect.class, RequiresDialects.class, frameworkMethod, getTestClass()
+		) ) {
 			boolean foundMatch = false;
 			for ( Class<? extends Dialect> dialectClass : requiresDialectAnn.value() ) {
 				foundMatch = requiresDialectAnn.strictMatching()
@@ -251,11 +300,13 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 		// @RequiresDialectFeature
 		RequiresDialectFeature requiresDialectFeatureAnn = Helper.locateAnnotation( RequiresDialectFeature.class, frameworkMethod, getTestClass() );
 		if ( requiresDialectFeatureAnn != null ) {
-			Class<? extends DialectCheck> checkClass = requiresDialectFeatureAnn.value();
 			try {
-				DialectCheck check = checkClass.newInstance();
-				if ( !check.isMatch( dialect ) ) {
-					return buildIgnore( requiresDialectFeatureAnn );
+				boolean foundMatch = false;
+				for ( Class<? extends DialectCheck> checkClass : requiresDialectFeatureAnn.value() ) {
+					foundMatch = checkClass.newInstance().isMatch( dialect );
+					if ( !foundMatch ) {
+						return buildIgnore( requiresDialectFeatureAnn );
+					}
 				}
 			}
 			catch (RuntimeException e) {
@@ -314,4 +365,48 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 		}
 	}
 
+	@SuppressWarnings( {"ClassExplicitlyAnnotation"})
+	public static class IgnoreImpl implements Ignore {
+		private final String value;
+
+		public IgnoreImpl(String value) {
+			this.value = value;
+		}
+
+		@Override
+		public String value() {
+			return value;
+		}
+
+		@Override
+		public Class<? extends Annotation> annotationType() {
+			return Ignore.class;
+		}
+	}
+
+	@SuppressWarnings("ClassExplicitlyAnnotation")
+	private class FailureExpectedAdapter implements FailureExpected {
+		private final String message;
+		
+		private final String jiraKey;
+
+		public FailureExpectedAdapter(String message, String jiraKey) {
+			this.message = message;
+			this.jiraKey = jiraKey;
+		}
+		@Override
+		public Class< ? extends Annotation > annotationType() {
+			return FailureExpected.class;
+		}
+
+		@Override
+		public String message() {
+			return message;
+		}
+
+		@Override
+		public String jiraKey() {
+			return jiraKey;
+		}
+	}
 }

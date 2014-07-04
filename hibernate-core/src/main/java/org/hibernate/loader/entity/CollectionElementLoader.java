@@ -23,16 +23,18 @@
  *
  */
 package org.hibernate.loader.entity;
+
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.loader.JoinWalker;
 import org.hibernate.loader.OuterJoinLoader;
@@ -40,6 +42,7 @@ import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.persister.entity.OuterJoinLoadable;
 import org.hibernate.transform.ResultTransformer;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -49,8 +52,7 @@ import org.jboss.logging.Logger;
  */
 public class CollectionElementLoader extends OuterJoinLoader {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class,
-                                                                       CollectionElementLoader.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, CollectionElementLoader.class.getName() );
 
 	private final OuterJoinLoadable persister;
 	private final Type keyType;
@@ -72,7 +74,7 @@ public class CollectionElementLoader extends OuterJoinLoader {
 				persister, 
 				ArrayHelper.join(
 						collectionPersister.getKeyColumnNames(),
-						collectionPersister.getIndexColumnNames()
+						collectionPersister.toColumns("index")
 				),
 				1, 
 				LockMode.NONE, 
@@ -83,7 +85,9 @@ public class CollectionElementLoader extends OuterJoinLoader {
 
 		postInstantiate();
 
-        LOG.debugf("Static select for entity %s: %s", entityName, getSQLString());
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf( "Static select for entity %s: %s", entityName, getSQLString() );
+		}
 
 	}
 

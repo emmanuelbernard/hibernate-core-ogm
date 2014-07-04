@@ -20,20 +20,22 @@
  * Red Hat Author(s): Adam Warski
  */
 package org.hibernate.envers.demo;
-import org.jboss.logging.Logger;
-
-
-import org.hibernate.envers.query.AuditEntity;
-import org.hibernate.envers.DefaultRevisionEntity;
-import org.hibernate.envers.AuditReader;
-import org.hibernate.envers.AuditReaderFactory;
-
+import java.io.PrintStream;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.InputMismatchException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
-import java.util.*;
-import java.io.PrintStream;
-import java.io.File;
+
+import org.hibernate.envers.AuditReader;
+import org.hibernate.envers.AuditReaderFactory;
+import org.hibernate.envers.DefaultRevisionEntity;
+import org.hibernate.envers.query.AuditEntity;
 
 /**
  * @author Adam Warski (adam at warski dot org)
@@ -448,8 +450,6 @@ public class TestConsole {
     }
 
     public static void main(String[] args) {
-        String userDbFile = System.getProperty("java.io.tmpdir") + File.separator + "_versions_demo.db";
-
         Map<String, String> configurationOverrides = new HashMap<String, String>();
         EntityManagerFactory emf = Persistence.createEntityManagerFactory("ConsolePU", configurationOverrides);
         EntityManager entityManager = emf.createEntityManager();
@@ -458,7 +458,10 @@ public class TestConsole {
 
         System.out.println("");
         System.out.println("Welcome to EntityVersions demo!");
-        System.out.println("HSQLDB database file location: " + userDbFile);
+//      If you would like to use HSQLDB, uncomment relevant entries in
+//      hibernate-envers/src/demo/resources/META-INF/persistence.xml descriptor and add required JAR libraries.
+//        String userDbFile = System.getProperty("java.io.tmpdir") + File.separator + "_versions_demo.db";
+//        System.out.println("HSQLDB database file location: " + userDbFile);
 
         console.populateTestData();
         console.start();

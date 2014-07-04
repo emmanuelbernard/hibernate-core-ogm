@@ -27,9 +27,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import org.dom4j.Node;
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.Mapping;
@@ -38,7 +35,11 @@ import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.internal.util.compare.EqualsHelper;
-import org.hibernate.metamodel.relational.Size;
+import org.hibernate.metamodel.spi.relational.Size;
+
+import org.jboss.logging.Logger;
+
+import org.dom4j.Node;
 
 /**
  * Superclass of single-column nullable types.
@@ -147,22 +148,22 @@ public abstract class NullableType extends AbstractType implements StringReprese
 	throws HibernateException, SQLException {
 		try {
 			if ( value == null ) {
-                if (LOG.isTraceEnabled()) LOG.trace("Binding null to parameter: " + index);
+				LOG.tracev("Binding null to parameter: {0}", index);
 
 				st.setNull( index, sqlType() );
 			}
 			else {
-                if (LOG.isTraceEnabled()) LOG.trace("Binding '" + toString(value) + "' to parameter: " + index);
+				if (LOG.isTraceEnabled()) LOG.tracev("Binding '{0}' to parameter: {1}", toString(value), index);
 
 				set( st, value, index );
 			}
 		}
 		catch ( RuntimeException re ) {
-            LOG.unableToBindValueToParameter(nullSafeToString(value), index, re.getMessage());
+			LOG.unableToBindValueToParameter( nullSafeToString( value ), index, re.getMessage() );
 			throw re;
 		}
 		catch ( SQLException se ) {
-            LOG.unableToBindValueToParameter(nullSafeToString(value), index, se.getMessage());
+			LOG.unableToBindValueToParameter( nullSafeToString( value ), index, se.getMessage() );
 			throw se;
 		}
 	}
@@ -186,18 +187,18 @@ public abstract class NullableType extends AbstractType implements StringReprese
 		try {
 			Object value = get(rs, name);
 			if ( value == null || rs.wasNull() ) {
-                if (LOG.isTraceEnabled()) LOG.trace("Returning null as column " + name);
+				LOG.tracev( "Returning null as column {0}", name );
 				return null;
 			}
-            if (LOG.isTraceEnabled()) LOG.trace("Returning '" + toString(value) + "' as column " + name);
-            return value;
+			if ( LOG.isTraceEnabled() ) LOG.trace( "Returning '" + toString( value ) + "' as column " + name );
+			return value;
 		}
 		catch ( RuntimeException re ) {
-            LOG.unableToReadColumnValueFromResultSet(name, re.getMessage());
+			LOG.unableToReadColumnValueFromResultSet( name, re.getMessage() );
 			throw re;
 		}
 		catch ( SQLException se ) {
-            LOG.unableToReadColumnValueFromResultSet(name, se.getMessage());
+			LOG.unableToReadColumnValueFromResultSet( name, se.getMessage() );
 			throw se;
 		}
 	}

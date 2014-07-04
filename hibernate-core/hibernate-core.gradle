@@ -1,50 +1,111 @@
-apply plugin: 'java'
 apply plugin: 'antlr'
-apply plugin: org.hibernate.build.gradle.inject.InjectionPlugin
-apply plugin: org.hibernate.gradle.testing.matrix.MatrixTestingPlugin
+apply plugin: 'hibernate-matrix-testing'
+
+apply plugin: 'version-injection'
+
+versionInjection {
+    into( 'org.hibernate.Version', 'getVersionString' )
+}
 
 dependencies {
-	compile( libraries.commons_collections )
     compile( libraries.jta )
-    compile( libraries.dom4j ) {
-        transitive = false
-    }
-    compile( libraries.commons_annotations )
-    compile( libraries.jandex )
+    compile( libraries.dom4j )
     compile( libraries.classmate )
+    compile( libraries.commons_annotations )
     compile( libraries.jpa )
     compile( libraries.javassist )
     compile( libraries.antlr )
+    compile( libraries.jandex )
+
     antlr( libraries.antlr )
+
     provided( libraries.ant )
     provided( libraries.jacc )
     provided( libraries.validation )
+
     testCompile( project(':hibernate-testing') )
     testCompile( libraries.validation )
+    testCompile( libraries.jandex )
+    testCompile( libraries.classmate )
+    testCompile( libraries.mockito )
     testCompile( libraries.validator ) {
         // for test runtime
         transitive = true
     }
+    // for testing stored procedure support
+    testCompile( libraries.derby )
+
+
     testRuntime( 'jaxen:jaxen:1.1' )
     testRuntime( libraries.javassist )
+    testRuntime( libraries.unified_el )
 }
 
-manifest.mainAttributes(
-        'Main-Class': 'org.hibernate.Version'
-)
-sourceSets {
-    matrix {
-        java {
-            srcDir 'src/matrix/java'
-        }
-        resources {
-            srcDir 'src/matrix/resources'
-        }
+def pomName() {
+    return 'Core Hibernate O/RM functionality'
+}
+
+def pomDescription() {
+    return 'The core O/RM functionality as provided by Hibernate'
+}
+
+def osgiDescription() {
+	return pomDescription()
+}
+
+test {
+	// putting this in test {} *should* indicate it is only in effect for H2 run
+	// using parallel runs for non-in-memory databases could cause contention issues.
+	maxParallelForks = 5;
+	forkEvery = 200;
+
+//	testLogging {
+//		// make test events logged as LIFECYCLE so they show up in console
+//		// this, e.g., allows us to see the name of each test as Gradle starts
+//		// it, so we can see where (if) the build hangs in tests
+//		events "started", "skipped", "failed"
+//	}
+}
+
+jar {
+    manifest {
+        mainAttributes( 'Main-Class': 'org.hibernate.Version' )
+
+        instructionFirst 'Import-Package',
+            'javax.security.auth;resolution:=optional',
+            'javax.security.jacc;resolution:=optional',
+            'javax.validation;resolution:=optional',
+            'javax.validation.constraints;resolution:=optional',
+            'javax.validation.groups;resolution:=optional',
+            'javax.validation.metadata;resolution:=optional',
+            // TODO: Shouldn't have to explicitly list this, but the plugin
+            // generates it with a [1.0,2) version.
+            'javax.persistence;version="2.1.0"',
+            // Temporarily support JTA 1.1 -- Karaf and other frameworks still
+            // use it.  Without this, the plugin generates [1.2,2).
+            // build.gradle adds javax.transaction for all modules
+            'javax.transaction.xa;version="[1.1,2)"',
+            // optionals
+            'javax.management;resolution:=optional',
+            'javax.naming.event;resolution:=optional',
+            'javax.naming.spi;resolution:=optional',
+            'org.apache.tools.ant;resolution:=optional',
+			'org.apache.tools.ant.taskdefs;resolution:=optional',
+			'org.apache.tools.ant.types;resolution:=optional'
+
+//        // TODO: Uncomment once EntityManagerFactoryBuilderImpl no longer
+//        // uses ClassLoaderServiceImpl.
+//        instruction 'Export-Package',
+//            'org.hibernate.boot.registry.classloading.internal',
+//            '*'
     }
 }
+
+ext {
+	jaxbTargetDir = file( "${buildDir}/generated-src/jaxb/main" )
+}
+
 sourceSets.main {
-    originalJavaSrcDirs = java.srcDirs
-    jaxbTargetDir = file( "${buildDir}/generated-src/jaxb/main" )
     java.srcDir jaxbTargetDir
 }
 
@@ -53,28 +114,28 @@ sourceSets.test.resources {
     setSrcDirs( ['src/test/java','src/test/resources'] )
 }
 
-ideaModule {
-    sourceDirs += file( '$buildDir/generated-src/antlr/main' )
-    testSourceDirs += file( 'src/matrix/java')
-    testSourceDirs += file( 'src/matrix/resources')
+idea {
+	module {
+		sourceDirs += file( "${buildDir}/generated-src/antlr/main" )
+	}
 }
 
 task jaxb {
-    // output directory
-    jaxbTargetDir = file( "${buildDir}/generated-src/jaxb/main" )
+	ext {
+        // input schemas
+        cfgXsd = file( 'src/main/resources/org/hibernate/hibernate-configuration-4.0.xsd')
+        hbmXsd = file( 'src/main/resources/org/hibernate/xsd/mapping/legacy-mapping-4.0.xsd' )
+        unifiedOrmXsd = file( 'src/main/resources/org/hibernate/xsd/mapping/mapping-2.1.0.xsd' )
 
-    // input schemas
-    cfgXsd = file( 'src/main/resources/org/hibernate/hibernate-configuration-4.0.xsd')
-    hbmXsd = file( 'src/main/resources/org/hibernate/hibernate-mapping-4.0.xsd' )
-    ormXsd = file( 'src/main/resources/org/hibernate/ejb/orm_2_0.xsd' )
-
-    // input bindings
-    cfgXjb = file( 'src/main/xjb/hbm-configuration-bindings.xjb' )
-    hbmXjb = file( 'src/main/xjb/hbm-mapping-bindings.xjb' )
-    ormXjb = file( 'src/main/xjb/orm-bindings.xjb' )
+        // input bindings
+        cfgXjb = file( 'src/main/xjb/hbm-configuration-bindings.xjb' )
+        hbmXjb = file( 'src/main/xjb/hbm-mapping-bindings.xjb' )
+		unifiedOrmXjb = file( 'src/main/xjb/mapping-bindings.xjb' )
+    }
 
     // configure Gradle up-to-date checking
-    inputs.files( [cfgXsd, hbmXsd, ormXsd, cfgXjb, hbmXjb, ormXjb] )
+//    inputs.files( [cfgXsd, hbmXsd, ormXsd, unifiedOrmXsd, cfgXjb, hbmXjb, ormXjb, unifiedOrmXjb] )
+    inputs.files( [cfgXsd, hbmXsd, unifiedOrmXsd, cfgXjb, hbmXjb, unifiedOrmXjb] )
     outputs.dir( jaxbTargetDir )
 
     // perform actions
@@ -87,7 +148,7 @@ task jaxb {
         // hibernate-configuration
         ant.xjc(
                 destdir: '${jaxbTargetDir}',
-                package: 'org.hibernate.internal.jaxb.cfg',
+                package: 'org.hibernate.jaxb.spi.cfg',
                 binding: 'src/main/xjb/hbm-configuration-bindings.xjb',
                 schema: cfgXsd.path
         )
@@ -95,24 +156,26 @@ task jaxb {
         // hibernate-mapping
         ant.xjc(
                 destdir: '${jaxbTargetDir}',
-                package: 'org.hibernate.internal.jaxb.mapping.hbm',
-                binding: hbmXjb.path,
+                binding: 'src/main/xjb/hbm-mapping-bindings.xjb',
                 schema: hbmXsd.path,
                 extension: 'true'
         ) {
-            arg line:     '-Xinheritance'
+            arg line:     '-Xinheritance -Xsimplify'
         }
 
-        // orm.xml (jpa)
-        ant.xjc(
-                destdir: '${jaxbTargetDir}',
-                package: 'org.hibernate.internal.jaxb.mapping.orm',
-                binding: 'src/main/xjb/orm-bindings.xjb',
-                schema: ormXsd.path
-        )
+		// unified mapping xsd
+		ant.xjc(
+				destdir: '${jaxbTargetDir}',
+				binding: 'src/main/xjb/mapping-bindings.xjb',
+				schema: unifiedOrmXsd.path,
+				extension: 'true'
+		) {
+			arg line:     '-Xinheritance'
+		}
+
     }
 
 }
-compileJava.dependsOn jaxb
 
-
+sourceSets.main.sourceGeneratorsTask.dependsOn jaxb
+sourceSets.main.sourceGeneratorsTask.dependsOn generateGrammarSource

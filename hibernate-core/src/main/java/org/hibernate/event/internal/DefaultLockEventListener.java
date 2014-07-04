@@ -29,14 +29,18 @@ import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.TransientObjectException;
 import org.hibernate.engine.internal.Cascade;
+import org.hibernate.engine.internal.CascadePoint;
 import org.hibernate.engine.internal.ForeignKeys;
-import org.hibernate.engine.spi.CascadingAction;
+import org.hibernate.engine.spi.CascadingActions;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.LockEvent;
 import org.hibernate.event.spi.LockEventListener;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.persister.entity.EntityPersister;
+
+import org.jboss.logging.Logger;
 
 /**
  * Defines the default lock event listeners used by hibernate to lock entities
@@ -46,7 +50,13 @@ import org.hibernate.persister.entity.EntityPersister;
  */
 public class DefaultLockEventListener extends AbstractLockUpgradeEventListener implements LockEventListener {
 
-	/** Handle the given lock event.
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			DefaultLockEventListener.class.getName()
+	);
+
+	/**
+	 * Handle the given lock event.
 	 *
 	 * @param event The lock event to be handled.
 	 * @throws HibernateException
@@ -59,6 +69,10 @@ public class DefaultLockEventListener extends AbstractLockUpgradeEventListener i
 
 		if ( event.getLockMode() == LockMode.WRITE ) {
 			throw new HibernateException( "Invalid lock mode for lock()" );
+		}
+
+		if ( event.getLockMode() == LockMode.UPGRADE_SKIPLOCKED ) {
+			LOG.explicitSkipLockedLockCombo();
 		}
 
 		SessionImplementor source = event.getSession();
@@ -89,8 +103,11 @@ public class DefaultLockEventListener extends AbstractLockUpgradeEventListener i
 		EventSource source = event.getSession();
 		source.getPersistenceContext().incrementCascadeLevel();
 		try {
-			new Cascade(CascadingAction.LOCK, Cascade.AFTER_LOCK, source)
-					.cascade( persister, entity, event.getLockOptions() );
+			new Cascade( CascadingActions.LOCK, CascadePoint.AFTER_LOCK, source).cascade(
+					persister,
+					entity,
+					event.getLockOptions()
+			);
 		}
 		finally {
 			source.getPersistenceContext().decrementCascadeLevel();

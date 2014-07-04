@@ -24,6 +24,7 @@
  */
 package org.hibernate.loader.collection;
 import java.io.Serializable;
+
 import org.hibernate.HibernateException;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -49,6 +50,10 @@ public class CollectionLoader extends OuterJoinLoader implements CollectionIniti
 			LoadQueryInfluencers loadQueryInfluencers) {
 		super( factory, loadQueryInfluencers );
 		this.collectionPersister = collectionPersister;
+	}
+
+	protected QueryableCollection collectionPersister() {
+		return collectionPersister;
 	}
 
 	protected boolean isSubselectLoadingEnabled() {

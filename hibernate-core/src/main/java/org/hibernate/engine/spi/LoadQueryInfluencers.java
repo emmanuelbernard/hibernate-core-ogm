@@ -24,11 +24,11 @@
 package org.hibernate.engine.spi;
 
 import java.io.Serializable;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import javax.persistence.EntityGraph;
 
 import org.hibernate.Filter;
 import org.hibernate.UnknownProfileException;
@@ -51,15 +51,17 @@ public class LoadQueryInfluencers implements Serializable {
 	 * outside the context of any influencers.  One such example is
 	 * anything created by the session factory.
 	 */
-	public static LoadQueryInfluencers NONE = new LoadQueryInfluencers();
+	public static final LoadQueryInfluencers NONE = new LoadQueryInfluencers();
 
 	private final SessionFactoryImplementor sessionFactory;
 	private String internalFetchProfile;
-	private Map<String,Filter> enabledFilters;
-	private Set<String> enabledFetchProfileNames;
+	private final Map<String,Filter> enabledFilters;
+	private final Set<String> enabledFetchProfileNames;
+	private EntityGraph fetchGraph;
+	private EntityGraph loadGraph;
 
 	public LoadQueryInfluencers() {
-		this( null, Collections.<String, Filter>emptyMap(), Collections.<String>emptySet() );
+		this( null );
 	}
 
 	public LoadQueryInfluencers(SessionFactoryImplementor sessionFactory) {
@@ -96,7 +98,7 @@ public class LoadQueryInfluencers implements Serializable {
 	// filter support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	public boolean hasEnabledFilters() {
-		return enabledFilters != null && !enabledFilters.isEmpty();
+		return !enabledFilters.isEmpty();
 	}
 
 	public Map<String,Filter> getEnabledFilters() {
@@ -131,8 +133,8 @@ public class LoadQueryInfluencers implements Serializable {
 	}
 
 	public Object getFilterParameterValue(String filterParameterName) {
-		String[] parsed = parseFilterParameterName( filterParameterName );
-		FilterImpl filter = ( FilterImpl ) enabledFilters.get( parsed[0] );
+		final String[] parsed = parseFilterParameterName( filterParameterName );
+		final FilterImpl filter = (FilterImpl) enabledFilters.get( parsed[0] );
 		if ( filter == null ) {
 			throw new IllegalArgumentException( "Filter [" + parsed[0] + "] currently not enabled" );
 		}
@@ -140,12 +142,12 @@ public class LoadQueryInfluencers implements Serializable {
 	}
 
 	public Type getFilterParameterType(String filterParameterName) {
-		String[] parsed = parseFilterParameterName( filterParameterName );
-		FilterDefinition filterDef = sessionFactory.getFilterDefinition( parsed[0] );
+		final String[] parsed = parseFilterParameterName( filterParameterName );
+		final FilterDefinition filterDef = sessionFactory.getFilterDefinition( parsed[0] );
 		if ( filterDef == null ) {
 			throw new IllegalArgumentException( "Filter [" + parsed[0] + "] not defined" );
 		}
-		Type type = filterDef.getParameterType( parsed[1] );
+		final Type type = filterDef.getParameterType( parsed[1] );
 		if ( type == null ) {
 			// this is an internal error of some sort...
 			throw new InternalError( "Unable to locate type for filter parameter" );
@@ -158,8 +160,8 @@ public class LoadQueryInfluencers implements Serializable {
 		if ( dot <= 0 ) {
 			throw new IllegalArgumentException( "Invalid filter-parameter name format" );
 		}
-		String filterName = filterParameterName.substring( 0, dot );
-		String parameterName = filterParameterName.substring( dot + 1 );
+		final String filterName = filterParameterName.substring( 0, dot );
+		final String parameterName = filterParameterName.substring( dot + 1 );
 		return new String[] { filterName, parameterName };
 	}
 
@@ -167,10 +169,10 @@ public class LoadQueryInfluencers implements Serializable {
 	// fetch profile support ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	public boolean hasEnabledFetchProfiles() {
-		return enabledFetchProfileNames != null && !enabledFetchProfileNames.isEmpty();
+		return !enabledFetchProfileNames.isEmpty();
 	}
 
-	public Set getEnabledFetchProfileNames() {
+	public Set<String> getEnabledFetchProfileNames() {
 		return enabledFetchProfileNames;
 	}
 
@@ -195,4 +197,19 @@ public class LoadQueryInfluencers implements Serializable {
 		enabledFetchProfileNames.remove( name );
 	}
 
+	public EntityGraph getFetchGraph() {
+		return fetchGraph;
+	}
+
+	public void setFetchGraph(final EntityGraph fetchGraph) {
+		this.fetchGraph = fetchGraph;
+	}
+
+	public EntityGraph getLoadGraph() {
+		return loadGraph;
+	}
+
+	public void setLoadGraph(final EntityGraph loadGraph) {
+		this.loadGraph = loadGraph;
+	}
 }

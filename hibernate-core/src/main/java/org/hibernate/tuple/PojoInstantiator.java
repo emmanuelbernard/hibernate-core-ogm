@@ -27,14 +27,18 @@ package org.hibernate.tuple;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.Constructor;
-import org.hibernate.internal.CoreMessageLogger;
+
 import org.hibernate.InstantiationException;
 import org.hibernate.PropertyNotFoundException;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.bytecode.spi.ReflectionOptimizer;
+import org.hibernate.id.EntityIdentifierNature;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ReflectHelper;
-import org.hibernate.mapping.Component;
-import org.hibernate.mapping.PersistentClass;
-import org.hibernate.metamodel.binding.EntityBinding;
+import org.hibernate.metamodel.spi.binding.EmbeddableBinding;
+import org.hibernate.metamodel.spi.binding.EntityBinding;
+import org.hibernate.metamodel.spi.binding.EntityIdentifier;
+import org.hibernate.service.ServiceRegistry;
 
 import org.jboss.logging.Logger;
 
@@ -53,8 +57,26 @@ public class PojoInstantiator implements Instantiator, Serializable {
 	private final Class proxyInterface;
 	private final boolean isAbstract;
 
-	public PojoInstantiator(Component component, ReflectionOptimizer.InstantiationOptimizer optimizer) {
-		this.mappedClass = component.getComponentClass();
+	public PojoInstantiator(
+			ServiceRegistry serviceRegistry,
+			EmbeddableBinding embeddableBinding,
+			boolean isIdentifierMapper,
+			ReflectionOptimizer.InstantiationOptimizer optimizer) {
+		final ClassLoaderService cls = serviceRegistry.getService( ClassLoaderService.class );
+		if ( isIdentifierMapper ) {
+			final EntityIdentifier entityIdentifier =
+					embeddableBinding.seekEntityBinding().getHierarchyDetails().getEntityIdentifier();
+			final EntityIdentifier.NonAggregatedCompositeIdentifierBinding idBinding =
+					(EntityIdentifier.NonAggregatedCompositeIdentifierBinding) entityIdentifier.getEntityIdentifierBinding();
+			this.mappedClass = cls.classForName(
+					idBinding.getIdClassMetadata().getIdClassType().getName().toString()
+			);
+		}
+		else {
+			this.mappedClass = cls.classForName(
+					embeddableBinding.getAttributeContainer().getDescriptor().getName().toString()
+			);
+		}
 		this.isAbstract = ReflectHelper.isAbstractClass( mappedClass );
 		this.optimizer = optimizer;
 
@@ -70,27 +92,22 @@ public class PojoInstantiator implements Instantiator, Serializable {
 		}
 	}
 
-	public PojoInstantiator(PersistentClass persistentClass, ReflectionOptimizer.InstantiationOptimizer optimizer) {
-		this.mappedClass = persistentClass.getMappedClass();
+	public PojoInstantiator(
+			ServiceRegistry serviceRegistry,
+			EntityBinding entityBinding,
+			ReflectionOptimizer.InstantiationOptimizer optimizer) {
+		final ClassLoaderService cls = serviceRegistry.getService( ClassLoaderService.class );
+		this.mappedClass = cls.classForName( entityBinding.getEntity().getDescriptor().getName().toString() );
 		this.isAbstract = ReflectHelper.isAbstractClass( mappedClass );
-		this.proxyInterface = persistentClass.getProxyInterface();
-		this.embeddedIdentifier = persistentClass.hasEmbeddedIdentifier();
-		this.optimizer = optimizer;
-
-		try {
-			constructor = ReflectHelper.getDefaultConstructor( mappedClass );
+		if ( entityBinding.getProxyInterfaceType() == null ) {
+			this.proxyInterface = null;
 		}
-		catch ( PropertyNotFoundException pnfe ) {
-			LOG.noDefaultConstructor(mappedClass.getName());
-			constructor = null;
+		else {
+			this.proxyInterface = cls.classForName(
+					entityBinding.getProxyInterfaceType().getName().toString()
+			);
 		}
-	}
-
-	public PojoInstantiator(EntityBinding entityBinding, ReflectionOptimizer.InstantiationOptimizer optimizer) {
-		this.mappedClass = entityBinding.getEntity().getClassReference();
-		this.isAbstract = ReflectHelper.isAbstractClass( mappedClass );
-		this.proxyInterface = entityBinding.getProxyInterfaceType().getValue();
-		this.embeddedIdentifier = entityBinding.getHierarchyDetails().getEntityIdentifier().isEmbedded();
+		this.embeddedIdentifier = entityBinding.getHierarchyDetails().getEntityIdentifier().getNature() == EntityIdentifierNature.NON_AGGREGATED_COMPOSITE;
 		this.optimizer = optimizer;
 
 		try {

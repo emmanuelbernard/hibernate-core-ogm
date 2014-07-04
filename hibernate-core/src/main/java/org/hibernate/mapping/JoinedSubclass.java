@@ -23,6 +23,7 @@
  */
 package org.hibernate.mapping;
 import java.util.Iterator;
+
 import org.hibernate.MappingException;
 import org.hibernate.engine.spi.Mapping;
 
@@ -71,7 +72,7 @@ public class JoinedSubclass extends Subclass implements TableOwner {
 	public Iterator getReferenceablePropertyIterator() {
 		return getPropertyIterator();
 	}
-	
+
 	public Object accept(PersistentClassVisitor mv) {
 		return mv.accept(this);
 	}

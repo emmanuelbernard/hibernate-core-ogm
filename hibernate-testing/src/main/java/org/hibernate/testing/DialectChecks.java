@@ -24,6 +24,7 @@
 package org.hibernate.testing;
 
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.spi.RowSelection;
 
 /**
  * Container class for different implementation of the {@link DialectCheck} interface.
@@ -41,6 +42,12 @@ abstract public class DialectChecks {
 	public static class SupportsExpectedLobUsagePattern implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
 			return dialect.supportsExpectedLobUsagePattern();
+		}
+	}
+
+	public static class UsesInputStreamToInsertBlob implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return dialect.useInputStreamToInsertBlob();
 		}
 	}
 
@@ -74,6 +81,12 @@ abstract public class DialectChecks {
 		}
 	}
 
+	public static class SupportsCascadeDeleteCheck implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return dialect.supportsCascadeDelete();
+		}
+	}
+
 	public static class SupportsCircularCascadeDeleteCheck implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
 			return dialect.supportsCircularCascadeDeleteConstraints();
@@ -82,7 +95,7 @@ abstract public class DialectChecks {
 
 	public static class SupportsUnboundedLobLocatorMaterializationCheck implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
-			return dialect.supportsUnboundedLobLocatorMaterialization();
+			return dialect.supportsExpectedLobUsagePattern() && dialect.supportsUnboundedLobLocatorMaterialization();
 		}
 	}
 
@@ -94,13 +107,15 @@ abstract public class DialectChecks {
 
 	public static class SupportLimitCheck implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
-			return dialect.supportsLimit();
+			// TODO: Stupid -- better way?
+			return dialect.buildLimitHandler( "", new RowSelection() ).supportsLimit();
 		}
 	}
 
 	public static class SupportLimitAndOffsetCheck implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
-			return dialect.supportsLimit() && dialect.supportsLimitOffset();
+			// TODO: Stupid -- better way?
+			return dialect.buildLimitHandler( "", new RowSelection() ).supportsLimitOffset();
 		}
 	}
 
@@ -148,7 +163,19 @@ abstract public class DialectChecks {
 
 	public static class SupportsExistsInSelectCheck implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
-			return ! dialect.supportsExistsInSelect();
+			return dialect.supportsExistsInSelect();
+		}
+	}
+	
+	public static class SupportsLobValueChangePropogation implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return dialect.supportsLobValueChangePropogation();
+		}
+	}
+	
+	public static class SupportsLockTimeouts implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return dialect.supportsLockTimeouts();
 		}
 	}
 }

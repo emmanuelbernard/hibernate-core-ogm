@@ -30,13 +30,13 @@ import org.hibernate.action.spi.AfterTransactionCompletionProcess;
 import org.hibernate.action.spi.BeforeTransactionCompletionProcess;
 import org.hibernate.action.spi.Executable;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.event.service.spi.EventListenerGroup;
+import org.hibernate.event.service.spi.EventListenerRegistry;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.pretty.MessageHelper;
-import org.hibernate.event.service.spi.EventListenerGroup;
-import org.hibernate.event.service.spi.EventListenerRegistry;
 
 /**
  * Base class for actions relating to insert/update/delete of an entity
@@ -84,7 +84,7 @@ public abstract class EntityAction
 
 	protected abstract boolean hasPostCommitEventListeners();
 
-	public boolean needsAfterTransactionCompletion() {
+	protected boolean needsAfterTransactionCompletion() {
 		return persister.hasCache() || hasPostCommitEventListeners();
 	}
 
@@ -104,16 +104,16 @@ public abstract class EntityAction
 	 */
 	public final Serializable getId() {
 		if ( id instanceof DelayedPostInsertIdentifier ) {
-			Serializable eeId = session.getPersistenceContext().getEntry( instance ).getId();
+			final Serializable eeId = session.getPersistenceContext().getEntry( instance ).getId();
 			return eeId instanceof DelayedPostInsertIdentifier ? null : eeId;
 		}
 		return id;
 	}
 
 	public final DelayedPostInsertIdentifier getDelayedId() {
-		return DelayedPostInsertIdentifier.class.isInstance( id ) ?
-				DelayedPostInsertIdentifier.class.cast( id ) :
-				null;
+		return DelayedPostInsertIdentifier.class.isInstance( id )
+				? DelayedPostInsertIdentifier.class.cast( id )
+				: null;
 	}
 
 	/**
@@ -160,9 +160,9 @@ public abstract class EntityAction
 
 	@Override
 	public int compareTo(Object other) {
-		EntityAction action = ( EntityAction ) other;
+		final EntityAction action = (EntityAction) other;
 		//sort first by entity name
-		int roleComparison = entityName.compareTo( action.entityName );
+		final int roleComparison = entityName.compareTo( action.entityName );
 		if ( roleComparison != 0 ) {
 			return roleComparison;
 		}
@@ -177,6 +177,7 @@ public abstract class EntityAction
 	 *
 	 * @param session The session being deserialized
 	 */
+	@Override
 	public void afterDeserialize(SessionImplementor session) {
 		if ( this.session != null || this.persister != null ) {
 			throw new IllegalStateException( "already attached to a session." );

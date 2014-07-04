@@ -23,11 +23,13 @@
  *
  */
 package org.hibernate.hql.internal.ast.tree;
+
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
 import org.hibernate.QueryException;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
@@ -36,6 +38,7 @@ import org.hibernate.hql.internal.ast.util.ASTUtil;
 import org.hibernate.param.ParameterSpecification;
 import org.hibernate.persister.entity.Queryable;
 import org.hibernate.persister.entity.UnionSubclassEntityPersister;
+
 import antlr.collections.AST;
 
 /**
@@ -46,7 +49,6 @@ import antlr.collections.AST;
  * @author Steve Ebersole
  */
 public class AssignmentSpecification {
-
 	private final Set tableNames;
 	private final ParameterSpecification[] hqlParameters;
 	private final AST eq;
@@ -66,21 +68,17 @@ public class AssignmentSpecification {
 		// knows about the property-ref path in the correct format; it is either this, or
 		// recurse over the DotNodes constructing the property path just like DotNode does
 		// internally
-		DotNode lhs = ( DotNode ) eq.getFirstChild();
-		SqlNode rhs = ( SqlNode ) lhs.getNextSibling();
+		final DotNode lhs = (DotNode) eq.getFirstChild();
+		final SqlNode rhs = (SqlNode) lhs.getNextSibling();
 
 		validateLhs( lhs );
 
 		final String propertyPath = lhs.getPropertyPath();
-		Set temp = new HashSet();
+		Set<String> temp = new HashSet<String>();
 		// yuck!
 		if ( persister instanceof UnionSubclassEntityPersister ) {
-			UnionSubclassEntityPersister usep = ( UnionSubclassEntityPersister ) persister;
-			String[] tables = persister.getConstraintOrderedTableNameClosure();
-			int size = tables.length;
-			for ( int i = 0; i < size; i ++ ) {
-				temp.add( tables[i] );
-			}
+			final String[] tables = persister.getConstraintOrderedTableNameClosure();
+			Collections.addAll( temp, tables );
 		}
 		else {
 			temp.add(
@@ -89,26 +87,26 @@ public class AssignmentSpecification {
 		}
 		this.tableNames = Collections.unmodifiableSet( temp );
 
-		if (rhs==null) {
+		if ( rhs == null ) {
 			hqlParameters = new ParameterSpecification[0];
 		}
 		else if ( isParam( rhs ) ) {
-			hqlParameters = new ParameterSpecification[] { ( ( ParameterNode ) rhs ).getHqlParameterSpecification() };
+			hqlParameters = new ParameterSpecification[] {( (ParameterNode) rhs ).getHqlParameterSpecification()};
 		}
 		else {
 			List parameterList = ASTUtil.collectChildren(
-			        rhs,
-			        new ASTUtil.IncludePredicate() {
-				        public boolean include(AST node) {
-					        return isParam( node );
-			            }
-			        }
+					rhs,
+					new ASTUtil.IncludePredicate() {
+						public boolean include(AST node) {
+							return isParam( node );
+						}
+					}
 			);
-			hqlParameters = new ParameterSpecification[ parameterList.size() ];
+			hqlParameters = new ParameterSpecification[parameterList.size()];
 			Iterator itr = parameterList.iterator();
 			int i = 0;
-			while( itr.hasNext() ) {
-				hqlParameters[i++] = ( ( ParameterNode ) itr.next() ).getHqlParameterSpecification();
+			while ( itr.hasNext() ) {
+				hqlParameters[i++] = ( (ParameterNode) itr.next() ).getHqlParameterSpecification();
 			}
 		}
 	}
@@ -125,10 +123,13 @@ public class AssignmentSpecification {
 		if ( sqlAssignmentString == null ) {
 			try {
 				SqlGenerator sqlGenerator = new SqlGenerator( factory );
-				sqlGenerator.comparisonExpr( eq, false );  // false indicates to not generate parens around the assignment
+				sqlGenerator.comparisonExpr(
+						eq,
+						false
+				);  // false indicates to not generate parens around the assignment
 				sqlAssignmentString = sqlGenerator.getSQL();
 			}
-			catch( Throwable t ) {
+			catch (Throwable t) {
 				throw new QueryException( "cannot interpret set-clause assignment" );
 			}
 		}

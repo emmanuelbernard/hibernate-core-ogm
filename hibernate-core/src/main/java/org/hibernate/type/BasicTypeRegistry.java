@@ -27,9 +27,8 @@ import java.io.Serializable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.usertype.CompositeUserType;
 import org.hibernate.usertype.UserType;
@@ -40,12 +39,11 @@ import org.hibernate.usertype.UserType;
  * @author Steve Ebersole
  */
 public class BasicTypeRegistry implements Serializable {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, BasicTypeRegistry.class.getName());
+    private static final CoreMessageLogger LOG = CoreLogging.messageLogger( BasicTypeRegistry.class );
 
 	// TODO : analyze these sizing params; unfortunately this seems to be the only way to give a "concurrencyLevel"
 	private Map<String,BasicType> registry = new ConcurrentHashMap<String, BasicType>( 100, .75f, 1 );
-	private boolean locked = false;
+	private boolean locked;
 
 	public BasicTypeRegistry() {
 		register( BooleanType.INSTANCE );
@@ -64,6 +62,8 @@ public class BasicTypeRegistry implements Serializable {
 		register( BigIntegerType.INSTANCE );
 
 		register( StringType.INSTANCE );
+		register( StringNVarcharType.INSTANCE );
+		register( CharacterNCharType.INSTANCE );
 		register( UrlType.INSTANCE );
 
 		register( DateType.INSTANCE );
@@ -87,10 +87,13 @@ public class BasicTypeRegistry implements Serializable {
 		register( CharArrayType.INSTANCE );
 		register( CharacterArrayType.INSTANCE );
 		register( TextType.INSTANCE );
+		register( NTextType.INSTANCE );
 		register( BlobType.INSTANCE );
 		register( MaterializedBlobType.INSTANCE );
 		register( ClobType.INSTANCE );
+		register( NClobType.INSTANCE );
 		register( MaterializedClobType.INSTANCE );
+		register( MaterializedNClobType.INSTANCE );
 		register( SerializableType.INSTANCE );
 
 		register( ObjectType.INSTANCE );
@@ -133,7 +136,9 @@ public class BasicTypeRegistry implements Serializable {
 			throw new HibernateException( "Type to register cannot be null" );
 		}
 
-        if (type.getRegistrationKeys() == null || type.getRegistrationKeys().length == 0) LOG.typeDefinedNoRegistrationKeys(type);
+		if ( type.getRegistrationKeys() == null || type.getRegistrationKeys().length == 0 ) {
+			LOG.typeDefinedNoRegistrationKeys( type );
+		}
 
 		for ( String key : type.getRegistrationKeys() ) {
 			// be safe...

@@ -29,15 +29,16 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.Collection;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
+import org.hibernate.collection.internal.AbstractPersistentCollection;
 import org.hibernate.collection.spi.PersistentCollection;
-import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.pretty.MessageHelper;
+
+import org.jboss.logging.Logger;
 
 /**
  * We need an entry to tell us all about the current state
@@ -46,8 +47,7 @@ import org.hibernate.pretty.MessageHelper;
  * @author Gavin King
  */
 public final class CollectionEntry implements Serializable {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, CollectionEntry.class.getName());
+	private static final Logger LOG = CoreLogging.logger( CollectionEntry.class );
 
 	//ATTRIBUTES MAINTAINED BETWEEN FLUSH CYCLES
 
@@ -151,9 +151,9 @@ public final class CollectionEntry implements Serializable {
 	 */
 	private CollectionEntry(
 			String role,
-	        Serializable snapshot,
-	        Serializable loadedKey,
-	        SessionFactoryImplementor factory) {
+			Serializable snapshot,
+			Serializable loadedKey,
+			SessionFactoryImplementor factory) {
 		this.role = role;
 		this.snapshot = snapshot;
 		this.loadedKey = loadedKey;
@@ -182,6 +182,9 @@ public final class CollectionEntry implements Serializable {
 	}
 
 	public void preFlush(PersistentCollection collection) throws HibernateException {
+		if ( loadedKey == null && collection.getKey() != null ) {
+			loadedKey = collection.getKey();
+		}
 
 		boolean nonMutableChange = collection.isDirty() &&
 				getLoadedPersister()!=null &&
@@ -195,9 +198,10 @@ public final class CollectionEntry implements Serializable {
 
 		dirty(collection);
 
-        if (LOG.isDebugEnabled() && collection.isDirty() && getLoadedPersister() != null) LOG.debugf("Collection dirty: %s",
-                                                                                                     MessageHelper.collectionInfoString(getLoadedPersister().getRole(),
-                                                                                                                                        getLoadedKey()));
+		if ( LOG.isDebugEnabled() && collection.isDirty() && getLoadedPersister() != null ) {
+			LOG.debugf( "Collection dirty: %s",
+					MessageHelper.collectionInfoString( getLoadedPersister().getRole(), getLoadedKey() ) );
+		}
 
 		setDoupdate(false);
 		setDoremove(false);
@@ -211,6 +215,9 @@ public final class CollectionEntry implements Serializable {
 				collection.getSnapshot( getLoadedPersister() ) :
 				null;
 		collection.setSnapshot(loadedKey, role, snapshot);
+		if (getLoadedPersister().getBatchSize() > 1) {
+			((AbstractPersistentCollection) collection).getSession().getPersistenceContext().getBatchFetchQueue().removeBatchLoadableCollection(this); 
+		}
 	}
 
 	/**
@@ -254,6 +261,27 @@ public final class CollectionEntry implements Serializable {
 
 	public Serializable getSnapshot() {
 		return snapshot;
+	}
+
+	private boolean fromMerge;
+
+	/**
+	 * Reset the stored snapshot for both the persistent collection and this collection entry. 
+	 * Used during the merge of detached collections.
+	 * 
+	 * @param collection the persistentcollection to be updated
+	 * @param storedSnapshot the new stored snapshot
+	 */
+	public void resetStoredSnapshot(PersistentCollection collection, Serializable storedSnapshot) {
+		LOG.debugf("Reset storedSnapshot to %s for %s", storedSnapshot, this);
+
+		if ( fromMerge ) {
+			return; // EARLY EXIT!
+		}
+
+		snapshot = storedSnapshot;
+		collection.setSnapshot( loadedKey, role, snapshot );
+		fromMerge = true;
 	}
 
 	private void setLoadedPersister(CollectionPersister persister) {
@@ -349,10 +377,10 @@ public final class CollectionEntry implements Serializable {
 	}
 
 	@Override
-    public String toString() {
+	public String toString() {
 		String result = "CollectionEntry" +
 				MessageHelper.collectionInfoString( loadedPersister.getRole(), loadedKey );
-		if (currentPersister!=null) {
+		if ( currentPersister != null ) {
 			result += "->" +
 					MessageHelper.collectionInfoString( currentPersister.getRole(), currentKey );
 		}
@@ -400,18 +428,20 @@ public final class CollectionEntry implements Serializable {
 	 *
 	 * @param ois The stream from which to read the entry.
 	 * @param session The session being deserialized.
+	 *
 	 * @return The deserialized CollectionEntry
+	 *
 	 * @throws IOException
 	 * @throws ClassNotFoundException
 	 */
 	public static CollectionEntry deserialize(
 			ObjectInputStream ois,
-	        SessionImplementor session) throws IOException, ClassNotFoundException {
+			SessionImplementor session) throws IOException, ClassNotFoundException {
 		return new CollectionEntry(
-				( String ) ois.readObject(),
-		        ( Serializable ) ois.readObject(),
-		        ( Serializable ) ois.readObject(),
-		        ( session == null ? null : session.getFactory() )
+				(String) ois.readObject(),
+				(Serializable) ois.readObject(),
+				(Serializable) ois.readObject(),
+				(session == null ? null : session.getFactory())
 		);
 	}
 }

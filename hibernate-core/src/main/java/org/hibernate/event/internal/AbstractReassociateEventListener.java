@@ -25,19 +25,19 @@ package org.hibernate.event.internal;
 
 import java.io.Serializable;
 
-import org.jboss.logging.Logger;
-
-import org.hibernate.engine.internal.Versioning;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.LockMode;
+import org.hibernate.engine.internal.Versioning;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.Status;
 import org.hibernate.event.spi.AbstractEvent;
 import org.hibernate.event.spi.EventSource;
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.pretty.MessageHelper;
 import org.hibernate.type.TypeHelper;
+
+import org.jboss.logging.Logger;
 
 /**
  * A convenience base class for listeners that respond to requests to reassociate an entity
@@ -45,10 +45,8 @@ import org.hibernate.type.TypeHelper;
  *
  * @author Gavin King
  */
-public class AbstractReassociateEventListener implements Serializable {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class,
-                                                                       AbstractReassociateEventListener.class.getName());
+public abstract class AbstractReassociateEventListener implements Serializable {
+	private static final Logger log = CoreLogging.logger( AbstractReassociateEventListener.class );
 
 	/**
 	 * Associates a given entity (either transient or associated with another session) to
@@ -63,8 +61,12 @@ public class AbstractReassociateEventListener implements Serializable {
 	 */
 	protected final EntityEntry reassociate(AbstractEvent event, Object object, Serializable id, EntityPersister persister) {
 
-        if (LOG.isTraceEnabled()) LOG.trace("Reassociating transient instance: "
-                                            + MessageHelper.infoString(persister, id, event.getSession().getFactory()));
+		if ( log.isTraceEnabled() ) {
+			log.tracev(
+					"Reassociating transient instance: {0}",
+					MessageHelper.infoString( persister, id, event.getSession().getFactory() )
+			);
+		}
 
 		final EventSource source = event.getSession();
 		final EntityKey key = source.generateEntityKey( id, persister );

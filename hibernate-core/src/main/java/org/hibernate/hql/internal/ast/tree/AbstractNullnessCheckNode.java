@@ -29,6 +29,7 @@ import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.type.Type;
+
 import antlr.collections.AST;
 
 /**
@@ -39,12 +40,8 @@ import antlr.collections.AST;
  * @author Steve Ebersole
  */
 public abstract class AbstractNullnessCheckNode extends UnaryLogicOperatorNode {
-
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-    public void initialize() {
+	public void initialize() {
 		// TODO : this really needs to be delayed unitl after we definitively know the operand node type;
 		// where this is currently a problem is parameters for which where we cannot unequivocally
 		// resolve an expected type
@@ -112,14 +109,15 @@ public abstract class AbstractNullnessCheckNode extends UnaryLogicOperatorNode {
 	}
 
 	private static Type extractDataType(Node operand) {
-		Type type = null;
 		if ( operand instanceof SqlNode ) {
-			type = ( ( SqlNode ) operand ).getDataType();
+			return ( (SqlNode) operand ).getDataType();
 		}
-		if ( type == null && operand instanceof ExpectedTypeAwareNode ) {
-			type = ( ( ExpectedTypeAwareNode ) operand ).getExpectedType();
+
+		if ( operand instanceof ExpectedTypeAwareNode ) {
+			return ( (ExpectedTypeAwareNode) operand ).getExpectedType();
 		}
-		return type;
+
+		return null;
 	}
 
 	private static String[] extractMutationTexts(Node operand, int count) {
@@ -131,9 +129,9 @@ public abstract class AbstractNullnessCheckNode extends UnaryLogicOperatorNode {
 			return rtn;
 		}
 		else if ( operand.getType() == HqlSqlTokenTypes.VECTOR_EXPR ) {
-			String[] rtn = new String[ operand.getNumberOfChildren() ];
-			int x = 0;
+			final String[] rtn = new String[ operand.getNumberOfChildren() ];
 			AST node = operand.getFirstChild();
+			int x = 0;
 			while ( node != null ) {
 				rtn[ x++ ] = node.getText();
 				node = node.getNextSibling();

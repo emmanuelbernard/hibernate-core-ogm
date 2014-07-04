@@ -41,7 +41,8 @@ public class ComponentJoin extends FromElement {
 	private final ComponentType componentType;
 
 	private final String componentProperty;
-	private final String columns;
+	private final String[] columns;
+	private final String columnsFragment;
 
 	public ComponentJoin(
 			FromClause fromClause,
@@ -56,16 +57,16 @@ public class ComponentJoin extends FromElement {
 		fromClause.addJoinByPathMap( componentPath, this );
 		initializeComponentJoin( new ComponentFromElementType( this ) );
 
-		final String[] cols = origin.getPropertyMapping( "" ).toColumns( getTableAlias(), componentProperty );
-		StringBuffer buf = new StringBuffer();
-		for ( int j = 0; j < cols.length; j++ ) {
-			final String column = cols[j];
+		this.columns = origin.getPropertyMapping( "" ).toColumns( getTableAlias(), componentProperty );
+		StringBuilder buf = new StringBuilder();
+		for ( int j = 0; j < columns.length; j++ ) {
+			final String column = columns[j];
 			if ( j > 0 ) {
 				buf.append( ", " );
 			}
 			buf.append( column );
 		}
-		this.columns = buf.toString();
+		this.columnsFragment = buf.toString();
 	}
 
 	public String getComponentPath() {
@@ -80,30 +81,28 @@ public class ComponentJoin extends FromElement {
 		return componentType;
 	}
 
-
 	@Override
-    public Type getDataType() {
+	public Type getDataType() {
 		return getComponentType();
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-    public String getIdentityColumn() {
+	public String getIdentityColumn() {
 		// used to "resolve" the IdentNode when our alias is encountered *by itself* in the query; so
 		//		here we use the component
 		// NOTE : ^^ is true *except for* when encountered by itself in the SELECT clause.  That gets
 		// 		routed through org.hibernate.hql.internal.ast.tree.ComponentJoin.ComponentFromElementType.renderScalarIdentifierSelect()
 		//		which we also override to account for
+		return columnsFragment;
+	}
+
+	@Override
+	public String[] getIdentityColumns() {
 		return columns;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-    public String getDisplayText() {
+	public String getDisplayText() {
 		return "ComponentJoin{path=" + getComponentPath() + ", type=" + componentType.getReturnedClass() + "}";
 	}
 
@@ -115,39 +114,30 @@ public class ComponentJoin extends FromElement {
 		}
 
 		@Override
-        public Type getDataType() {
+		public Type getDataType() {
 			return getComponentType();
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
 		@Override
-        public QueryableCollection getQueryableCollection() {
+		public QueryableCollection getQueryableCollection() {
 			return null;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
 		@Override
-        public PropertyMapping getPropertyMapping(String propertyName) {
+		public PropertyMapping getPropertyMapping(String propertyName) {
 			return propertyMapping;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
 		@Override
-        public Type getPropertyType(String propertyName, String propertyPath) {
+		public Type getPropertyType(String propertyName, String propertyPath) {
 			int index = getComponentType().getPropertyIndex( propertyName );
 			return getComponentType().getSubtypes()[index];
 		}
 
 		@Override
-        public String renderScalarIdentifierSelect(int i) {
+		public String renderScalarIdentifierSelect(int i) {
 			String[] cols = getBasePropertyMapping().toColumns( getTableAlias(), getComponentProperty() );
-			StringBuffer buf = new StringBuffer();
+			StringBuilder buf = new StringBuilder();
 			// For property references generate <tablealias>.<columnname> as <projectionalias>
 			for ( int j = 0; j < cols.length; j++ ) {
 				final String column = cols[j];
@@ -165,10 +155,12 @@ public class ComponentJoin extends FromElement {
 	}
 
 	private final class ComponentPropertyMapping implements PropertyMapping {
+		@Override
 		public Type getType() {
 			return getComponentType();
 		}
 
+		@Override
 		public Type toType(String propertyName) throws QueryException {
 			return getBasePropertyMapping().toType( getPropertyPath( propertyName ) );
 		}
@@ -177,10 +169,12 @@ public class ComponentJoin extends FromElement {
 			return getComponentPath() + '.' + propertyName;
 		}
 
+		@Override
 		public String[] toColumns(String alias, String propertyName) throws QueryException {
 			return getBasePropertyMapping().toColumns( alias, getPropertyPath( propertyName ) );
 		}
 
+		@Override
 		public String[] toColumns(String propertyName) throws QueryException, UnsupportedOperationException {
 			return getBasePropertyMapping().toColumns( getPropertyPath( propertyName ) );
 		}

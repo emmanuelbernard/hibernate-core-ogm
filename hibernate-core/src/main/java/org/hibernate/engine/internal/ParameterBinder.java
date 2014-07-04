@@ -28,14 +28,14 @@ import java.sql.SQLException;
 import java.util.Iterator;
 import java.util.Map;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
 import org.hibernate.engine.spi.QueryParameters;
-import org.hibernate.engine.spi.TypedValue;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.TypedValue;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.type.Type;
+
+import org.jboss.logging.Logger;
 
 /**
  * Centralizes the commonality regarding binding of parameter values into PreparedStatements as this logic is
@@ -46,48 +46,74 @@ import org.hibernate.type.Type;
  * @author Steve Ebersole
  */
 public class ParameterBinder {
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(
+			CoreMessageLogger.class,
+			ParameterBinder.class.getName()
+	);
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, ParameterBinder.class.getName());
-
+	/**
+	 * Helper contract for dealing with named parameters and resolving their locations
+	 */
 	public static interface NamedParameterSource {
+		/**
+		 * Retrieve the locations for the given parameter name
+		 *
+		 * @param name The parameter name
+		 *
+		 * @return The locations
+		 */
 		public int[] getNamedParameterLocations(String name);
 	}
 
 	private ParameterBinder() {
 	}
 
+	/**
+	 * Perform parameter binding
+	 *
+	 * @param st The statement to bind parameters to
+	 * @param queryParameters The parameters
+	 * @param start The initial bind position
+	 * @param source The named parameter source, for resolving the locations of named parameters
+	 * @param session The session
+	 *
+	 * @return The next bind position after the last position we bound here.
+	 *
+	 * @throws SQLException Indicates a problem calling JDBC bind methods
+	 * @throws HibernateException Indicates a problem access bind values.
+	 */
 	public static int bindQueryParameters(
-	        final PreparedStatement st,
-	        final QueryParameters queryParameters,
-	        final int start,
-	        final NamedParameterSource source,
-	        SessionImplementor session) throws SQLException, HibernateException {
+			final PreparedStatement st,
+			final QueryParameters queryParameters,
+			final int start,
+			final NamedParameterSource source,
+			SessionImplementor session) throws SQLException, HibernateException {
 		int col = start;
 		col += bindPositionalParameters( st, queryParameters, col, session );
 		col += bindNamedParameters( st, queryParameters, col, source, session );
 		return col;
 	}
 
-	public static int bindPositionalParameters(
-	        final PreparedStatement st,
-	        final QueryParameters queryParameters,
-	        final int start,
-	        final SessionImplementor session) throws SQLException, HibernateException {
+	private static int bindPositionalParameters(
+			final PreparedStatement st,
+			final QueryParameters queryParameters,
+			final int start,
+			final SessionImplementor session) throws SQLException, HibernateException {
 		return bindPositionalParameters(
-		        st,
-		        queryParameters.getPositionalParameterValues(),
-		        queryParameters.getPositionalParameterTypes(),
-		        start,
-		        session
+				st,
+				queryParameters.getPositionalParameterValues(),
+				queryParameters.getPositionalParameterTypes(),
+				start,
+				session
 		);
 	}
 
-	public static int bindPositionalParameters(
-	        final PreparedStatement st,
-	        final Object[] values,
-	        final Type[] types,
-	        final int start,
-	        final SessionImplementor session) throws SQLException, HibernateException {
+	private static int bindPositionalParameters(
+			final PreparedStatement st,
+			final Object[] values,
+			final Type[] types,
+			final int start,
+			final SessionImplementor session) throws SQLException, HibernateException {
 		int span = 0;
 		for ( int i = 0; i < values.length; i++ ) {
 			types[i].nullSafeSet( st, values[i], start + span, session );
@@ -96,38 +122,46 @@ public class ParameterBinder {
 		return span;
 	}
 
-	public static int bindNamedParameters(
-	        final PreparedStatement ps,
-	        final QueryParameters queryParameters,
-	        final int start,
-	        final NamedParameterSource source,
-	        final SessionImplementor session) throws SQLException, HibernateException {
+	private static int bindNamedParameters(
+			final PreparedStatement ps,
+			final QueryParameters queryParameters,
+			final int start,
+			final NamedParameterSource source,
+			final SessionImplementor session) throws SQLException, HibernateException {
 		return bindNamedParameters( ps, queryParameters.getNamedParameters(), start, source, session );
 	}
 
-	public static int bindNamedParameters(
-	        final PreparedStatement ps,
-	        final Map namedParams,
-	        final int start,
-	        final NamedParameterSource source,
-	        final SessionImplementor session) throws SQLException, HibernateException {
+	private static int bindNamedParameters(
+			final PreparedStatement ps,
+			final Map namedParams,
+			final int start,
+			final NamedParameterSource source,
+			final SessionImplementor session) throws SQLException, HibernateException {
 		if ( namedParams != null ) {
+			final boolean debugEnabled = LOG.isDebugEnabled();
 			// assumes that types are all of span 1
-			Iterator iter = namedParams.entrySet().iterator();
+			final Iterator iter = namedParams.entrySet().iterator();
 			int result = 0;
 			while ( iter.hasNext() ) {
-				Map.Entry e = ( Map.Entry ) iter.next();
-				String name = ( String ) e.getKey();
-				TypedValue typedval = (TypedValue) e.getValue();
-				int[] locations = source.getNamedParameterLocations( name );
-				for ( int i = 0; i < locations.length; i++ ) {
-                    LOG.debugf("bindNamedParameters() %s -> %s [%s]", typedval.getValue(), name, locations[i] + start);
-					typedval.getType().nullSafeSet( ps, typedval.getValue(), locations[i] + start, session );
+				final Map.Entry e = (Map.Entry) iter.next();
+				final String name = (String) e.getKey();
+				final TypedValue typedVal = (TypedValue) e.getValue();
+				final int[] locations = source.getNamedParameterLocations( name );
+				for ( int location : locations ) {
+					if ( debugEnabled ) {
+						LOG.debugf(
+								"bindNamedParameters() %s -> %s [%s]",
+								typedVal.getValue(),
+								name,
+								location + start
+						);
+					}
+					typedVal.getType().nullSafeSet( ps, typedVal.getValue(), location + start, session );
 				}
 				result += locations.length;
 			}
 			return result;
 		}
-        return 0;
+		return 0;
 	}
 }

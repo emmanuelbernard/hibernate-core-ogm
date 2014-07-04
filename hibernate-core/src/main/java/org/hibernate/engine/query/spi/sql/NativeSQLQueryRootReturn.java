@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2008, 2013, Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,10 +20,11 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate.engine.query.spi.sql;
+
 import java.util.Map;
+
 import org.hibernate.LockMode;
 
 /**
@@ -46,7 +47,7 @@ public class NativeSQLQueryRootReturn extends NativeSQLQueryNonScalarReturn {
 	 * @param lockMode The lock mode to apply
 	 */
 	public NativeSQLQueryRootReturn(String alias, String entityName, LockMode lockMode) {
-		this(alias, entityName, null, lockMode);
+		this( alias, entityName, null, lockMode );
 	}
 
 	/**
@@ -62,6 +63,12 @@ public class NativeSQLQueryRootReturn extends NativeSQLQueryNonScalarReturn {
 		this.hashCode = determineHashCode();
 	}
 
+	private int determineHashCode() {
+		int result = super.hashCode();
+		result = 31 * result + ( returnEntityName != null ? returnEntityName.hashCode() : 0 );
+		return result;
+	}
+
 	/**
 	 * The name of the entity to be returned.
 	 *
@@ -71,6 +78,8 @@ public class NativeSQLQueryRootReturn extends NativeSQLQueryNonScalarReturn {
 		return returnEntityName;
 	}
 
+	@Override
+	@SuppressWarnings("RedundantIfStatement")
 	public boolean equals(Object o) {
 		if ( this == o ) {
 			return true;
@@ -82,7 +91,7 @@ public class NativeSQLQueryRootReturn extends NativeSQLQueryNonScalarReturn {
 			return false;
 		}
 
-		NativeSQLQueryRootReturn that = ( NativeSQLQueryRootReturn ) o;
+		final NativeSQLQueryRootReturn that = (NativeSQLQueryRootReturn) o;
 
 		if ( returnEntityName != null ? !returnEntityName.equals( that.returnEntityName ) : that.returnEntityName != null ) {
 			return false;
@@ -91,13 +100,8 @@ public class NativeSQLQueryRootReturn extends NativeSQLQueryNonScalarReturn {
 		return true;
 	}
 
+	@Override
 	public int hashCode() {
 		return hashCode;
-	}
-
-	private int determineHashCode() {
-		int result = super.hashCode();
-		result = 31 * result + ( returnEntityName != null ? returnEntityName.hashCode() : 0 );
-		return result;
 	}
 }

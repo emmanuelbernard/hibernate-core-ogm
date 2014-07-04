@@ -24,10 +24,13 @@
 package org.hibernate.id;
 import java.io.Serializable;
 import java.util.Properties;
+
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.id.enhanced.AccessCallback;
-import org.hibernate.id.enhanced.OptimizerFactory;
+import org.hibernate.id.enhanced.LegacyHiLoAlgorithmOptimizer;
+import org.hibernate.id.enhanced.SequenceStyleGenerator;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.type.Type;
 
@@ -46,29 +49,34 @@ import org.hibernate.type.Type;
  *
  * @see SequenceHiLoGenerator
  * @author Gavin King
+ * 
+ * @deprecated use {@link SequenceStyleGenerator} instead.
  */
+@Deprecated 
 public class TableHiLoGenerator extends TableGenerator {
 	/**
 	 * The max_lo parameter
 	 */
 	public static final String MAX_LO = "max_lo";
 
-	private OptimizerFactory.LegacyHiLoAlgorithmOptimizer hiloOptimizer;
+	private LegacyHiLoAlgorithmOptimizer hiloOptimizer;
 
 	private int maxLo;
 
-	public void configure(Type type, Properties params, Dialect d) {
-		super.configure(type, params, d);
-		maxLo = ConfigurationHelper.getInt(MAX_LO, params, Short.MAX_VALUE);
+	@Override
+	public void configure(Type type, Properties params, Dialect d, ClassLoaderService classLoaderService) {
+		super.configure( type, params, d, classLoaderService );
+		maxLo = ConfigurationHelper.getInt( MAX_LO, params, Short.MAX_VALUE );
 
 		if ( maxLo >= 1 ) {
-			hiloOptimizer = new OptimizerFactory.LegacyHiLoAlgorithmOptimizer( type.getReturnedClass(), maxLo );
+			hiloOptimizer = new LegacyHiLoAlgorithmOptimizer( type.getReturnedClass(), maxLo );
 		}
 	}
 
+	@Override
 	public synchronized Serializable generate(final SessionImplementor session, Object obj) {
 		// maxLo < 1 indicates a hilo generator with no hilo :?
-        if ( maxLo < 1 ) {
+		if ( maxLo < 1 ) {
 			//keep the behavior consistent even for boundary usages
 			IntegralDataTypeHolder value = null;
 			while ( value == null || value.lt( 0 ) ) {
@@ -81,6 +89,11 @@ public class TableHiLoGenerator extends TableGenerator {
 				new AccessCallback() {
 					public IntegralDataTypeHolder getNextValue() {
 						return generateHolder( session );
+					}
+
+					@Override
+					public String getTenantIdentifier() {
+						return session.getTenantIdentifier();
 					}
 				}
 		);

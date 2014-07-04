@@ -22,13 +22,17 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.envers.query.criteria;
-import org.hibernate.envers.configuration.AuditConfiguration;
-import org.hibernate.envers.tools.query.Parameters;
-import org.hibernate.envers.tools.query.QueryBuilder;
+
+import org.hibernate.envers.configuration.spi.AuditConfiguration;
+import org.hibernate.envers.internal.reader.AuditReaderImplementor;
+import org.hibernate.envers.internal.tools.query.Parameters;
+import org.hibernate.envers.internal.tools.query.QueryBuilder;
 
 /**
  * @author Adam Warski (adam at warski dot org)
  */
 public interface AuditCriterion {
-    void addToQuery(AuditConfiguration auditCfg, String entityName, QueryBuilder qb, Parameters parameters);
+	void addToQuery(
+			AuditConfiguration auditCfg, AuditReaderImplementor versionsReader, String entityName,
+			QueryBuilder qb, Parameters parameters);
 }

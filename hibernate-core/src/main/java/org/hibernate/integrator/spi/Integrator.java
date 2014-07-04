@@ -25,8 +25,7 @@ package org.hibernate.integrator.spi;
 
 import org.hibernate.cfg.Configuration;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.metamodel.source.MetadataImplementor;
-import org.hibernate.service.ServiceRegistryBuilder;
+import org.hibernate.metamodel.spi.MetadataImplementor;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
 
 /**
@@ -34,15 +33,17 @@ import org.hibernate.service.spi.SessionFactoryServiceRegistry;
  * <p/>
  * IMPL NOTE: called during session factory initialization (constructor), so not all parts of the passed session factory
  * will be available.
- *
- * @todo : the signature here *will* change, guaranteed
- *
- * @todo : better name ?
+ * <p/>
+ * For more information, see the following jiras:<ul>
+ *     <li><a href="https://hibernate.onjira.com/browse/HHH-5562">HHH-5562</a></li>
+ *     <li><a href="https://hibernate.onjira.com/browse/HHH-6081">HHH-6081</a></li>
+ * </ul>
  *
  * @author Steve Ebersole
  * @since 4.0
- * @jira HHH-5562
- * @jira HHH-6081
+ *
+ * @todo : the signature here *will* change, guaranteed
+ * @todo : better name ?
  */
 public interface Integrator {
 

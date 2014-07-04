@@ -33,13 +33,13 @@ import org.hibernate.cache.spi.CacheKey;
 import org.hibernate.cache.spi.access.SoftLock;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.event.service.spi.EventListenerGroup;
+import org.hibernate.event.service.spi.EventListenerRegistry;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.pretty.MessageHelper;
-import org.hibernate.event.service.spi.EventListenerGroup;
-import org.hibernate.event.service.spi.EventListenerRegistry;
 
 /**
  * Any action relating to insert/update/delete of a collection
@@ -54,8 +54,8 @@ public abstract class CollectionAction implements Executable, Serializable, Comp
 	private final Serializable key;
 	private final String collectionRole;
 
-	public CollectionAction(
-			final CollectionPersister persister, 
+	protected CollectionAction(
+			final CollectionPersister persister,
 			final PersistentCollection collection, 
 			final Serializable key, 
 			final SessionImplementor session) {
@@ -144,7 +144,7 @@ public abstract class CollectionAction implements Executable, Serializable, Comp
 
 	protected final void evict() throws CacheException {
 		if ( persister.hasCache() ) {
-			CacheKey ck = session.generateCacheKey(
+			final CacheKey ck = session.generateCacheKey(
 					key, 
 					persister.getKeyType(), 
 					persister.getRole()
@@ -155,22 +155,21 @@ public abstract class CollectionAction implements Executable, Serializable, Comp
 
 	@Override
 	public String toString() {
-		return StringHelper.unqualify( getClass().getName() ) + 
-				MessageHelper.infoString( collectionRole, key );
+		return StringHelper.unqualify( getClass().getName() ) + MessageHelper.infoString( collectionRole, key );
 	}
 
 	@Override
 	public int compareTo(Object other) {
-		CollectionAction action = ( CollectionAction ) other;
-		//sort first by role name
-		int roleComparison = collectionRole.compareTo( action.collectionRole );
+		final CollectionAction action = (CollectionAction) other;
+
+		// sort first by role name
+		final int roleComparison = collectionRole.compareTo( action.collectionRole );
 		if ( roleComparison != 0 ) {
 			return roleComparison;
 		}
 		else {
 			//then by fk
-			return persister.getKeyType()
-					.compare( key, action.key );
+			return persister.getKeyType().compare( key, action.key );
 		}
 	}
 

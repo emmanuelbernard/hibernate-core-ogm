@@ -23,116 +23,143 @@
  */
 package org.hibernate.envers.test.integration.naming.ids;
 
-import org.hibernate.ejb.Ejb3Configuration;
-import org.hibernate.envers.test.AbstractEntityTest;
-import org.hibernate.envers.test.Priority;
-import org.hibernate.mapping.Column;
-import org.junit.Test;
-
 import javax.persistence.EntityManager;
 import java.util.Arrays;
-import java.util.Iterator;
+import java.util.List;
 
-import static junit.framework.Assert.*;
+import org.hibernate.envers.test.BaseEnversJPAFunctionalTestCase;
+import org.hibernate.envers.test.Priority;
+import org.hibernate.metamodel.spi.binding.SingularAttributeBinding;
+import org.hibernate.metamodel.spi.relational.Column;
+import org.hibernate.metamodel.spi.relational.Value;
+import org.hibernate.testing.FailureExpectedWithNewMetamodel;
+
+import org.junit.Test;
+
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertFalse;
+import static junit.framework.Assert.assertTrue;
 
 /**
  * @author Adam Warski (adam at warski dot org)
  */
-public class JoinMulIdNaming extends AbstractEntityTest {
-    private MulIdNaming ed_id1;
-    private MulIdNaming ed_id2;
-    private MulIdNaming ing_id1;
+@FailureExpectedWithNewMetamodel( message = " No support yet for referenced join columns unless they correspond with columns bound for an attribute binding." )
 
-    public void configure(Ejb3Configuration cfg) {
-        cfg.addAnnotatedClass(JoinMulIdNamingRefEdEntity.class);
-        cfg.addAnnotatedClass(JoinMulIdNamingRefIngEntity.class);
-    }
+public class JoinMulIdNaming extends BaseEnversJPAFunctionalTestCase {
+	private MulIdNaming ed_id1;
+	private MulIdNaming ed_id2;
+	private MulIdNaming ing_id1;
 
-    @Test
-    @Priority(10)
-    public void initData() {
-        ed_id1 = new MulIdNaming(10, 20);
-        ed_id2 = new MulIdNaming(11, 21);
-        ing_id1 = new MulIdNaming(12, 22);
+	@Override
+	protected Class<?>[] getAnnotatedClasses() {
+		return new Class[] {JoinMulIdNamingRefEdEntity.class, JoinMulIdNamingRefIngEntity.class};
+	}
 
-        JoinMulIdNamingRefEdEntity ed1 = new JoinMulIdNamingRefEdEntity(ed_id1, "data1");
-        JoinMulIdNamingRefEdEntity ed2 = new JoinMulIdNamingRefEdEntity(ed_id2, "data2");
+	@Test
+	@Priority(10)
+	public void initData() {
+		ed_id1 = new MulIdNaming( 10, 20 );
+		ed_id2 = new MulIdNaming( 11, 21 );
+		ing_id1 = new MulIdNaming( 12, 22 );
 
-        JoinMulIdNamingRefIngEntity ing1 = new JoinMulIdNamingRefIngEntity(ing_id1, "x", ed1);
+		JoinMulIdNamingRefEdEntity ed1 = new JoinMulIdNamingRefEdEntity( ed_id1, "data1" );
+		JoinMulIdNamingRefEdEntity ed2 = new JoinMulIdNamingRefEdEntity( ed_id2, "data2" );
 
-        // Revision 1
-        EntityManager em = getEntityManager();
-        em.getTransaction().begin();
+		JoinMulIdNamingRefIngEntity ing1 = new JoinMulIdNamingRefIngEntity( ing_id1, "x", ed1 );
 
-        em.persist(ed1);
-        em.persist(ed2);
-        em.persist(ing1);
+		// Revision 1
+		EntityManager em = getEntityManager();
+		em.getTransaction().begin();
 
-        em.getTransaction().commit();
+		em.persist( ed1 );
+		em.persist( ed2 );
+		em.persist( ing1 );
 
-        // Revision 2
-        em.getTransaction().begin();
+		em.getTransaction().commit();
 
-        ed2 = em.find(JoinMulIdNamingRefEdEntity.class, ed_id2);
+		// Revision 2
+		em.getTransaction().begin();
 
-        ing1 = em.find(JoinMulIdNamingRefIngEntity.class, ing_id1);
-        ing1.setData("y");
-        ing1.setReference(ed2);
+		ed2 = em.find( JoinMulIdNamingRefEdEntity.class, ed_id2 );
 
-        em.getTransaction().commit();
-    }
+		ing1 = em.find( JoinMulIdNamingRefIngEntity.class, ing_id1 );
+		ing1.setData( "y" );
+		ing1.setReference( ed2 );
 
-    @Test
-    public void testRevisionsCounts() {
-        assert Arrays.asList(1, 2).equals(getAuditReader().getRevisions(JoinMulIdNamingRefEdEntity.class, ed_id1));
-        assert Arrays.asList(1, 2).equals(getAuditReader().getRevisions(JoinMulIdNamingRefEdEntity.class, ed_id2));
-        assert Arrays.asList(1, 2).equals(getAuditReader().getRevisions(JoinMulIdNamingRefIngEntity.class, ing_id1));
-    }
+		em.getTransaction().commit();
+	}
 
-    @Test
-    public void testHistoryOfEdId1() {
-        JoinMulIdNamingRefEdEntity ver1 = new JoinMulIdNamingRefEdEntity(ed_id1, "data1");
+	@Test
+	public void testRevisionsCounts() {
+		assert Arrays.asList( 1, 2 ).equals(
+				getAuditReader().getRevisions(
+						JoinMulIdNamingRefEdEntity.class,
+						ed_id1
+				)
+		);
+		assert Arrays.asList( 1, 2 ).equals(
+				getAuditReader().getRevisions(
+						JoinMulIdNamingRefEdEntity.class,
+						ed_id2
+				)
+		);
+		assert Arrays.asList( 1, 2 ).equals(
+				getAuditReader().getRevisions(
+						JoinMulIdNamingRefIngEntity.class,
+						ing_id1
+				)
+		);
+	}
 
-        assert getAuditReader().find(JoinMulIdNamingRefEdEntity.class, ed_id1, 1).equals(ver1);
-        assert getAuditReader().find(JoinMulIdNamingRefEdEntity.class, ed_id1, 2).equals(ver1);
-    }
+	@Test
+	public void testHistoryOfEdId1() {
+		JoinMulIdNamingRefEdEntity ver1 = new JoinMulIdNamingRefEdEntity( ed_id1, "data1" );
 
-    @Test
-    public void testHistoryOfEdId2() {
-        JoinMulIdNamingRefEdEntity ver1 = new JoinMulIdNamingRefEdEntity(ed_id2, "data2");
+		assert getAuditReader().find( JoinMulIdNamingRefEdEntity.class, ed_id1, 1 ).equals( ver1 );
+		assert getAuditReader().find( JoinMulIdNamingRefEdEntity.class, ed_id1, 2 ).equals( ver1 );
+	}
 
-        assert getAuditReader().find(JoinMulIdNamingRefEdEntity.class, ed_id2, 1).equals(ver1);
-        assert getAuditReader().find(JoinMulIdNamingRefEdEntity.class, ed_id2, 2).equals(ver1);
-    }
+	@Test
+	public void testHistoryOfEdId2() {
+		JoinMulIdNamingRefEdEntity ver1 = new JoinMulIdNamingRefEdEntity( ed_id2, "data2" );
 
-    @Test
-    public void testHistoryOfIngId1() {
-        JoinMulIdNamingRefIngEntity ver1 = new JoinMulIdNamingRefIngEntity(ing_id1, "x", null);
-        JoinMulIdNamingRefIngEntity ver2 = new JoinMulIdNamingRefIngEntity(ing_id1, "y", null);
+		assert getAuditReader().find( JoinMulIdNamingRefEdEntity.class, ed_id2, 1 ).equals( ver1 );
+		assert getAuditReader().find( JoinMulIdNamingRefEdEntity.class, ed_id2, 2 ).equals( ver1 );
+	}
 
-        assert getAuditReader().find(JoinMulIdNamingRefIngEntity.class, ing_id1, 1).equals(ver1);
-        assert getAuditReader().find(JoinMulIdNamingRefIngEntity.class, ing_id1, 2).equals(ver2);
+	@Test
+	public void testHistoryOfIngId1() {
+		JoinMulIdNamingRefIngEntity ver1 = new JoinMulIdNamingRefIngEntity( ing_id1, "x", null );
+		JoinMulIdNamingRefIngEntity ver2 = new JoinMulIdNamingRefIngEntity( ing_id1, "y", null );
 
-        assert getAuditReader().find(JoinMulIdNamingRefIngEntity.class, ing_id1, 1).getReference().equals(
-                new JoinMulIdNamingRefEdEntity(ed_id1, "data1"));
-        assert getAuditReader().find(JoinMulIdNamingRefIngEntity.class, ing_id1, 2).getReference().equals(
-                new JoinMulIdNamingRefEdEntity(ed_id2, "data2"));
-    }
+		assert getAuditReader().find( JoinMulIdNamingRefIngEntity.class, ing_id1, 1 ).equals( ver1 );
+		assert getAuditReader().find( JoinMulIdNamingRefIngEntity.class, ing_id1, 2 ).equals( ver2 );
 
-    @SuppressWarnings({"unchecked"})
-    @Test
-    public void testJoinColumnNames() {
-		Iterator<Column> columns =
-				getCfg().getClassMapping("org.hibernate.envers.test.integration.naming.ids.JoinMulIdNamingRefIngEntity_AUD")
-						.getProperty("reference_id1").getColumnIterator();
-		assertTrue(columns.hasNext());
-		assertEquals("ID1_reference", columns.next().getName());
-		assertFalse(columns.hasNext());
+		assert getAuditReader().find( JoinMulIdNamingRefIngEntity.class, ing_id1, 1 ).getReference().equals(
+				new JoinMulIdNamingRefEdEntity( ed_id1, "data1" )
+		);
+		assert getAuditReader().find( JoinMulIdNamingRefIngEntity.class, ing_id1, 2 ).getReference().equals(
+				new JoinMulIdNamingRefEdEntity( ed_id2, "data2" )
+		);
+	}
 
-		columns = getCfg().getClassMapping("org.hibernate.envers.test.integration.naming.ids.JoinMulIdNamingRefIngEntity_AUD")
-				.getProperty("reference_id2").getColumnIterator();
-		assertTrue(columns.hasNext());
-		assertEquals("ID2_reference", columns.next().getName());
-		assertFalse(columns.hasNext());
+	@SuppressWarnings({"unchecked"})
+	@Test
+	public void testJoinColumnNames() {
+		SingularAttributeBinding attributeBinding = (SingularAttributeBinding) getMetadata().getEntityBinding(
+				"org.hibernate.envers.test.integration.naming.ids.JoinMulIdNamingRefIngEntity_AUD"
+		).locateAttributeBinding( "reference_id1" );
+		List<Value> values = attributeBinding.getValues();
+		assertTrue( !values.isEmpty() );
+		assertEquals( "ID1_reference", ( (Column) values.get( 0 ) ).getColumnName().getText() );
+		assertEquals( 1, values.size() );
+
+		attributeBinding = (SingularAttributeBinding) getMetadata().getEntityBinding(
+				"org.hibernate.envers.test.integration.naming.ids.JoinMulIdNamingRefIngEntity_AUD"
+		).locateAttributeBinding( "reference_id2" );
+		values = attributeBinding.getValues();
+		assertTrue( !values.isEmpty() );
+		assertEquals( "ID2_reference", ( (Column) values.get( 0 ) ).getColumnName().getText() );
+		assertEquals( 1, values.size() );
 	}
 }

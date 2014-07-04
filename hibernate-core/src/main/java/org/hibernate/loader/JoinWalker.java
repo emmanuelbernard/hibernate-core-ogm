@@ -24,22 +24,23 @@
 package org.hibernate.loader;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
 import org.hibernate.FetchMode;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.MappingException;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.internal.JoinHelper;
+import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
-import org.hibernate.mapping.Join;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.persister.entity.EntityPersister;
@@ -91,6 +92,9 @@ public class JoinWalker {
 
 	}
 
+	public List getAssociations() {
+		return Collections.unmodifiableList( associations );
+	}
 
 	public String[] getCollectionSuffixes() {
 		return collectionSuffixes;
@@ -539,6 +543,49 @@ public class JoinWalker {
 				);
 			}
 		}
+
+		// if the entity has a composite identifier, see if we need to handle
+		// its sub-properties separately
+		final Type idType = persister.getIdentifierType();
+		if ( idType.isComponentType() ) {
+			final CompositeType cidType = (CompositeType) idType;
+			if ( persister.getEntityMetamodel().getIdentifierProperty().isVirtual() ) {
+				// we have a non-aggregated composite identifier.  We need to process
+				// the composite sub-properties separately
+				if ( persister.getEntityMetamodel().getIdentifierProperty().isEmbedded() ) {
+					walkComponentTree(
+							cidType,
+							-1,
+							0,
+							persister,
+							alias,
+							path,
+							currentDepth
+					);
+				}
+			}
+//			if ( cidType.isEmbedded() ) {
+//				// we have an embedded composite identifier.  Most likely we need to process the composite
+//				// properties separately, although there is an edge case where the identifier is really
+//				// a simple identifier (single value) wrapped in a JPA @IdClass or even in the case of a
+//				// a simple identifier (single value) wrapped in a Hibernate composite type.
+//				//
+//				// We really do not have a built-in method to determine that.  However, generally the
+//				// persister would report that there is single, physical identifier property which is
+//				// explicitly at odds with the notion of "embedded composite".  So we use that for now
+//				if ( persister.getEntityMetamodel().getIdentifierProperty().isEmbedded() ) {
+//					walkComponentTree(
+//							cidType,
+//							-1,
+//							0,
+//							persister,
+//							alias,
+//							path,
+//							currentDepth
+//					);
+//				}
+//			}
+		}
 	}
 
 	/**
@@ -696,7 +743,7 @@ public class JoinWalker {
 
 	protected boolean isTooDeep(int currentDepth) {
 		Integer maxFetchDepth = getFactory().getSettings().getMaximumFetchDepth();
-		return maxFetchDepth!=null && currentDepth >= maxFetchDepth.intValue();
+		return maxFetchDepth!=null && currentDepth >= maxFetchDepth;
 	}
 	
 	protected boolean isTooManyCollections() {
@@ -760,7 +807,7 @@ public class JoinWalker {
 	protected boolean isDuplicateAssociation(final String lhsTable, final String[] lhsColumnNames, final AssociationType type) {
 		final String foreignKeyTable;
 		final String[] foreignKeyColumns;
-		if ( type.getForeignKeyDirection()==ForeignKeyDirection.FOREIGN_KEY_FROM_PARENT ) {
+		if ( type.getForeignKeyDirection()==ForeignKeyDirection.FROM_PARENT ) {
 			foreignKeyTable = lhsTable;
 			foreignKeyColumns = lhsColumnNames;
 		}
@@ -813,7 +860,7 @@ public class JoinWalker {
 		}
 
 		Integer maxFetchDepth = getFactory().getSettings().getMaximumFetchDepth();
-		final boolean tooDeep = maxFetchDepth!=null && depth >= maxFetchDepth.intValue();
+		final boolean tooDeep = maxFetchDepth!=null && depth >= maxFetchDepth;
 		
 		return !tooDeep && !isDuplicateAssociation(lhsTable, lhsColumnNames, type);
 	}
@@ -898,7 +945,7 @@ public class JoinWalker {
 	 */
 	protected static final String orderBy(List associations)
 	throws MappingException {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		Iterator iter = associations.iterator();
 		OuterJoinableAssociation last = null;
 		while ( iter.hasNext() ) {
@@ -930,17 +977,17 @@ public class JoinWalker {
 		if ( buf.length()>0 ) buf.setLength( buf.length()-2 );
 		return buf.toString();
 	}
-	
+
 	/**
 	 * Render the where condition for a (batch) load by identifier / collection key
 	 */
-	protected StringBuffer whereString(String alias, String[] columnNames, int batchSize) {
+	protected StringBuilder whereString(String alias, String[] columnNames, int batchSize) {
 		if ( columnNames.length==1 ) {
 			// if not a composite key, use "foo in (?, ?, ?)" for batching
 			// if no batch, and not a composite key, use "foo = ?"
 			InFragment in = new InFragment().setColumn( alias, columnNames[0] );
 			for ( int i=0; i<batchSize; i++ ) in.addValue("?");
-			return new StringBuffer( in.toFragmentString() );
+			return new StringBuilder( in.toFragmentString() );
 		}
 		else {
 			//a composite key
@@ -948,7 +995,7 @@ public class JoinWalker {
 					.setTableAlias(alias)
 					.setCondition( columnNames, "?" );
 	
-			StringBuffer whereString = new StringBuffer();
+			StringBuilder whereString = new StringBuilder();
 			if ( batchSize==1 ) {
 				// if no batch, use "foo = ? and bar = ?"
 				whereString.append( byId.toFragmentString() );
@@ -1053,7 +1100,7 @@ public class JoinWalker {
 			return "";
 		}
 		else {
-			StringBuffer buf = new StringBuffer( associations.size() * 100 );
+			StringBuilder buf = new StringBuilder( associations.size() * 100 );
 			int entityAliasCount=0;
 			int collectionAliasCount=0;
 			for ( int i=0; i<associations.size(); i++ ) {

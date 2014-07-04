@@ -23,7 +23,10 @@
  *
  */
 package org.hibernate.hql.internal.ast.util;
-import java.util.Stack;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+
 import antlr.collections.AST;
 
 /**
@@ -34,7 +37,6 @@ import antlr.collections.AST;
  * @author Strong Liu
  * 
  */
-
 public class NodeTraverser {
 	public static interface VisitationStrategy {
 		public void visit( AST node );
@@ -64,24 +66,24 @@ public class NodeTraverser {
 		}
 		visitDepthFirst( ast.getFirstChild() );
 	}
-	
-	private void visitDepthFirst(AST ast){
-		if(ast==null){
+
+	private void visitDepthFirst(AST ast) {
+		if ( ast == null ) {
 			return;
 		}
-		Stack stack = new Stack();
-		if ( ast != null ) {
-			stack.push( ast );
-			while (!stack.empty()) {
-				ast = (AST) stack.pop();
-				strategy.visit( ast );
-				if ( ast.getNextSibling() != null ) 
-					stack.push( ast.getNextSibling() );
-				if ( ast.getFirstChild() != null ) 
-					stack.push( ast.getFirstChild() );
+		Deque<AST> stack = new ArrayDeque<AST>();
+		stack.addLast( ast );
+		while ( !stack.isEmpty() ) {
+			ast = stack.removeLast();
+			strategy.visit( ast );
+			if ( ast.getNextSibling() != null ) {
+				stack.addLast( ast.getNextSibling() );
+			}
+			if ( ast.getFirstChild() != null ) {
+				stack.addLast( ast.getFirstChild() );
 			}
 		}
 	}
 
-	
+
 }

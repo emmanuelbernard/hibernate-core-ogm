@@ -23,12 +23,14 @@
  *
  */
 package org.hibernate.loader.collection;
+
+import org.hibernate.MappingException;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.MappingException;
 import org.hibernate.loader.JoinWalker;
 import org.hibernate.persister.collection.QueryableCollection;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -42,7 +44,7 @@ import org.jboss.logging.Logger;
  */
 public class OneToManyLoader extends CollectionLoader {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, OneToManyLoader.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, OneToManyLoader.class.getName() );
 
 	public OneToManyLoader(
 			QueryableCollection oneToManyPersister,
@@ -77,6 +79,8 @@ public class OneToManyLoader extends CollectionLoader {
 		initFromWalker( walker );
 
 		postInstantiate();
-        LOG.debugf("Static select for one-to-many %s: %s", oneToManyPersister.getRole(), getSQLString());
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf( "Static select for one-to-many %s: %s", oneToManyPersister.getRole(), getSQLString() );
+		}
 	}
 }

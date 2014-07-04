@@ -1,0 +1,11 @@
+apply plugin: 'groovy'
+apply plugin: 'maven'
+apply plugin: 'java'
+
+dependencies {
+   compile( project(':hibernate-core') ) 
+   compile( libraries.jpa )
+   compile( libraries.javassist )
+   compile gradleApi()
+   compile localGroovy()
+}

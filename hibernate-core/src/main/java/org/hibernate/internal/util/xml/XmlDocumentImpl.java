@@ -28,10 +28,11 @@ import java.io.Serializable;
 import org.dom4j.Document;
 
 /**
- * Basic implemementation of {@link XmlDocument}
+ * Basic implementation of {@link XmlDocument}
  *
  * @author Steve Ebersole
  */
+@Deprecated
 public class XmlDocumentImpl implements XmlDocument, Serializable {
 	private final Document documentTree;
 	private final Origin origin;
@@ -40,21 +41,18 @@ public class XmlDocumentImpl implements XmlDocument, Serializable {
 		this( documentTree, new OriginImpl( originType, originName ) );
 	}
 
+
 	public XmlDocumentImpl(Document documentTree, Origin origin) {
 		this.documentTree = documentTree;
 		this.origin = origin;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Document getDocumentTree() {
 		return documentTree;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Origin getOrigin() {
 		return origin;
 	}

@@ -25,13 +25,13 @@ package org.hibernate.test.annotations.derivedidentities.e1.a;
 
 import java.util.List;
 
-import org.hibernate.Query;
-import org.hibernate.Session;
-
 import org.junit.Test;
 
-import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.hibernate.Query;
+import org.hibernate.Session;
 import org.hibernate.test.util.SchemaUtil;
+import org.hibernate.testing.FailureExpectedWithNewMetamodel;
+import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
@@ -40,11 +40,12 @@ import static org.junit.Assert.assertTrue;
 /**
  * @author Emmanuel Bernard
  */
+@FailureExpectedWithNewMetamodel
 public class DerivedIdentitySimpleParentIdClassDepTest extends BaseCoreFunctionalTestCase {
 	@Test
 	public void testManyToOne() throws Exception {
-		assertTrue( SchemaUtil.isColumnPresent( "Dependent", "emp_empId", configuration() ) );
-		assertTrue( ! SchemaUtil.isColumnPresent( "Dependent", "emp", configuration() ) );
+		assertTrue( SchemaUtil.isColumnPresent( "Dependent", "emp_empId", metadata() ) );
+		assertTrue( ! SchemaUtil.isColumnPresent( "Dependent", "emp", metadata() ) );
 
 		Session s = openSession();
 		s.getTransaction().begin();
@@ -82,7 +83,7 @@ public class DerivedIdentitySimpleParentIdClassDepTest extends BaseCoreFunctiona
 		Query query = s.createQuery("Select d from Dependent d where d.name='LittleP' and d.emp.empName='Paula'");
 		List depList = query.list();
 		assertEquals( 1, depList.size() );
-		Object newDependent = (Dependent) depList.get(0);
+		Object newDependent = depList.get(0);
 		assertSame( d, newDependent );
 		s.getTransaction().rollback();
 		s.close();

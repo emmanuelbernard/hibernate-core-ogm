@@ -23,10 +23,10 @@
  */
 package org.hibernate.test.cache.infinispan.functional.cluster;
 
-import javax.transaction.TransactionManager;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import javax.transaction.TransactionManager;
 
 import org.infinispan.Cache;
 import org.infinispan.manager.CacheContainer;
@@ -36,14 +36,11 @@ import org.infinispan.notifications.cachelistener.event.CacheEntryVisitedEvent;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 import org.jboss.util.collection.ConcurrentSet;
+import org.junit.Test;
 
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.cache.spi.CacheKey;
-import org.hibernate.cache.infinispan.util.CacheHelper;
-
-import org.junit.Test;
-
 import org.hibernate.test.cache.infinispan.functional.Contact;
 import org.hibernate.test.cache.infinispan.functional.Customer;
 
@@ -340,13 +337,7 @@ public class EntityCollectionInvalidationTestCase extends DualNodeTestCase {
 	}
 
 	protected int getValidKeyCount(Set keys) {
-		int result = 0;
-		for ( Object key : keys ) {
-			if ( !(CacheHelper.isEvictAllNotification( key )) ) {
-				result++;
-			}
-		}
-		return result;
+      return keys.size();
 	}
 
 	@Listener
@@ -373,7 +364,7 @@ public class EntityCollectionInvalidationTestCase extends DualNodeTestCase {
 			if ( !event.isPre() ) {
 				CacheKey cacheKey = (CacheKey) event.getKey();
 				Integer primKey = (Integer) cacheKey.getKey();
-				String key = (String) cacheKey.getEntityOrRoleName() + '#' + primKey;
+				String key = cacheKey.getEntityOrRoleName() + '#' + primKey;
 				log.debug( "MyListener[" + name + "] - Visiting key " + key );
 				// String name = fqn.toString();
 				String token = ".functional.";

@@ -29,22 +29,21 @@ import org.infinispan.Cache;
 import org.infinispan.manager.CacheContainer;
 import org.infinispan.manager.EmbeddedCacheManager;
 import org.jboss.logging.Logger;
-
-import org.hibernate.SessionFactory;
-import org.hibernate.cache.internal.StandardQueryCache;
-import org.hibernate.cache.infinispan.InfinispanRegionFactory;
-import org.hibernate.cfg.Configuration;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
-
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
+import org.hibernate.SessionFactory;
+import org.hibernate.cache.infinispan.InfinispanRegionFactory;
+import org.hibernate.cache.internal.StandardQueryCache;
+import org.hibernate.cfg.Configuration;
 import org.hibernate.test.cache.infinispan.functional.cluster.ClusterAwareRegionFactory;
 import org.hibernate.test.cache.infinispan.functional.cluster.DualNodeJtaTransactionManagerImpl;
 import org.hibernate.test.cache.infinispan.functional.cluster.DualNodeTestCase;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /**
  * Tests entity and query caching when class of objects being cached are not visible to Infinispan's classloader. Also serves as a
@@ -70,6 +69,8 @@ public class IsolatedClassLoaderTest extends DualNodeTestCase {
 
    private static ClassLoader originalTCCL;
 
+//   private static ClassLoader visibleClassesCl;
+
 	@BeforeClass
 	public static void prepareClassLoader() {
       final String packageName = IsolatedClassLoaderTest.class.getPackage().getName();
@@ -84,6 +85,8 @@ public class IsolatedClassLoaderTest extends DualNodeTestCase {
       // Now, make the class visible to the test driver
       SelectedClassnameClassLoader visible = new SelectedClassnameClassLoader(classes, null, null, selectedTCCL);
       Thread.currentThread().setContextClassLoader(visible);
+//      visibleClassesCl = new SelectedClassnameClassLoader(classes, null, null, selectedTCCL);
+//      Thread.currentThread().setContextClassLoader(selectedTCCL);
 	}
 
 	@AfterClass
@@ -130,6 +133,8 @@ public class IsolatedClassLoaderTest extends DualNodeTestCase {
 		}
 	}
 
+   @Ignore("Infinispan caches now use whichever classloader is associated on " +
+           "construction, i.e. deployment JPA app, so does not rely on TCCL.")
 	@Test
 	public void testIsolatedSetup() throws Exception {
 		// Bind a listener to the "local" cache
@@ -169,12 +174,16 @@ public class IsolatedClassLoaderTest extends DualNodeTestCase {
 		assertEquals( acct.getClass().getName(), remoteReplicatedCache.get( "isolated2" ).getClass().getName() );
 	}
 
+   @Ignore("Infinispan caches now use whichever classloader is associated on " +
+           "construction, i.e. deployment JPA app, so does not rely on TCCL.")
 	@Test
 	public void testClassLoaderHandlingNamedQueryRegion() throws Exception {
       rebuildSessionFactory();
 		queryTest( true );
 	}
 
+   @Ignore("Infinispan caches now use whichever classloader is associated on " +
+           "construction, i.e. deployment JPA app, so does not rely on TCCL.")
 	@Test
 	public void testClassLoaderHandlingStandardQueryCache() throws Exception {
       rebuildSessionFactory();
@@ -191,12 +200,10 @@ public class IsolatedClassLoaderTest extends DualNodeTestCase {
 		if ( useNamedRegion ) {
 			cacheName = "AccountRegion"; // As defined by ClassLoaderTestDAO via calls to query.setCacheRegion
 			// Define cache configurations for region early to avoid ending up with local caches for this region
-			localManager.defineConfiguration(
-					cacheName, "replicated-query", new org.infinispan.config.Configuration()
-			);
-			remoteManager.defineConfiguration(
-					cacheName, "replicated-query", new org.infinispan.config.Configuration()
-			);
+         localManager.defineConfiguration(cacheName,
+               localManager.getCacheConfiguration("replicated-query"));
+         remoteManager.defineConfiguration(cacheName,
+               remoteManager.getCacheConfiguration("replicated-query"));
 		}
 		else {
 			cacheName = "replicated-query";

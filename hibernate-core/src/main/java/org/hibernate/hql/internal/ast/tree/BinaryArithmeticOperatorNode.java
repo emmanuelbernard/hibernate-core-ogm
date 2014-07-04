@@ -23,32 +23,35 @@
  */
 package org.hibernate.hql.internal.ast.tree;
 
-import antlr.SemanticException;
-
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ColumnHelper;
 import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.Type;
+
+import antlr.SemanticException;
 
 /**
  * Nodes which represent binary arithmetic operators.
  *
  * @author Gavin King
  */
-public class BinaryArithmeticOperatorNode extends AbstractSelectExpression implements BinaryOperatorNode, DisplayableNode {
+public class BinaryArithmeticOperatorNode extends AbstractSelectExpression
+		implements BinaryOperatorNode, DisplayableNode {
 
+	@Override
 	public void initialize() throws SemanticException {
-		Node lhs = getLeftHandOperand();
-		Node rhs = getRightHandOperand();
+		final Node lhs = getLeftHandOperand();
 		if ( lhs == null ) {
 			throw new SemanticException( "left-hand operand of a binary operator was null" );
 		}
+
+		final Node rhs = getRightHandOperand();
 		if ( rhs == null ) {
 			throw new SemanticException( "right-hand operand of a binary operator was null" );
 		}
 
-		Type lhType = ( lhs instanceof SqlNode ) ? ( ( SqlNode ) lhs ).getDataType() : null;
-		Type rhType = ( rhs instanceof SqlNode ) ? ( ( SqlNode ) rhs ).getDataType() : null;
+		final Type lhType = ( lhs instanceof SqlNode ) ? ( (SqlNode) lhs ).getDataType() : null;
+		final Type rhType = ( rhs instanceof SqlNode ) ? ( (SqlNode) rhs ).getDataType() : null;
 
 		if ( ExpectedTypeAwareNode.class.isAssignableFrom( lhs.getClass() ) && rhType != null ) {
 			Type expectedType = null;
@@ -64,7 +67,7 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 			else {
 				expectedType = rhType;
 			}
-			( ( ExpectedTypeAwareNode ) lhs ).setExpectedType( expectedType );
+			( (ExpectedTypeAwareNode) lhs ).setExpectedType( expectedType );
 		}
 		else if ( ParameterNode.class.isAssignableFrom( rhs.getClass() ) && lhType != null ) {
 			Type expectedType = null;
@@ -83,7 +86,7 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 			else {
 				expectedType = lhType;
 			}
-			( ( ExpectedTypeAwareNode ) rhs ).setExpectedType( expectedType );
+			( (ExpectedTypeAwareNode) rhs ).setExpectedType( expectedType );
 		}
 	}
 
@@ -92,6 +95,7 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 	 * the types of the operands. Sometimes we don't know both types,
 	 * if, for example, one is a parameter.
 	 */
+	@Override
 	public Type getDataType() {
 		if ( super.getDataType() == null ) {
 			super.setDataType( resolveDataType() );
@@ -103,10 +107,12 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 		// TODO : we may also want to check that the types here map to exactly one column/JDBC-type
 		//      can't think of a situation where arithmetic expression between multi-column mappings
 		//      makes any sense.
-		Node lhs = getLeftHandOperand();
-		Node rhs = getRightHandOperand();
-		Type lhType = ( lhs instanceof SqlNode ) ? ( ( SqlNode ) lhs ).getDataType() : null;
-		Type rhType = ( rhs instanceof SqlNode ) ? ( ( SqlNode ) rhs ).getDataType() : null;
+		final Node lhs = getLeftHandOperand();
+		final Node rhs = getRightHandOperand();
+
+		final Type lhType = ( lhs instanceof SqlNode ) ? ( (SqlNode) lhs ).getDataType() : null;
+		final Type rhType = ( rhs instanceof SqlNode ) ? ( (SqlNode) rhs ).getDataType() : null;
+
 		if ( isDateTimeType( lhType ) || isDateTimeType( rhType ) ) {
 			return resolveDateTimeArithmeticResultType( lhType, rhType );
 		}
@@ -114,7 +120,8 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 			if ( lhType == null ) {
 				if ( rhType == null ) {
 					// we do not know either type
-					return StandardBasicTypes.DOUBLE; //BLIND GUESS!
+					// BLIND GUESS!
+					return StandardBasicTypes.DOUBLE;
 				}
 				else {
 					// we know only the rhs-hand type, so use that
@@ -127,22 +134,22 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 					return lhType;
 				}
 				else {
-					if ( lhType== StandardBasicTypes.DOUBLE || rhType==StandardBasicTypes.DOUBLE ) {
+					if ( lhType == StandardBasicTypes.DOUBLE || rhType == StandardBasicTypes.DOUBLE ) {
 						return StandardBasicTypes.DOUBLE;
 					}
-					if ( lhType==StandardBasicTypes.FLOAT || rhType==StandardBasicTypes.FLOAT ) {
+					if ( lhType == StandardBasicTypes.FLOAT || rhType == StandardBasicTypes.FLOAT ) {
 						return StandardBasicTypes.FLOAT;
 					}
-					if ( lhType==StandardBasicTypes.BIG_DECIMAL || rhType==StandardBasicTypes.BIG_DECIMAL ) {
+					if ( lhType == StandardBasicTypes.BIG_DECIMAL || rhType == StandardBasicTypes.BIG_DECIMAL ) {
 						return StandardBasicTypes.BIG_DECIMAL;
 					}
-					if ( lhType==StandardBasicTypes.BIG_INTEGER || rhType==StandardBasicTypes.BIG_INTEGER ) {
+					if ( lhType == StandardBasicTypes.BIG_INTEGER || rhType == StandardBasicTypes.BIG_INTEGER ) {
 						return StandardBasicTypes.BIG_INTEGER;
 					}
-					if ( lhType==StandardBasicTypes.LONG || rhType==StandardBasicTypes.LONG ) {
+					if ( lhType == StandardBasicTypes.LONG || rhType == StandardBasicTypes.LONG ) {
 						return StandardBasicTypes.LONG;
 					}
-					if ( lhType==StandardBasicTypes.INTEGER || rhType==StandardBasicTypes.INTEGER ) {
+					if ( lhType == StandardBasicTypes.INTEGER || rhType == StandardBasicTypes.INTEGER ) {
 						return StandardBasicTypes.INTEGER;
 					}
 					return lhType;
@@ -152,11 +159,9 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 	}
 
 	private boolean isDateTimeType(Type type) {
-		if ( type == null ) {
-			return false;
-		}
-		return java.util.Date.class.isAssignableFrom( type.getReturnedClass() ) ||
-	           java.util.Calendar.class.isAssignableFrom( type.getReturnedClass() );
+		return type != null
+				&& ( java.util.Date.class.isAssignableFrom( type.getReturnedClass() )
+				|| java.util.Calendar.class.isAssignableFrom( type.getReturnedClass() ) );
 	}
 
 	private Type resolveDateTimeArithmeticResultType(Type lhType, Type rhType) {
@@ -197,6 +202,7 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 		return null;
 	}
 
+	@Override
 	public void setScalarColumnText(int i) throws SemanticException {
 		ColumnHelper.generateSingleScalarColumn( this, i );
 	}
@@ -206,8 +212,9 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 	 *
 	 * @return The left-hand operand
 	 */
+	@Override
 	public Node getLeftHandOperand() {
-		return ( Node ) getFirstChild();
+		return (Node) getFirstChild();
 	}
 
 	/**
@@ -215,10 +222,12 @@ public class BinaryArithmeticOperatorNode extends AbstractSelectExpression imple
 	 *
 	 * @return The right-hand operand
 	 */
+	@Override
 	public Node getRightHandOperand() {
-		return ( Node ) getFirstChild().getNextSibling();
+		return (Node) getFirstChild().getNextSibling();
 	}
 
+	@Override
 	public String getDisplayText() {
 		return "{dataType=" + getDataType() + "}";
 	}

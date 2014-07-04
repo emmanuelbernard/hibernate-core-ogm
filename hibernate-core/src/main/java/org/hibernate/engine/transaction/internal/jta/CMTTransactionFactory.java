@@ -24,6 +24,7 @@
 package org.hibernate.engine.transaction.internal.jta;
 
 import javax.transaction.SystemException;
+
 import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.TransactionException;
 import org.hibernate.engine.transaction.spi.TransactionCoordinator;
@@ -36,6 +37,8 @@ import org.hibernate.engine.transaction.spi.TransactionFactory;
  * @author Gavin King
  */
 public class CMTTransactionFactory  implements TransactionFactory<CMTTransaction> {
+	public static final String SHORT_NAME = "cmt";
+
 	@Override
 	public CMTTransaction createTransaction(TransactionCoordinator transactionCoordinator) {
 		return new CMTTransaction( transactionCoordinator );

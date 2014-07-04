@@ -23,8 +23,6 @@
  */
 package org.hibernate.testing.cache;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.cache.CacheException;
 import org.hibernate.cache.spi.CacheDataDescription;
 import org.hibernate.cache.spi.EntityRegion;
@@ -32,6 +30,8 @@ import org.hibernate.cache.spi.access.AccessType;
 import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
 import org.hibernate.cfg.Settings;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author Strong Liu
@@ -67,7 +67,7 @@ class EntityRegionImpl extends BaseTransactionalDataRegion implements EntityRegi
 				return new NonstrictReadWriteEntityRegionAccessStrategy( this );
 			case TRANSACTIONAL:
 //				throw new UnsupportedOperationException( "doesn't support this access strategy" );
-				return new NonstrictReadWriteEntityRegionAccessStrategy( this );
+				return new TransactionalEntityRegionAccessStrategy( this );
 
 			default:
 				throw new IllegalArgumentException( "unrecognized access strategy type [" + accessType + "]" );

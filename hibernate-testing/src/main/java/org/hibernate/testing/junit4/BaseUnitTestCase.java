@@ -26,13 +26,14 @@ package org.hibernate.testing.junit4;
 import javax.transaction.SystemException;
 
 import org.hibernate.engine.transaction.internal.jta.JtaStatusHelper;
-
-import org.junit.After;
-import org.junit.runner.RunWith;
-
+import org.hibernate.metamodel.MetadataSources;
+import org.hibernate.testing.jta.TestingJtaPlatformImpl;
 import org.jboss.logging.Logger;
-
-import org.hibernate.testing.jta.TestingJtaBootstrap;
+import org.junit.After;
+import org.junit.Rule;
+import org.junit.rules.TestRule;
+import org.junit.rules.Timeout;
+import org.junit.runner.RunWith;
 
 /**
  * The base unit test adapter.
@@ -43,12 +44,14 @@ import org.hibernate.testing.jta.TestingJtaBootstrap;
 public abstract class BaseUnitTestCase {
 	private static final Logger log = Logger.getLogger( BaseUnitTestCase.class );
 
+	@Rule
+	public TestRule globalTimeout= new Timeout(30 * 60 * 1000); // no test should run longer than 30 minutes
 	@After
 	public void releaseTransactions() {
-		if ( JtaStatusHelper.isActive( TestingJtaBootstrap.INSTANCE.getTransactionManager() ) ) {
+		if ( JtaStatusHelper.isActive( TestingJtaPlatformImpl.INSTANCE.getTransactionManager() ) ) {
 			log.warn( "Cleaning up unfinished transaction" );
 			try {
-				TestingJtaBootstrap.INSTANCE.getTransactionManager().rollback();
+				TestingJtaPlatformImpl.INSTANCE.getTransactionManager().rollback();
 			}
 			catch (SystemException ignored) {
 			}

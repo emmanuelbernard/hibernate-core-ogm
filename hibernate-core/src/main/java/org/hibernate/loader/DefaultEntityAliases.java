@@ -24,9 +24,10 @@
  */
 package org.hibernate.loader;
 
+import java.util.Collections;
 import java.util.Map;
+
 import org.hibernate.internal.util.StringHelper;
-import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.persister.entity.Loadable;
 
 /**
@@ -68,7 +69,7 @@ public class DefaultEntityAliases implements EntityAliases {
 	}
 
 	public DefaultEntityAliases(Loadable persister, String suffix) {
-		this( CollectionHelper.EMPTY_MAP, persister, suffix );
+		this( Collections.EMPTY_MAP, persister, suffix );
 	}
 
 	private String[] determineKeyAlias(Loadable persister, String suffix) {
@@ -135,9 +136,7 @@ public class DefaultEntityAliases implements EntityAliases {
 		}
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String[][] getSuffixedPropertyAliases(Loadable persister) {
 		final int size = persister.getPropertyNames().length;
 		final String[][] suffixedPropertyAliases = new String[size][];
@@ -152,39 +151,34 @@ public class DefaultEntityAliases implements EntityAliases {
 		return suffixedPropertyAliases;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String[] getSuffixedVersionAliases() {
 		return suffixedVersionColumn;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String[][] getSuffixedPropertyAliases() {
 		return suffixedPropertyColumns;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String getSuffixedDiscriminatorAlias() {
 		return suffixedDiscriminatorColumn;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String[] getSuffixedKeyAliases() {
 		return suffixedKeyColumns;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public String getRowIdAlias() {
 		return rowIdAlias;
+	}
+
+	@Override
+	public String getSuffix() {
+		return suffix;
 	}
 
 	private static void intern(String[] strings) {

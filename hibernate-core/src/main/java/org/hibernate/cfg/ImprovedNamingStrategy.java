@@ -24,8 +24,12 @@
 package org.hibernate.cfg;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.hibernate.AssertionFailure;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.metamodel.internal.binder.HashedNameUtil;
 
 /**
  * An improved naming strategy that prefers embedded
@@ -68,7 +72,7 @@ public class ImprovedNamingStrategy implements NamingStrategy, Serializable {
 	}
 
 	protected static String addUnderscores(String name) {
-		StringBuffer buf = new StringBuffer( name.replace('.', '_') );
+		StringBuilder buf = new StringBuilder( name.replace('.', '_') );
 		for (int i=1; i<buf.length()-1; i++) {
 			if (
 				Character.isLowerCase( buf.charAt(i-1) ) &&
@@ -104,6 +108,22 @@ public class ImprovedNamingStrategy implements NamingStrategy, Serializable {
 		String header = propertyName != null ? StringHelper.unqualify( propertyName ) : propertyTableName;
 		if (header == null) throw new AssertionFailure("NamingStrategy not properly filled");
 		return columnName( header ); //+ "_" + referencedColumnName not used for backward compatibility
+	}
+	
+	public String foreignKeyName(String sourceTableName, List<String> sourceColumnNames,
+			String targetTableName, List<String> targetColumnNames) {
+		List<String> combinedColumnNames = new ArrayList<String>();
+		combinedColumnNames.addAll( sourceColumnNames );
+		combinedColumnNames.addAll( targetColumnNames );
+		return HashedNameUtil.generateName( "FK_", sourceTableName + "_" + targetTableName, combinedColumnNames );
+	}
+	
+	public String uniqueKeyName(String tableName, List<String> columnNames) {
+		return HashedNameUtil.generateName( "UK_", tableName, columnNames );
+	}
+	
+	public String indexName(String tableName, List<String> columnNames) {
+		return HashedNameUtil.generateName( "IDX_", tableName, columnNames );
 	}
 
 	/**

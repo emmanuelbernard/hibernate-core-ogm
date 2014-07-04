@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.hibernate.cache.CacheException;
-import org.hibernate.cache.internal.Timestamper;
 import org.hibernate.cache.spi.Region;
 
 /**
@@ -37,6 +36,7 @@ import org.hibernate.cache.spi.Region;
 class BaseRegion implements Region {
 	protected final Map cache = new ConcurrentHashMap();
 	private final String name;
+	private static int timeout = Timestamper.ONE_MS * 60000;  //60s
 
 	BaseRegion(String name) {
 		this.name = name;
@@ -84,7 +84,7 @@ class BaseRegion implements Region {
 
 	@Override
 	public int getTimeout() {
-		return Timestamper.ONE_MS * 600000;
+		return timeout;
 	}
 
 }

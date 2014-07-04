@@ -1,44 +1,31 @@
-apply plugin: 'java'
-
 configurations {
     all*.exclude group: 'org.jboss.logging', module: 'jboss-logging-spi'
 }
 
 dependencies {
-   infinispanVersion = '5.0.1.FINAL'
-   jnpVersion = '5.0.3.GA'
+    compile project( ':hibernate-core' )
+    compile( libraries.infinispan )
+    compile( libraries.rhq )
 
-   compile(project(':hibernate-core'))
-   compile([group: 'org.infinispan', name: 'infinispan-core', version: infinispanVersion]) {
-      artifact {
-         name = "infinispan-core"
-         type = 'jar'
-      }
-   }
-   // http://jira.codehaus.org/browse/GRADLE-739
-   testCompile([group: 'org.infinispan', name: 'infinispan-core', version: infinispanVersion]) {
-      artifact {
-         name = "infinispan-core"
-         type = 'jar'
-      }
-      artifact {
-         name = "infinispan-core"
-         classifier = 'tests'
-         type = 'jar'
-      }
-   }
-   testCompile( project(':hibernate-testing') )
-   testCompile([group: 'org.jboss', name: 'jboss-common-core', version: '2.2.14.GA'])
-   testCompile([group: 'org.jboss.naming', name: 'jnp-client', version: jnpVersion])
-   testCompile([group: 'org.jboss.naming', name: 'jnpserver', version: jnpVersion])
-   testCompile([group: 'com.experlog', name: 'xapool', version: '1.5.0'])
-   testCompile([group: 'org.jboss.jbossts', name: 'jbossjta', version: '4.15.1.Final'])
-   testCompile(libraries.jta)
-   testCompile(libraries.h2)
-   // testCompile( [group: 'hsqldb', name: 'hsqldb', version: '1.8.0.2'] )
-   testCompile([group: 'org.rhq.helpers', name: 'rhq-pluginAnnotations', version: '1.4.0.B01'])
-   testCompile([group: 'log4j', name: 'log4j', version: '1.2.16'])
-   testRuntime(libraries.javassist)
+    testCompile project( ':hibernate-testing' )
+    testCompile( libraries.infinispan_test )
+    testCompile( libraries.jboss_common_core )
+    testCompile( libraries.jnp_client )
+    testCompile( libraries.jnp_server )
+    testCompile( libraries.rhq )
+    testCompile ('mysql:mysql-connector-java:5.1.17')
+}
+
+def pomName() {
+    return 'Hibernate/Infinispan Integration'
+}
+
+def pomDescription() {
+    return 'Integration for Infinispan into Hibernate as a second-level caching service'
+}
+
+def osgiDescription() {
+	return pomDescription()
 }
 
 test {
@@ -47,7 +34,21 @@ test {
    systemProperties['jgroups.ping.num_initial_members'] = 1
    systemProperties['jgroups.udp.enable_bundling'] = false
    systemProperties['jgroups.bind_addr'] = 'localhost'
-   //   systemProperties['log4j.configuration'] = 'file:/log4j/log4j-infinispan.xml'
+   // Use Infinispan's test JGroups stack that uses TEST_PING
+   systemProperties['hibernate.cache.infinispan.jgroups_cfg'] = '2lc-test-tcp.xml'
+   // systemProperties['log4j.configuration'] = 'file:/log4j/log4j-infinispan.xml'
    enabled = true
 }
 
+task packageTests(type: Jar) {
+  from sourceSets.test.output
+  classifier = 'tests'
+}
+
+task sourcesTestJar(type: Jar, dependsOn:classes) {
+  from sourceSets.test.allSource
+  classifier = 'test-sources'
+}
+
+artifacts.archives packageTests
+artifacts.archives sourcesTestJar

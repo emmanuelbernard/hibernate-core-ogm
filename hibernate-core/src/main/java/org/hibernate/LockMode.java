@@ -57,7 +57,7 @@ public enum LockMode {
 	 *
 	 * @deprecated instead use PESSIMISTIC_WRITE
 	 */
-    @Deprecated
+	@Deprecated
 	UPGRADE( 10 ),
 	/**
 	 * Attempt to obtain an upgrade lock, using an Oracle-style
@@ -66,6 +66,15 @@ public enum LockMode {
 	 * <tt>UPGRADE</tt>.
 	 */
 	UPGRADE_NOWAIT( 10 ),
+
+	/**
+	 * Attempt to obtain an upgrade lock, using an Oracle-style
+	 * <tt>select for update skip locked</tt>. The semantics of
+	 * this lock mode, once obtained, are the same as
+	 * <tt>UPGRADE</tt>.
+	 */
+	UPGRADE_SKIPLOCKED( 10 ),
+
 	/**
 	 * A <tt>WRITE</tt> lock is obtained when an object is updated
 	 * or inserted.   This lock mode is for internal use only and is
@@ -75,12 +84,12 @@ public enum LockMode {
 	WRITE( 10 ),
 
 	/**
-	 * Similiar to {@link #UPGRADE} except that, for versioned entities,
+	 * Similar to {@link #UPGRADE} except that, for versioned entities,
 	 * it results in a forced version increment.
 	 *
 	 * @deprecated instead use PESSIMISTIC_FORCE_INCREMENT
 	 */
-    @Deprecated
+	@Deprecated
 	FORCE( 15 ),
 
 	/**
@@ -88,16 +97,16 @@ public enum LockMode {
 	 */
 
 	/**
-	 * Optimisticly assume that transaction will not experience contention for
+	 * Optimistically assume that transaction will not experience contention for
 	 * entities.  The entity version will be verified near the transaction end.
 	 */
-	OPTIMISTIC( 3 ),
+	OPTIMISTIC( 6 ),
 
 	/**
-	 * Optimisticly assume that transaction will not experience contention for entities.
-	 * The entity version will be verified and incremented near the transaction end.
+	 * Optimistically assume that transaction will not experience contention for
+	 * entities.  The entity version will be verified and incremented near the transaction end.
 	 */
-	OPTIMISTIC_FORCE_INCREMENT( 4 ),
+	OPTIMISTIC_FORCE_INCREMENT( 7 ),
 
 	/**
 	 * Implemented as PESSIMISTIC_WRITE.
@@ -142,6 +151,4 @@ public enum LockMode {
 	public boolean lessThan(LockMode mode) {
 		return level < mode.level;
 	}
-
-
 }

@@ -6,11 +6,11 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.cache.CacheException;
 import org.hibernate.cache.spi.access.SoftLock;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author Strong Liu
@@ -31,15 +31,22 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 	 */
 	@Override
 	public final Object get(Object key, long txTimestamp) throws CacheException {
+		LOG.debugf( "getting key[%s] from region[%s]", key, getInternalRegion().getName() );
 		try {
 			readLock.lock();
 			Lockable item = (Lockable) getInternalRegion().get( key );
 
 			boolean readable = item != null && item.isReadable( txTimestamp );
 			if ( readable ) {
+				LOG.debugf( "hit key[%s] in region[%s]", key, getInternalRegion().getName() );
 				return item.getValue();
 			}
 			else {
+				if ( item == null ) {
+					LOG.debugf( "miss key[%s] in region[%s]", key, getInternalRegion().getName());
+				} else {
+					LOG.debugf( "hit key[%s] in region[%s], but it is unreadable", key, getInternalRegion().getName() );
+				}
 				return null;
 			}
 		}
@@ -58,14 +65,17 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 	public final boolean putFromLoad(Object key, Object value, long txTimestamp, Object version, boolean minimalPutOverride)
 			throws CacheException {
 		try {
+			LOG.debugf( "putting key[%s] -> value[%s] into region[%s]", key, value, getInternalRegion().getName() );
 			writeLock.lock();
 			Lockable item = (Lockable) getInternalRegion().get( key );
 			boolean writeable = item == null || item.isWriteable( txTimestamp, version, getVersionComparator() );
 			if ( writeable ) {
+				LOG.debugf( "putting key[%s] -> value[%s] into region[%s] success", key, value, getInternalRegion().getName() );
 				getInternalRegion().put( key, new Item( value, version, getInternalRegion().nextTimestamp() ) );
 				return true;
 			}
 			else {
+				LOG.debugf( "putting key[%s] -> value[%s] into region[%s] fail due to it is unwriteable", key, value, getInternalRegion().getName() );
 				return false;
 			}
 		}
@@ -77,9 +87,11 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 	/**
 	 * Soft-lock a cache item.
 	 */
+	@Override
 	public final SoftLock lockItem(Object key, Object version) throws CacheException {
 
 		try {
+			LOG.debugf( "locking key[%s] in region[%s]", key, getInternalRegion().getName() );
 			writeLock.lock();
 			Lockable item = (Lockable) getInternalRegion().get( key );
 			long timeout = getInternalRegion().nextTimestamp() + getInternalRegion().getTimeout();
@@ -99,9 +111,11 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 	/**
 	 * Soft-unlock a cache item.
 	 */
+	@Override
 	public final void unlockItem(Object key, SoftLock lock) throws CacheException {
 
 		try {
+			LOG.debugf( "unlocking key[%s] in region[%s]", key, getInternalRegion().getName() );
 			writeLock.lock();
 			Lockable item = (Lockable) getInternalRegion().get( key );
 
@@ -193,37 +207,27 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 			this.timestamp = timestamp;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public boolean isReadable(long txTimestamp) {
 			return txTimestamp > timestamp;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public boolean isWriteable(long txTimestamp, Object newVersion, Comparator versionComparator) {
 			return version != null && versionComparator.compare( version, newVersion ) < 0;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public Object getValue() {
 			return value;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public boolean isUnlockable(SoftLock lock) {
 			return false;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public Lock lock(long timeout, UUID uuid, long lockId) {
 			return new Lock( timeout, uuid, lockId, version );
 		}
@@ -255,16 +259,12 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 			this.sourceUuid = sourceUuid;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public boolean isReadable(long txTimestamp) {
 			return false;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public boolean isWriteable(long txTimestamp, Object newVersion, Comparator versionComparator) {
 			if ( txTimestamp > timeout ) {
 				// if timedout then allow write
@@ -280,23 +280,16 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 			) < 0;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public Object getValue() {
 			return null;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public boolean isUnlockable(SoftLock lock) {
 			return equals( lock );
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
 		@Override
 		public boolean equals(Object o) {
 			if ( o == this ) {
@@ -310,9 +303,6 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 			}
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
 		@Override
 		public int hashCode() {
 			int hash = ( sourceUuid != null ? sourceUuid.hashCode() : 0 );
@@ -330,9 +320,7 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 			return concurrent;
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public Lock lock(long timeout, UUID uuid, long lockId) {
 			concurrent = true;
 			multiplicity++;
@@ -349,9 +337,7 @@ abstract class AbstractReadWriteAccessStrategy extends BaseRegionAccessStrategy 
 			}
 		}
 
-		/**
-		 * {@inheritDoc}
-		 */
+		@Override
 		public String toString() {
 			StringBuilder sb = new StringBuilder( "Lock Source-UUID:" + sourceUuid + " Lock-ID:" + lockId );
 			return sb.toString();

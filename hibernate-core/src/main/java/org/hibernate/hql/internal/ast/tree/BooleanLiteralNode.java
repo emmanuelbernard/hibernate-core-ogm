@@ -42,7 +42,7 @@ public class BooleanLiteralNode extends LiteralNode implements ExpectedTypeAware
 	}
 
 	public Boolean getValue() {
-		return getType() == TRUE ? Boolean.TRUE : Boolean.FALSE;
+		return getType() == TRUE ;
 	}
 
 	@Override
@@ -61,7 +61,7 @@ public class BooleanLiteralNode extends LiteralNode implements ExpectedTypeAware
 		try {
 			return typeAsLiteralType().objectToSQLString( getValue(), sessionFactory.getDialect() );
 		}
-		catch( Throwable t ) {
+		catch( Exception t ) {
 			throw new QueryException( "Unable to render boolean literal value", t );
 		}
 	}

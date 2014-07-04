@@ -28,6 +28,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
 import java.util.StringTokenizer;
+
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
 
@@ -81,6 +82,30 @@ public final class ConfigurationHelper {
 	}
 
 	/**
+	 * Get the config value as a {@link String}.
+	 *
+	 * @param name The config setting name.
+	 * @param values The map of config parameters.
+	 * @param defaultValue The default value to use if not found.
+	 * @param otherSupportedValues List of other supported values. Does not need to contain the default one.
+	 *
+	 * @return The value.
+	 *
+	 * @throws ConfigurationException Unsupported value provided.
+	 *
+	 */
+	public static String getString(String name, Map values, String defaultValue, String ... otherSupportedValues) {
+		final String value = getString( name, values, defaultValue );
+		if ( !defaultValue.equals( value ) && ArrayHelper.indexOf( otherSupportedValues, value ) == -1 ) {
+			throw new ConfigurationException(
+					"Unsupported configuration [name=" + name + ", value=" + value + "]. " +
+							"Choose value between: '" + defaultValue + "', '" + StringHelper.join( "', '", otherSupportedValues ) + "'."
+			);
+		}
+		return value;
+	}
+
+	/**
 	 * Get the config value as a boolean (default of false)
 	 *
 	 * @param name The config setting name.
@@ -118,6 +143,30 @@ public final class ConfigurationHelper {
 	}
 
 	/**
+	 * Get the config value as a boolean (default of false)
+	 *
+	 * @param name The config setting name.
+	 * @param values The map of config values
+	 *
+	 * @return The value.
+	 */
+	public static Boolean getBooleanWrapper(String name, Map values, Boolean defaultValue) {
+		Object value = values.get( name );
+		if ( value == null ) {
+			return defaultValue;
+		}
+		if ( Boolean.class.isInstance( value ) ) {
+			return (Boolean) value;
+		}
+		if ( String.class.isInstance( value ) ) {
+			return Boolean.valueOf( (String) value );
+		}
+		throw new ConfigurationException(
+				"Could not determine how to handle configuration value [name=" + name + ", value=" + value + "] as boolean"
+		);
+	}
+
+	/**
 	 * Get the config value as an int
 	 *
 	 * @param name The config setting name.
@@ -132,7 +181,7 @@ public final class ConfigurationHelper {
 			return defaultValue;
 		}
 		if ( Integer.class.isInstance( value ) ) {
-			return ( (Integer) value ).intValue();
+			return (Integer) value;
 		}
 		if ( String.class.isInstance( value ) ) {
 			return Integer.parseInt( (String) value );
@@ -170,6 +219,23 @@ public final class ConfigurationHelper {
 		throw new ConfigurationException(
 				"Could not determine how to handle configuration value [name=" + name +
 						", value=" + value + "(" + value.getClass().getName() + ")] as Integer"
+		);
+	}
+
+	public static long getLong(String name, Map values, int defaultValue) {
+		Object value = values.get( name );
+		if ( value == null ) {
+			return defaultValue;
+		}
+		if ( Long.class.isInstance( value ) ) {
+			return (Long) value;
+		}
+		if ( String.class.isInstance( value ) ) {
+			return Long.parseLong( (String) value );
+		}
+		throw new ConfigurationException(
+				"Could not determine how to handle configuration value [name=" + name +
+						", value=" + value + "(" + value.getClass().getName() + ")] as long"
 		);
 	}
 
@@ -333,7 +399,7 @@ public final class ConfigurationHelper {
 		if ( property.indexOf( PLACEHOLDER_START ) < 0 ) {
 			return property;
 		}
-		StringBuffer buff = new StringBuffer();
+		StringBuilder buff = new StringBuilder();
 		char[] chars = property.toCharArray();
 		for ( int pos = 0; pos < chars.length; pos++ ) {
 			if ( chars[pos] == '$' ) {

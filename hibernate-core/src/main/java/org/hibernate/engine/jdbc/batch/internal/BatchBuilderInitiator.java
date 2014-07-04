@@ -25,21 +25,28 @@ package org.hibernate.engine.jdbc.batch.internal;
 
 import java.util.Map;
 
+import org.hibernate.boot.registry.StandardServiceInitiator;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.cfg.Environment;
 import org.hibernate.engine.jdbc.batch.spi.BatchBuilder;
 import org.hibernate.internal.util.config.ConfigurationHelper;
-import org.hibernate.service.classloading.spi.ClassLoaderService;
-import org.hibernate.service.spi.ServiceRegistryImplementor;
-import org.hibernate.service.spi.BasicServiceInitiator;
 import org.hibernate.service.spi.ServiceException;
+import org.hibernate.service.spi.ServiceRegistryImplementor;
 
 /**
  * Initiator for the {@link BatchBuilder} service
  *
  * @author Steve Ebersole
  */
-public class BatchBuilderInitiator implements BasicServiceInitiator<BatchBuilder> {
+public class BatchBuilderInitiator implements StandardServiceInitiator<BatchBuilder> {
+	/**
+	 * Singleton access
+	 */
 	public static final BatchBuilderInitiator INSTANCE = new BatchBuilderInitiator();
+
+	/**
+	 * Names the BatchBuilder implementation to use.
+	 */
 	public static final String BUILDER = "hibernate.jdbc.batch.builder";
 
 	@Override

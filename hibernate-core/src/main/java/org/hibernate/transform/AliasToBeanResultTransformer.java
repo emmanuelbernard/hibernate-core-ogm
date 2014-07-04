@@ -24,6 +24,7 @@
  */
 package org.hibernate.transform;
 import java.util.Arrays;
+
 import org.hibernate.HibernateException;
 import org.hibernate.property.ChainedPropertyAccessor;
 import org.hibernate.property.PropertyAccessor;
@@ -69,13 +70,12 @@ public class AliasToBeanResultTransformer extends AliasedTupleSubsetResultTransf
 		this.resultClass = resultClass;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public boolean isTransformedValueATupleElement(String[] aliases, int tupleLength) {
 		return false;
-	}	
+	}
 
+	@Override
 	public Object transformTuple(Object[] tuple, String[] aliases) {
 		Object result;
 
@@ -132,6 +132,7 @@ public class AliasToBeanResultTransformer extends AliasedTupleSubsetResultTransf
 		}
 	}
 
+	@Override
 	public boolean equals(Object o) {
 		if ( this == o ) {
 			return true;
@@ -152,6 +153,7 @@ public class AliasToBeanResultTransformer extends AliasedTupleSubsetResultTransf
 		return true;
 	}
 
+	@Override
 	public int hashCode() {
 		int result = resultClass.hashCode();
 		result = 31 * result + ( aliases != null ? Arrays.hashCode( aliases ) : 0 );

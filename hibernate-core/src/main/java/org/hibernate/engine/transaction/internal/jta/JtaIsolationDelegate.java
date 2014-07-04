@@ -29,16 +29,16 @@ import javax.transaction.NotSupportedException;
 import javax.transaction.SystemException;
 import javax.transaction.Transaction;
 import javax.transaction.TransactionManager;
+
 import org.hibernate.HibernateException;
-import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.engine.jdbc.spi.JdbcConnectionAccess;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
 import org.hibernate.engine.transaction.spi.IsolationDelegate;
 import org.hibernate.engine.transaction.spi.TransactionCoordinator;
-import org.hibernate.jdbc.WorkExecutorVisitable;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.jdbc.WorkExecutor;
-import org.hibernate.service.jdbc.connections.spi.ConnectionProvider;
-
-import org.jboss.logging.Logger;
+import org.hibernate.jdbc.WorkExecutorVisitable;
 
 /**
  * An isolation delegate for JTA environments.
@@ -46,8 +46,7 @@ import org.jboss.logging.Logger;
  * @author Steve Ebersole
  */
 public class JtaIsolationDelegate implements IsolationDelegate {
-
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, JtaIsolationDelegate.class.getName());
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( JtaIsolationDelegate.class );
 
 	private final TransactionCoordinator transactionCoordinator;
 
@@ -62,11 +61,8 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 				.retrieveTransactionManager();
 	}
 
-	protected ConnectionProvider connectionProvider() {
-		return transactionCoordinator.getTransactionContext()
-				.getTransactionEnvironment()
-				.getJdbcServices()
-				.getConnectionProvider();
+	protected JdbcConnectionAccess jdbcConnectionAccess() {
+		return transactionCoordinator.getTransactionContext().getJdbcConnectionAccess();
 	}
 
 	protected SqlExceptionHelper sqlExceptionHelper() {
@@ -83,7 +79,7 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 		try {
 			// First we suspend any current JTA transaction
 			Transaction surroundingTransaction = transactionManager.suspend();
-            LOG.debugf("Surrounding JTA transaction suspended [%s]", surroundingTransaction);
+			LOG.debugf( "Surrounding JTA transaction suspended [%s]", surroundingTransaction );
 
 			boolean hadProblems = false;
 			try {
@@ -102,7 +98,7 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 			finally {
 				try {
 					transactionManager.resume( surroundingTransaction );
-                    LOG.debugf( "Surrounding JTA transaction resumed [%s]", surroundingTransaction );
+					LOG.debugf( "Surrounding JTA transaction resumed [%s]", surroundingTransaction );
 				}
 				catch( Throwable t ) {
 					// if the actually work had an error use that, otherwise error based on t
@@ -119,23 +115,24 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 	}
 
 	private <T> T doTheWorkInNewTransaction(WorkExecutorVisitable<T> work, TransactionManager transactionManager) {
-		T result = null;
 		try {
 			// start the new isolated transaction
 			transactionManager.begin();
 
 			try {
-				result = doTheWork( work );
+				T result = doTheWork( work );
 				// if everything went ok, commit the isolated transaction
 				transactionManager.commit();
+				return result;
 			}
 			catch ( Exception e ) {
 				try {
 					transactionManager.rollback();
 				}
 				catch ( Exception ignore ) {
-                    LOG.unableToRollbackIsolatedTransaction(e, ignore);
+					LOG.unableToRollbackIsolatedTransaction( e, ignore );
 				}
+				throw new HibernateException( "Could not apply work", e );
 			}
 		}
 		catch ( SystemException e ) {
@@ -144,7 +141,6 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 		catch ( NotSupportedException e ) {
 			throw new HibernateException( "Unable to start isolated transaction", e );
 		}
-		return result;
 	}
 
 	private <T> T doTheWorkInNoTransaction(WorkExecutorVisitable<T> work) {
@@ -154,7 +150,7 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 	private <T> T doTheWork(WorkExecutorVisitable<T> work) {
 		try {
 			// obtain our isolated connection
-			Connection connection = connectionProvider().getConnection();
+			Connection connection = jdbcConnectionAccess().obtainConnection();
 			try {
 				// do the actual work
 				return work.accept( new WorkExecutor<T>(), connection );
@@ -168,10 +164,10 @@ public class JtaIsolationDelegate implements IsolationDelegate {
 			finally {
 				try {
 					// no matter what, release the connection (handle)
-					connectionProvider().closeConnection( connection );
+					jdbcConnectionAccess().releaseConnection( connection );
 				}
 				catch ( Throwable ignore ) {
-                    LOG.unableToReleaseIsolatedConnection(ignore);
+					LOG.unableToReleaseIsolatedConnection( ignore );
 				}
 			}
 		}

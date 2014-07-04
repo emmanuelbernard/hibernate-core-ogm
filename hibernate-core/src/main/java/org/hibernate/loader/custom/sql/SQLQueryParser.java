@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import org.hibernate.QueryException;
 import org.hibernate.engine.query.spi.ParameterParser;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -50,7 +51,7 @@ public class SQLQueryParser {
 	private final ParserContext context;
 
 	private final Map namedParameters = new HashMap();
-	private long aliasesFound = 0;
+	private long aliasesFound;
 
 	static interface ParserContext {
 		boolean isEntityAlias(String aliasName);
@@ -296,25 +297,30 @@ public class SQLQueryParser {
 	public static class ParameterSubstitutionRecognizer implements ParameterParser.Recognizer {
 		StringBuilder result = new StringBuilder();
 		Map namedParameterBindPoints = new HashMap();
-		int parameterCount = 0;
+		int parameterCount;
 
+		@Override
 		public void outParameter(int position) {
 			result.append( '?' );
 		}
 
+		@Override
 		public void ordinalParameter(int position) {
 			result.append( '?' );
 		}
 
+		@Override
 		public void namedParameter(String name, int position) {
 			addNamedParameter( name );
 			result.append( '?' );
 		}
 
+		@Override
 		public void jpaPositionalParameter(String name, int position) {
 			namedParameter( name, position );
 		}
 
+		@Override
 		public void other(char character) {
 			result.append( character );
 		}

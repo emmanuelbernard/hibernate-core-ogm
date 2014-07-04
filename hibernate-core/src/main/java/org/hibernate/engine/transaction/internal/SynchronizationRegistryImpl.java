@@ -26,8 +26,9 @@ package org.hibernate.engine.transaction.internal;
 import java.util.LinkedHashSet;
 import javax.transaction.Synchronization;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.engine.transaction.spi.SynchronizationRegistry;
+import org.hibernate.internal.CoreMessageLogger;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -37,8 +38,7 @@ import org.jboss.logging.Logger;
  */
 public class SynchronizationRegistryImpl implements SynchronizationRegistry {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class,
-                                                                       SynchronizationRegistryImpl.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, SynchronizationRegistryImpl.class.getName() );
 
 	private LinkedHashSet<Synchronization> synchronizations;
 
@@ -53,7 +53,9 @@ public class SynchronizationRegistryImpl implements SynchronizationRegistry {
 		}
 
 		boolean added = synchronizations.add( synchronization );
-        if (!added) LOG.synchronizationAlreadyRegistered(synchronization);
+		if ( !added ) {
+			LOG.synchronizationAlreadyRegistered( synchronization );
+		}
 	}
 
 	@Override
@@ -64,7 +66,7 @@ public class SynchronizationRegistryImpl implements SynchronizationRegistry {
 					synchronization.beforeCompletion();
 				}
 				catch ( Throwable t ) {
-                    LOG.synchronizationFailed(synchronization, t);
+					LOG.synchronizationFailed( synchronization, t );
 				}
 			}
 		}
@@ -78,7 +80,7 @@ public class SynchronizationRegistryImpl implements SynchronizationRegistry {
 					synchronization.afterCompletion( status );
 				}
 				catch ( Throwable t ) {
-                    LOG.synchronizationFailed(synchronization, t);
+					LOG.synchronizationFailed( synchronization, t );
 				}
 			}
 		}

@@ -36,6 +36,7 @@ import java.lang.annotation.Target;
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ ElementType.METHOD, ElementType.TYPE })
+@FailureExpectedMarker
 public @interface FailureExpected {
 	/**
 	 * The key of a JIRA issue which covers this expected failure.

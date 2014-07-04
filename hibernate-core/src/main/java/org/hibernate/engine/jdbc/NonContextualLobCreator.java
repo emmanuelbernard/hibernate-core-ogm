@@ -22,6 +22,7 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.engine.jdbc;
+
 import java.io.InputStream;
 import java.io.Reader;
 import java.sql.Blob;
@@ -36,49 +37,40 @@ import java.sql.NClob;
  * @author Gail Badner
  */
 public class NonContextualLobCreator extends AbstractLobCreator implements LobCreator {
+	/**
+	 * Singleton access
+	 */
 	public static final NonContextualLobCreator INSTANCE = new NonContextualLobCreator();
 
 	private NonContextualLobCreator() {
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Blob createBlob(byte[] bytes) {
 		return BlobProxy.generateProxy( bytes );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Blob createBlob(InputStream stream, long length) {
 		return BlobProxy.generateProxy( stream, length );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Clob createClob(String string) {
 		return ClobProxy.generateProxy( string );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Clob createClob(Reader reader, long length) {
 		return ClobProxy.generateProxy( reader, length );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public NClob createNClob(String string) {
 		return NClobProxy.generateProxy( string );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public NClob createNClob(Reader reader, long length) {
 		return NClobProxy.generateProxy( reader, length );
 	}

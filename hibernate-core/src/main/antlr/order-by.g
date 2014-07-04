@@ -46,6 +46,7 @@ tokens
     ORDER_BY;
     SORT_SPEC;
     ORDER_SPEC;
+    NULL_ORDER;
     SORT_KEY;
     EXPR_LIST;
     DOT;
@@ -55,6 +56,9 @@ tokens
     COLLATE="collate";
 	ASCENDING="asc";
 	DESCENDING="desc";
+	NULLS="nulls";
+	FIRST;
+	LAST;
 }
 
 
@@ -76,7 +80,7 @@ tokens
      * @return The text.
      */
     protected final String extractText(AST ast) {
-        // for some reason, within AST creation blocks "[]" I am somtimes unable to refer to the AST.getText() method
+        // for some reason, within AST creation blocks "[]" I am sometimes unable to refer to the AST.getText() method
         // using #var (the #var is not interpreted as the rule's output AST).
         return ast.getText();
     }
@@ -164,18 +168,18 @@ orderByFragment { trace("orderByFragment"); }
     ;
 
 /**
- * Reconition rule for what ANSI SQL terms the <tt>sort specification</tt>, which is essentially each thing upon which
+ * Recognition rule for what ANSI SQL terms the <tt>sort specification</tt>, which is essentially each thing upon which
  * the results should be sorted.
  */
 sortSpecification { trace("sortSpecification"); }
-    : sortKey (collationSpecification)? (orderingSpecification)? {
+    : sortKey (collationSpecification)? (orderingSpecification)? (nullOrdering)? {
         #sortSpecification = #( [SORT_SPEC, "{sort specification}"], #sortSpecification );
         #sortSpecification = postProcessSortSpecification( #sortSpecification );
     }
     ;
 
 /**
- * Reconition rule for what ANSI SQL terms the <tt>sort key</tt> which is the expression (column, function, etc) upon
+ * Recognition rule for what ANSI SQL terms the <tt>sort key</tt> which is the expression (column, function, etc) upon
  * which to base the sorting.
  */
 sortKey! { trace("sortKey"); }
@@ -185,7 +189,7 @@ sortKey! { trace("sortKey"); }
     ;
 
 /**
- * Reconition rule what this grammar recognizes as valid <tt>sort key</tt>.
+ * Recognition rule what this grammar recognizes as valid <tt>sort key</tt>.
  */
 expression! { trace("expression"); }
     : HARD_QUOTE qi:IDENT HARD_QUOTE {
@@ -229,7 +233,7 @@ functionCall! { trace("functionCall"); }
  */
 functionName {
         trace("functionName");
-        StringBuffer buffer = new StringBuffer();
+        StringBuilder buffer = new StringBuilder();
     }
     : i:IDENT { buffer.append( i.getText() ); }
             ( DOT i2:IDENT { buffer.append( '.').append( i2.getText() ); } )* {
@@ -261,7 +265,7 @@ functionParameter { trace("functionParameter"); }
     ;
 
 /**
- * Reconition rule for what ANSI SQL terms the <tt>collation specification</tt> used to allow specifying that sorting for
+ * Recognition rule for what ANSI SQL terms the <tt>collation specification</tt> used to allow specifying that sorting for
  * the given {@link #sortSpecification} be treated within a specific character-set.
  */
 collationSpecification! { trace("collationSpecification"); }
@@ -278,7 +282,7 @@ collationName { trace("collationSpecification"); }
     ;
 
 /**
- * Reconition rule for what ANSI SQL terms the <tt>ordering specification</tt>; <tt>ASCENDING</tt> or
+ * Recognition rule for what ANSI SQL terms the <tt>ordering specification</tt>; <tt>ASCENDING</tt> or
  * <tt>DESCENDING</tt>.
  */
 orderingSpecification! { trace("orderingSpecification"); }
@@ -291,11 +295,35 @@ orderingSpecification! { trace("orderingSpecification"); }
     ;
 
 /**
+ * Recognition rule for what SQL-2003 terms the <tt>null ordering</tt>; <tt>NULLS FIRST</tt> or
+ * <tt>NULLS LAST</tt>.
+ */
+nullOrdering! { trace("nullOrdering"); }
+    : NULLS n:nullPrecedence {
+        #nullOrdering = #( [NULL_ORDER, extractText( #n )] );
+    }
+    ;
+
+nullPrecedence { trace("nullPrecedence"); }
+    : IDENT {
+            if ( "first".equalsIgnoreCase( #nullPrecedence.getText() ) ) {
+                #nullPrecedence.setType( FIRST );
+            }
+            else if ( "last".equalsIgnoreCase( #nullPrecedence.getText() ) ) {
+                #nullPrecedence.setType( LAST );
+            }
+            else {
+                throw new SemanticException( "Expecting 'first' or 'last', but found '" +  #nullPrecedence.getText() + "' as null ordering precedence." );
+            }
+    }
+    ;
+
+/**
  * A simple-property-path is an IDENT followed by one or more (DOT IDENT) sequences
  */
 simplePropertyPath {
         trace("simplePropertyPath");
-        StringBuffer buffer = new StringBuffer();
+        StringBuilder buffer = new StringBuilder();
     }
     : i:IDENT { buffer.append( i.getText() ); }
             ( DOT i2:IDENT { buffer.append( '.').append( i2.getText() ); } )+ {

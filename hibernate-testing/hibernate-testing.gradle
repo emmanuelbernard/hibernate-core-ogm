@@ -1,33 +1,28 @@
-/*
- * Hibernate, Relational Persistence for Idiomatic Java
- *
- * Copyright (c) 2011, Red Hat Inc. or third-party contributors as
- * indicated by the @author tags or express copyright attribution
- * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Inc.
- *
- * This copyrighted material is made available to anyone wishing to use, modify,
- * copy, or redistribute it subject to the terms and conditions of the GNU
- * Lesser General Public License, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this distribution; if not, write to:
- * Free Software Foundation, Inc.
- * 51 Franklin Street, Fifth Floor
- * Boston, MA  02110-1301  USA
- */
-apply plugin: 'java'
-
 dependencies {
-    compile( project( ':hibernate-core' ) )
-    compile( [group: 'junit', name: 'junit', version: '4.8.2'] )
-    compile([group: 'com.experlog', name: 'xapool', version: '1.5.0'])
-    compile([group: 'org.jboss.jbossts', name: 'jbossjta', version: '4.15.1.Final']) {
+    compile project( ':hibernate-core' )
+    compile( libraries.junit )
+    compile( libraries.byteman )
+    compile( libraries.byteman_install )
+    compile( libraries.byteman_bmunit )
+    compile( libraries.xapool )
+    compile ( libraries.jboss_jta ) {
         transitive=false;
     }
+}
+
+// todo : Fold into hibernate-core and publish in separate publications
+// 		once http://issues.gradle.org/browse/GRADLE-2966 is resolved;
+//		that will allow us to keep the same artifactId and publish the pom
+//		with proper dependencies
+
+def pomName() {
+	return 'Hibernate ORM Testing'
+}
+
+def pomDescription() {
+	return 'Support for testing Hibernate ORM functionality'
+}
+
+def osgiDescription() {
+	return pomDescription()
 }

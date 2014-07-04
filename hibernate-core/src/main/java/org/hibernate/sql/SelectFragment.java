@@ -29,6 +29,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+
 import org.hibernate.internal.util.StringHelper;
 
 /**
@@ -126,13 +127,13 @@ public class SelectFragment {
 		return addFormula( tableAlias, columnTemplate, columnAlias );
 	}
 
-	public SelectFragment addColumnTemplates(String tableAlias, String[] columnTemplates, String columnAliases[]) {
+	public SelectFragment addColumnTemplates(String tableAlias, String[] columnTemplates, String[] columnAliases) {
 		// In this context, there's no difference between a column template and a formula.
 		return addFormulas( tableAlias, columnTemplates, columnAliases );
 	}
 
 	public String toFragmentString() {
-		StringBuffer buf = new StringBuffer( columns.size() * 10 );
+		StringBuilder buf = new StringBuilder( columns.size() * 10 );
 		Iterator iter = columns.iterator();
 		Iterator columnAliasIter = columnAliases.iterator();
 		//HashMap columnsUnique = new HashMap();

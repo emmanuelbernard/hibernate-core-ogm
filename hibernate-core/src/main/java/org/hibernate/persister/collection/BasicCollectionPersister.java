@@ -23,28 +23,35 @@
  *
  */
 package org.hibernate.persister.collection;
+
 import java.io.Serializable;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Iterator;
+import java.util.Set;
+
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.cache.CacheException;
 import org.hibernate.cache.spi.access.CollectionRegionAccessStrategy;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.collection.spi.PersistentCollection;
+import org.hibernate.engine.jdbc.batch.internal.BasicBatchKey;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.spi.SubselectFetch;
-import org.hibernate.engine.jdbc.batch.internal.BasicBatchKey;
+import org.hibernate.internal.FilterAliasGenerator;
+import org.hibernate.internal.StaticFilterAliasGenerator;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.jdbc.Expectation;
 import org.hibernate.jdbc.Expectations;
-import org.hibernate.loader.collection.BatchingCollectionInitializer;
+import org.hibernate.loader.collection.BatchingCollectionInitializerBuilder;
 import org.hibernate.loader.collection.CollectionInitializer;
 import org.hibernate.loader.collection.SubselectCollectionLoader;
 import org.hibernate.mapping.Collection;
+import org.hibernate.metamodel.spi.MetadataImplementor;
+import org.hibernate.metamodel.spi.binding.AbstractPluralAttributeBinding;
 import org.hibernate.persister.entity.Joinable;
 import org.hibernate.pretty.MessageHelper;
 import org.hibernate.sql.Delete;
@@ -64,12 +71,13 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 		return false;
 	}
 
+	@SuppressWarnings( {"UnusedDeclaration"})
 	public BasicCollectionPersister(
-			Collection collection,
+			AbstractPluralAttributeBinding collection,
 			CollectionRegionAccessStrategy cacheAccessStrategy,
-			Configuration cfg,
+			MetadataImplementor metadataImplementor,
 			SessionFactoryImplementor factory) throws MappingException, CacheException {
-		super( collection, cacheAccessStrategy, cfg, factory );
+		super( collection, cacheAccessStrategy, metadataImplementor, factory );
 	}
 
 	/**
@@ -147,6 +155,12 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 		}
 		
 		return update.toStatementString();
+	}
+	
+	@Override
+	protected void doProcessQueuedOps(PersistentCollection collection, Serializable id, SessionImplementor session)
+			throws HibernateException {
+		// nothing to do
 	}
 
 	/**
@@ -258,7 +272,7 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 									.addToBatch();
 						}
 						else {
-							expectation.verifyOutcome( st.executeUpdate(), st, -1 );
+							expectation.verifyOutcome( session.getTransactionCoordinator().getJdbcCoordinator().getResultSetReturn().executeUpdate( st ), st, -1 );
 						}
 					}
 					catch ( SQLException sqle ) {
@@ -269,7 +283,7 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 					}
 					finally {
 						if ( !useBatch ) {
-							st.close();
+							session.getTransactionCoordinator().getJdbcCoordinator().release( st );
 						}
 					}
 					count++;
@@ -281,7 +295,7 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 		catch ( SQLException sqle ) {
 			throw getSQLExceptionHelper().convert(
 					sqle,
-					"could not update collection rows: " + MessageHelper.collectionInfoString( this, id, getFactory() ),
+					"could not update collection rows: " + MessageHelper.collectionInfoString( this, collection, id, session ),
 					getSQLUpdateRowString()
 				);
 		}
@@ -329,14 +343,27 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 	@Override
     protected CollectionInitializer createCollectionInitializer(LoadQueryInfluencers loadQueryInfluencers)
 			throws MappingException {
-		return BatchingCollectionInitializer.createBatchingCollectionInitializer( this, batchSize, getFactory(), loadQueryInfluencers );
+		return BatchingCollectionInitializerBuilder.getBuilder( getFactory() )
+				.createBatchingCollectionInitializer( this, batchSize, getFactory(), loadQueryInfluencers );
 	}
 
+	@Override
 	public String fromJoinFragment(String alias, boolean innerJoin, boolean includeSubclasses) {
 		return "";
 	}
 
+	@Override
+	public String fromJoinFragment(String alias, boolean innerJoin, boolean includeSubclasses, Set<String> treatAsDeclarations) {
+		return "";
+	}
+
+	@Override
 	public String whereJoinFragment(String alias, boolean innerJoin, boolean includeSubclasses) {
+		return "";
+	}
+
+	@Override
+	public String whereJoinFragment(String alias, boolean innerJoin, boolean includeSubclasses, Set<String> treatAsDeclarations) {
 		return "";
 	}
 
@@ -351,6 +378,11 @@ public class BasicCollectionPersister extends AbstractCollectionPersister {
 				session.getFactory(),
 				session.getLoadQueryInfluencers() 
 		);
+	}
+
+	@Override
+	public FilterAliasGenerator getFilterAliasGenerator(String rootAlias) {
+		return new StaticFilterAliasGenerator(rootAlias);
 	}
 
 }

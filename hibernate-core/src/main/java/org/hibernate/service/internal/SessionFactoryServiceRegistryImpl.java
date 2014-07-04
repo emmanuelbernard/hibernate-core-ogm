@@ -25,10 +25,10 @@ package org.hibernate.service.internal;
 
 import org.hibernate.cfg.Configuration;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.metamodel.source.MetadataImplementor;
+import org.hibernate.metamodel.spi.MetadataImplementor;
 import org.hibernate.service.Service;
+import org.hibernate.service.spi.ServiceBinding;
 import org.hibernate.service.spi.ServiceInitiator;
-import org.hibernate.service.spi.ServiceRegistryAwareService;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
 import org.hibernate.service.spi.SessionFactoryServiceInitiator;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
@@ -96,11 +96,7 @@ public class SessionFactoryServiceRegistryImpl extends AbstractServiceRegistryIm
 	}
 
 	@Override
-	protected <T extends Service> void configureService(T service) {
-		applyInjections( service );
-
-		if ( ServiceRegistryAwareService.class.isInstance( service ) ) {
-			( (ServiceRegistryAwareService) service ).injectServices( this );
-		}
+	public <R extends Service> void configureService(ServiceBinding<R> serviceBinding) {
+		//TODO nothing to do here or should we inject SessionFactory properties?
 	}
 }

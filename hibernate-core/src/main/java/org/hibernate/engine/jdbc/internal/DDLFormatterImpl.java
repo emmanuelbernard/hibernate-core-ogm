@@ -35,17 +35,15 @@ import org.hibernate.internal.util.StringHelper;
  */
 public class DDLFormatterImpl implements Formatter {
 	/**
-	 * Format an SQL statement using simple rules<ul>
-	 * <li>Insert newline after each comma</li>
-	 * <li>Indent three spaces after each inserted newline</li>
-	 * </ul>
-	 * If the statement contains single/double quotes return unchanged,
-	 * it is too complex and could be broken by simple formatting.
-	 * 
-	 * @param sql The statement to be fornmatted.
+	 * Singleton access
 	 */
+	public static final DDLFormatterImpl INSTANCE = new DDLFormatterImpl();
+
+	@Override
 	public String format(String sql) {
-        if ( StringHelper.isEmpty( sql ) ) return sql;
+		if ( StringHelper.isEmpty( sql ) ) {
+			return sql;
+		}
 		if ( sql.toLowerCase().startsWith( "create table" ) ) {
 			return formatCreateTable( sql );
 		}
@@ -61,12 +59,12 @@ public class DDLFormatterImpl implements Formatter {
 	}
 
 	private String formatCommentOn(String sql) {
-		StringBuffer result = new StringBuffer( 60 ).append( "\n    " );
-		StringTokenizer tokens = new StringTokenizer( sql, " '[]\"", true );
+		final StringBuilder result = new StringBuilder( 60 ).append( "\n    " );
+		final StringTokenizer tokens = new StringTokenizer( sql, " '[]\"", true );
 
 		boolean quoted = false;
 		while ( tokens.hasMoreTokens() ) {
-			String token = tokens.nextToken();
+			final String token = tokens.nextToken();
 			result.append( token );
 			if ( isQuote( token ) ) {
 				quoted = !quoted;
@@ -82,12 +80,12 @@ public class DDLFormatterImpl implements Formatter {
 	}
 
 	private String formatAlterTable(String sql) {
-		StringBuffer result = new StringBuffer( 60 ).append( "\n    " );
-		StringTokenizer tokens = new StringTokenizer( sql, " (,)'[]\"", true );
+		final StringBuilder result = new StringBuilder( 60 ).append( "\n    " );
+		final StringTokenizer tokens = new StringTokenizer( sql, " (,)'[]\"", true );
 
 		boolean quoted = false;
 		while ( tokens.hasMoreTokens() ) {
-			String token = tokens.nextToken();
+			final String token = tokens.nextToken();
 			if ( isQuote( token ) ) {
 				quoted = !quoted;
 			}
@@ -103,13 +101,13 @@ public class DDLFormatterImpl implements Formatter {
 	}
 
 	private String formatCreateTable(String sql) {
-		StringBuffer result = new StringBuffer( 60 ).append( "\n    " );
-		StringTokenizer tokens = new StringTokenizer( sql, "(,)'[]\"", true );
+		final StringBuilder result = new StringBuilder( 60 ).append( "\n    " );
+		final StringTokenizer tokens = new StringTokenizer( sql, "(,)'[]\"", true );
 
 		int depth = 0;
 		boolean quoted = false;
 		while ( tokens.hasMoreTokens() ) {
-			String token = tokens.nextToken();
+			final String token = tokens.nextToken();
 			if ( isQuote( token ) ) {
 				quoted = !quoted;
 				result.append( token );

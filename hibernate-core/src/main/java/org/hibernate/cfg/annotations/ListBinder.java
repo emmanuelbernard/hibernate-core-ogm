@@ -24,11 +24,10 @@
 package org.hibernate.cfg.annotations;
 
 import java.util.Map;
+
 import org.hibernate.AnnotationException;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.MappingException;
 import org.hibernate.annotations.OrderBy;
-import org.hibernate.annotations.Sort;
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.annotations.common.reflection.XProperty;
 import org.hibernate.cfg.CollectionSecondPass;
@@ -38,6 +37,7 @@ import org.hibernate.cfg.Mappings;
 import org.hibernate.cfg.PropertyHolder;
 import org.hibernate.cfg.PropertyHolderBuilder;
 import org.hibernate.cfg.SecondPass;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.mapping.Collection;
 import org.hibernate.mapping.IndexBackref;
@@ -55,24 +55,21 @@ import org.jboss.logging.Logger;
  */
 @SuppressWarnings({"unchecked", "serial"})
 public class ListBinder extends CollectionBinder {
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, ListBinder.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, ListBinder.class.getName() );
 
 	public ListBinder() {
+		super( false );
 	}
 
 	@Override
-    protected Collection createCollection(PersistentClass persistentClass) {
+	protected Collection createCollection(PersistentClass persistentClass) {
 		return new org.hibernate.mapping.List( getMappings(), persistentClass );
 	}
 
 	@Override
-    public void setSqlOrderBy(OrderBy orderByAnn) {
-        if (orderByAnn != null) LOG.orderByAnnotationIndexedCollection();
-	}
-
-	@Override
-    public void setSort(Sort sortAnn) {
-        if (sortAnn != null) LOG.sortAnnotationIndexedCollection();
+	public void setSqlOrderBy(OrderBy orderByAnn) {
+		if ( orderByAnn != null )
+			LOG.orderByAnnotationIndexedCollection();
 	}
 
 	@Override
@@ -108,8 +105,8 @@ public class ListBinder extends CollectionBinder {
 			PropertyHolder valueHolder = PropertyHolderBuilder.buildPropertyHolder(
 					this.collection,
 					StringHelper.qualify( this.collection.getRole(), "key" ),
-					(XClass) null,
-					(XProperty) null, propertyHolder, mappings
+					null,
+					null, propertyHolder, mappings
 			);
 			List list = (List) this.collection;
 			if ( !list.isOneToMany() ) indexColumn.forceNotNull();

@@ -23,6 +23,7 @@
  */
 package org.hibernate.cfg;
 import java.util.Map;
+
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.annotations.common.reflection.XProperty;
 import org.hibernate.cfg.annotations.EntityBinder;
@@ -71,7 +72,7 @@ public final class PropertyHolderBuilder {
 	/**
 	 * buid a property holder on top of a collection
 	 */
-	public static PropertyHolder buildPropertyHolder(
+	public static CollectionPropertyHolder buildPropertyHolder(
 			Collection collection,
 			String path,
 			XClass clazzToProcess,

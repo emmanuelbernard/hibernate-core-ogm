@@ -27,21 +27,25 @@ package org.hibernate.hql.internal.ast;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringReader;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.QueryException;
 import org.hibernate.hql.internal.antlr.HqlBaseParser;
 import org.hibernate.hql.internal.antlr.HqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ASTPrinter;
 import org.hibernate.hql.internal.ast.util.ASTUtil;
+import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
 
-import org.jboss.logging.Logger;
 import antlr.ASTPair;
 import antlr.MismatchedTokenException;
 import antlr.RecognitionException;
 import antlr.Token;
-import antlr.TokenStream;
 import antlr.TokenStreamException;
 import antlr.collections.AST;
 
@@ -52,60 +56,75 @@ import antlr.collections.AST;
  * @author Joshua Davis (pgmjsd@sourceforge.net)
  */
 public final class HqlParser extends HqlBaseParser {
+	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( HqlParser.class );
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, HqlParser.class.getName());
-
-	private ParseErrorHandler parseErrorHandler;
-	private ASTPrinter printer = getASTPrinter();
+	private final ParseErrorHandler parseErrorHandler;
+	private final ASTPrinter printer = getASTPrinter();
 
 	private static ASTPrinter getASTPrinter() {
 		return new ASTPrinter( org.hibernate.hql.internal.antlr.HqlTokenTypes.class );
 	}
 
+	/**
+	 * Get a HqlParser instance for the given HQL string.
+	 *
+	 * @param hql The HQL query string
+	 *
+	 * @return The parser.
+	 */
 	public static HqlParser getInstance(String hql) {
-        // [jsd] The fix for HHH-558...
-        HqlLexer lexer = new HqlLexer( new StringReader( hql ) );
-		return new HqlParser( lexer );
+		return new HqlParser( hql );
 	}
 
-	private HqlParser(TokenStream lexer) {
-		super( lexer );
-		initialize();
+	private HqlParser(String hql) {
+		// The fix for HHH-558...
+		super( new HqlLexer( new StringReader( hql ) ) );
+		parseErrorHandler = new ErrorCounter( hql );
+		// Create nodes that track line and column number.
+		setASTFactory( new HqlASTFactory() );
 	}
 
 
 	// handle trace logging ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	private int traceDepth = 0;
+	private int traceDepth;
 
 	@Override
-    public void traceIn(String ruleName) {
-        if (!LOG.isTraceEnabled()) return;
-        if (inputState.guessing > 0) return;
-		String prefix = StringHelper.repeat( '-', (traceDepth++ * 2) ) + "-> ";
-        LOG.trace(prefix + ruleName);
+	public void traceIn(String ruleName) {
+		if ( !LOG.isTraceEnabled() ) {
+			return;
+		}
+		if ( inputState.guessing > 0 ) {
+			return;
+		}
+		String prefix = StringHelper.repeat( '-', ( traceDepth++ * 2 ) ) + "-> ";
+		LOG.trace( prefix + ruleName );
 	}
 
 	@Override
-    public void traceOut(String ruleName) {
-        if (!LOG.isTraceEnabled()) return;
-        if (inputState.guessing > 0) return;
-		String prefix = "<-" + StringHelper.repeat( '-', (--traceDepth * 2) ) + " ";
-        LOG.trace(prefix + ruleName);
+	public void traceOut(String ruleName) {
+		if ( !LOG.isTraceEnabled() ) {
+			return;
+		}
+		if ( inputState.guessing > 0 ) {
+			return;
+		}
+		String prefix = "<-" + StringHelper.repeat( '-', ( --traceDepth * 2 ) ) + " ";
+		LOG.trace( prefix + ruleName );
 	}
 
 	@Override
-    public void reportError(RecognitionException e) {
+	public void reportError(RecognitionException e) {
 		parseErrorHandler.reportError( e ); // Use the delegate.
 	}
 
 	@Override
-    public void reportError(String s) {
+	public void reportError(String s) {
 		parseErrorHandler.reportError( s ); // Use the delegate.
 	}
 
 	@Override
-    public void reportWarning(String s) {
+	public void reportWarning(String s) {
 		parseErrorHandler.reportWarning( s );
 	}
 
@@ -117,33 +136,37 @@ public final class HqlParser extends HqlBaseParser {
 	 * Overrides the base behavior to retry keywords as identifiers.
 	 *
 	 * @param token The token.
-	 * @param ex    The recognition exception.
+	 * @param ex The recognition exception.
+	 *
 	 * @return AST - The new AST.
+	 *
 	 * @throws antlr.RecognitionException if the substitution was not possible.
 	 * @throws antlr.TokenStreamException if the substitution was not possible.
 	 */
 	@Override
-    public AST handleIdentifierError(Token token, RecognitionException ex) throws RecognitionException, TokenStreamException {
+	public AST handleIdentifierError(Token token, RecognitionException ex)
+			throws RecognitionException, TokenStreamException {
 		// If the token can tell us if it could be an identifier...
 		if ( token instanceof HqlToken ) {
-			HqlToken hqlToken = ( HqlToken ) token;
+			HqlToken hqlToken = (HqlToken) token;
 			// ... and the token could be an identifer and the error is
 			// a mismatched token error ...
 			if ( hqlToken.isPossibleID() && ( ex instanceof MismatchedTokenException ) ) {
-				MismatchedTokenException mte = ( MismatchedTokenException ) ex;
+				MismatchedTokenException mte = (MismatchedTokenException) ex;
 				// ... and the expected token type was an identifier, then:
 				if ( mte.expecting == HqlTokenTypes.IDENT ) {
 					// Use the token as an identifier.
-					reportWarning( "Keyword  '"
-							+ token.getText()
-							+ "' is being interpreted as an identifier due to: " + mte.getMessage() );
+					reportWarning(
+							"Keyword  '"
+									+ token.getText()
+									+ "' is being interpreted as an identifier due to: " + mte.getMessage()
+					);
 					// Add the token to the AST.
 					ASTPair currentAST = new ASTPair();
 					token.setType( HqlTokenTypes.WEIRD_IDENT );
 					astFactory.addASTChild( currentAST, astFactory.create( token ) );
 					consume();
-					AST identifierAST = currentAST.root;
-					return identifierAST;
+					return currentAST.root;
 				}
 			} // if
 		} // if
@@ -157,93 +180,126 @@ public final class HqlParser extends HqlBaseParser {
 	 * </pre>
 	 *
 	 * @param x The sub tree to transform, the parent is assumed to be NOT.
+	 *
 	 * @return AST - The equivalent sub-tree.
 	 */
 	@Override
-    public AST negateNode(AST x) {
+	public AST negateNode(AST x) {
 		//TODO: switch statements are always evil! We already had bugs because
 		//      of forgotten token types. Use polymorphism for this!
 		switch ( x.getType() ) {
-			case OR:
-				x.setType(AND);
-				x.setText("{and}");
-                x.setFirstChild(negateNode( x.getFirstChild() ));
-                x.getFirstChild().setNextSibling(negateNode( x.getFirstChild().getNextSibling() ));
-                return x;
-			case AND:
-				x.setType(OR);
-				x.setText("{or}");
-                x.setFirstChild(negateNode( x.getFirstChild() ));
-                x.getFirstChild().setNextSibling(negateNode( x.getFirstChild().getNextSibling() ));
+			case OR: {
+				x.setType( AND );
+				x.setText( "{and}" );
+				x.setFirstChild( negateNode( x.getFirstChild() ) );
+				x.getFirstChild().setNextSibling( negateNode( x.getFirstChild().getNextSibling() ) );
 				return x;
-			case EQ:
+			}
+			case AND: {
+				x.setType( OR );
+				x.setText( "{or}" );
+				x.setFirstChild( negateNode( x.getFirstChild() ) );
+				x.getFirstChild().setNextSibling( negateNode( x.getFirstChild().getNextSibling() ) );
+				return x;
+			}
+			case EQ: {
+				// (NOT (EQ a b) ) => (NE a b)
 				x.setType( NE );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (EQ a b) ) => (NE a b)
-			case NE:
+				return x;
+			}
+			case NE: {
+				// (NOT (NE a b) ) => (EQ a b)
 				x.setType( EQ );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (NE a b) ) => (EQ a b)
-			case GT:
+				return x;
+			}
+			case GT: {
+				// (NOT (GT a b) ) => (LE a b)
 				x.setType( LE );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (GT a b) ) => (LE a b)
-			case LT:
+				return x;
+			}
+			case LT: {
+				// (NOT (LT a b) ) => (GE a b)
 				x.setType( GE );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (LT a b) ) => (GE a b)
-			case GE:
+				return x;
+			}
+			case GE: {
+				// (NOT (GE a b) ) => (LT a b)
 				x.setType( LT );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (GE a b) ) => (LT a b)
-			case LE:
+				return x;
+			}
+			case LE: {
+				// (NOT (LE a b) ) => (GT a b)
 				x.setType( GT );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (LE a b) ) => (GT a b)
-			case LIKE:
+				return x;
+			}
+			case LIKE: {
+				// (NOT (LIKE a b) ) => (NOT_LIKE a b)
 				x.setType( NOT_LIKE );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (LIKE a b) ) => (NOT_LIKE a b)
-			case NOT_LIKE:
+				return x;
+			}
+			case NOT_LIKE: {
+				// (NOT (NOT_LIKE a b) ) => (LIKE a b)
 				x.setType( LIKE );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (NOT_LIKE a b) ) => (LIKE a b)
-			case IN:
+				return x;
+			}
+			case IN: {
 				x.setType( NOT_IN );
 				x.setText( "{not}" + x.getText() );
 				return x;
-			case NOT_IN:
+			}
+			case NOT_IN: {
 				x.setType( IN );
 				x.setText( "{not}" + x.getText() );
 				return x;
-			case IS_NULL:
+			}
+			case IS_NULL: {
+				// (NOT (IS_NULL a b) ) => (IS_NOT_NULL a b)
 				x.setType( IS_NOT_NULL );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (IS_NULL a b) ) => (IS_NOT_NULL a b)
-			case IS_NOT_NULL:
+				return x;
+			}
+			case IS_NOT_NULL: {
+				// (NOT (IS_NOT_NULL a b) ) => (IS_NULL a b)
 				x.setType( IS_NULL );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (IS_NOT_NULL a b) ) => (IS_NULL a b)
-			case BETWEEN:
+				return x;
+			}
+			case BETWEEN: {
+				// (NOT (BETWEEN a b) ) => (NOT_BETWEEN a b)
 				x.setType( NOT_BETWEEN );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (BETWEEN a b) ) => (NOT_BETWEEN a b)
-			case NOT_BETWEEN:
+				return x;
+			}
+			case NOT_BETWEEN: {
+				// (NOT (NOT_BETWEEN a b) ) => (BETWEEN a b)
 				x.setType( BETWEEN );
 				x.setText( "{not}" + x.getText() );
-				return x;	// (NOT (NOT_BETWEEN a b) ) => (BETWEEN a b)
+				return x;
+			}
 /* This can never happen because this rule will always eliminate the child NOT.
-			case NOT:
-				return x.getFirstChild();			// (NOT (NOT x) ) => (x)
+			case NOT: {
+				// (NOT (NOT x) ) => (x)
+				return x.getFirstChild();
+			}
 */
-			default:
-				AST not = super.negateNode( x );		// Just add a 'not' parent.
-                if ( not != x ) {
-                   // relink the next sibling to the new 'not' parent
-                    not.setNextSibling(x.getNextSibling());
-                    x.setNextSibling(null);
-                }
-                return not;
+			default: {
+				// Just add a 'not' parent.
+				AST not = super.negateNode( x );
+				if ( not != x ) {
+					// relink the next sibling to the new 'not' parent
+					not.setNextSibling( x.getNextSibling() );
+					x.setNextSibling( null );
+				}
+				return not;
+			}
 		}
 	}
 
@@ -251,12 +307,13 @@ public final class HqlParser extends HqlBaseParser {
 	 * Post process equality expressions, clean up the subtree.
 	 *
 	 * @param x The equality expression.
+	 *
 	 * @return AST - The clean sub-tree.
 	 */
 	@Override
-    public AST processEqualityExpression(AST x) {
+	public AST processEqualityExpression(AST x) {
 		if ( x == null ) {
-            LOG.processEqualityExpression();
+			LOG.processEqualityExpression();
 			return null;
 		}
 
@@ -326,66 +383,123 @@ public final class HqlParser extends HqlBaseParser {
 		printer.showAst( ast, pw );
 	}
 
-	private void initialize() {
-		// Initialize the error handling delegate.
-		parseErrorHandler = new ErrorCounter();
-		setASTFactory(new HqlASTFactory());	// Create nodes that track line and column number.
-	}
-
 	@Override
-    public void weakKeywords() throws TokenStreamException {
+	public void weakKeywords() throws TokenStreamException {
 
 		int t = LA( 1 );
 		switch ( t ) {
 			case ORDER:
 			case GROUP:
-                // Case 1: Multi token keywords GROUP BY and ORDER BY
+				// Case 1: Multi token keywords GROUP BY and ORDER BY
 				// The next token ( LT(2) ) should be 'by'... otherwise, this is just an ident.
 				if ( LA( 2 ) != LITERAL_by ) {
 					LT( 1 ).setType( IDENT );
-                    LOG.debugf("weakKeywords() : new LT(1) token - %s", LT(1));
+					if ( LOG.isDebugEnabled() ) {
+						LOG.debugf( "weakKeywords() : new LT(1) token - %s", LT( 1 ) );
+					}
 				}
 				break;
 			default:
-                // Case 2: The current token is after FROM and before '.'.
-                if (LA(0) == FROM && t != IDENT && LA(2) == DOT) {
-                    HqlToken hqlToken = (HqlToken)LT(1);
-                    if (hqlToken.isPossibleID()) {
-                        hqlToken.setType(IDENT);
-                        LOG.debugf("weakKeywords() : new LT(1) token - %s", LT(1));
-                    }
-                }
+				// Case 2: The current token is after FROM and before '.'.
+				if ( LA( 0 ) == FROM && t != IDENT && LA( 2 ) == DOT ) {
+					HqlToken hqlToken = (HqlToken) LT( 1 );
+					if ( hqlToken.isPossibleID() ) {
+						hqlToken.setType( IDENT );
+						if ( LOG.isDebugEnabled() ) {
+							LOG.debugf( "weakKeywords() : new LT(1) token - %s", LT( 1 ) );
+						}
+					}
+				}
 				break;
 		}
 	}
 
-    @Override
-    public void handleDotIdent() throws TokenStreamException {
-        // This handles HHH-354, where there is a strange property name in a where clause.
-        // If the lookahead contains a DOT then something that isn't an IDENT...
-        if (LA(1) == DOT && LA(2) != IDENT) {
-            // See if the second lookahead token can be an identifier.
-            HqlToken t = (HqlToken)LT(2);
-            if (t.isPossibleID())
-            {
-                // Set it!
-                LT( 2 ).setType( IDENT );
-                LOG.debugf("handleDotIdent() : new LT(2) token - %s", LT(1));
-            }
-        }
-    }
-
 	@Override
-    public void processMemberOf(Token n, AST p, ASTPair currentAST) {
-		AST inAst = n == null ? astFactory.create( IN, "in" ) : astFactory.create( NOT_IN, "not in" );
-		astFactory.makeASTRoot( currentAST, inAst );
-		AST ast = createSubquery( p );
-		ast = ASTUtil.createParent( astFactory, IN_LIST, "inList", ast );
-		inAst.addChild( ast );
+	public void expectNamedParameterName() throws TokenStreamException {
+		// we expect the token following a COLON (':') to be the name of a named parameter.
+		// if the following token is anything other than IDENT we convert its type if possible.
+
+		// NOTE : the LT() call is more expensive than the LA() call; so we
+		// use LA() first to see if LT() is needed.
+		if ( LA( 1 ) != IDENT ) {
+			final HqlToken nextToken = (HqlToken) LT( 1 );
+			if ( nextToken.isPossibleID() ) {
+				LOG.debugf(
+						"Converting keyword [%s] following COLON to IDENT as an expected parameter name",
+						nextToken.getText()
+				);
+				nextToken.setType( IDENT );
+			}
+		}
 	}
 
-	static public void panic() {
+	@Override
+	public void handleDotIdent() throws TokenStreamException {
+		// This handles HHH-354, where there is a strange property name in a where clause.
+		// If the lookahead contains a DOT then something that isn't an IDENT...
+		if ( LA( 1 ) == DOT && LA( 2 ) != IDENT ) {
+			// See if the second lookahead token can be an identifier.
+			HqlToken t = (HqlToken) LT( 2 );
+			if ( t.isPossibleID() ) {
+				// Set it!
+				LT( 2 ).setType( IDENT );
+				if ( LOG.isDebugEnabled() ) {
+					LOG.debugf( "handleDotIdent() : new LT(2) token - %s", LT( 1 ) );
+				}
+			}
+		}
+	}
+
+	@Override
+	public void processMemberOf(Token n, AST p, ASTPair currentAST) {
+		// convert MEMBER OF to the equivalent IN ELEMENTS structure...
+		AST inNode = n == null ? astFactory.create( IN, "in" ) : astFactory.create( NOT_IN, "not in" );
+		astFactory.makeASTRoot( currentAST, inNode );
+
+		AST inListNode = astFactory.create( IN_LIST, "inList" );
+		inNode.addChild( inListNode );
+		AST elementsNode = astFactory.create( ELEMENTS, "elements" );
+		inListNode.addChild( elementsNode );
+		elementsNode.addChild( p );
+	}
+
+	private Map<String, Set<String>> treatMap;
+
+	@Override
+	protected void registerTreat(AST pathToTreat, AST treatAs) {
+		final String path = toPathText( pathToTreat );
+		final String subclassName = toPathText( treatAs );
+		LOG.debugf( "Registering discovered request to treat(%s as %s)", path, subclassName );
+
+		if ( treatMap == null ) {
+			treatMap = new HashMap<String, Set<String>>();
+		}
+
+		Set<String> subclassNames = treatMap.get( path );
+		if ( subclassNames == null ) {
+			subclassNames = new HashSet<String>();
+			treatMap.put( path, subclassNames );
+		}
+		subclassNames.add( subclassName );
+	}
+
+	private String toPathText(AST node) {
+		final String text = node.getText();
+		if ( text.equals( "." )
+				&& node.getFirstChild() != null
+				&& node.getFirstChild().getNextSibling() != null
+				&& node.getFirstChild().getNextSibling().getNextSibling() == null ) {
+			return toPathText( node.getFirstChild() ) + '.' + toPathText( node.getFirstChild().getNextSibling() );
+		}
+		return text;
+	}
+
+	public Map<String, Set<String>> getTreatMap() {
+		return treatMap == null ? Collections.<String, Set<String>>emptyMap() : treatMap;
+	}
+
+	public static void panic() {
 		//overriden to avoid System.exit
-		throw new QueryException("Parser: panic");
+		throw new QueryException( "Parser: panic" );
 	}
 }

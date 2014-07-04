@@ -22,11 +22,11 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.mapping;
+
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
+
 import org.hibernate.internal.util.collections.JoinedIterator;
 
 /**
@@ -48,9 +48,10 @@ public class DenormalizedTable extends Table {
 		while ( iter.hasNext() ) {
 			ForeignKey fk = (ForeignKey) iter.next();
 			createForeignKey( 
-					fk.getName() + Integer.toHexString( getName().hashCode() ), 
+					Constraint.generateName( fk.generatedConstraintNamePrefix(), this, fk.getColumns() ),
 					fk.getColumns(), 
-					fk.getReferencedEntityName() 
+					fk.getReferencedEntityName(),
+					fk.getReferencedColumns()
 				);
 		}
 	}
@@ -86,14 +87,12 @@ public class DenormalizedTable extends Table {
 
 	@Override
     public Iterator getUniqueKeyIterator() {
-		//wierd implementation because of hacky behavior
-		//of Table.sqlCreateString() which modifies the
-		//list of unique keys by side-effect on some
-		//dialects
-		Map uks = new HashMap();
-		uks.putAll( getUniqueKeys() );
-		uks.putAll( includedTable.getUniqueKeys() );
-		return uks.values().iterator();
+		Iterator iter = includedTable.getUniqueKeyIterator();
+		while ( iter.hasNext() ) {
+			UniqueKey uk = (UniqueKey) iter.next();
+			createUniqueKey( uk.getColumns() );
+		}
+		return getUniqueKeys().values().iterator();
 	}
 
 	@Override

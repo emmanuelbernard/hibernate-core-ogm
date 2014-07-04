@@ -26,6 +26,7 @@ package org.hibernate.sql;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
 import org.hibernate.dialect.Dialect;
 import org.hibernate.type.LiteralType;
 
@@ -177,7 +178,7 @@ public class Update {
 	}
 
 	public String toStatementString() {
-		StringBuffer buf = new StringBuffer( (columns.size() * 15) + tableName.length() + 10 );
+		StringBuilder buf = new StringBuilder( (columns.size() * 15) + tableName.length() + 10 );
 		if ( comment!=null ) {
 			buf.append( "/* " ).append( comment ).append( " */ " );
 		}

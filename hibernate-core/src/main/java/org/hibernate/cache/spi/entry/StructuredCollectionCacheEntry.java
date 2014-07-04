@@ -30,18 +30,28 @@ import java.util.List;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 
 /**
+ * Structured CacheEntry format for persistent collections (other than Maps, see {@link StructuredMapCacheEntry}).
+ *
  * @author Gavin King
  */
 public class StructuredCollectionCacheEntry implements CacheEntryStructure {
+	/**
+	 * Access to the singleton reference.
+	 */
+	public static final StructuredCollectionCacheEntry INSTANCE = new StructuredCollectionCacheEntry();
 
+	@Override
 	public Object structure(Object item) {
-		CollectionCacheEntry entry = (CollectionCacheEntry) item;
+		final CollectionCacheEntry entry = (CollectionCacheEntry) item;
 		return Arrays.asList( entry.getState() );
 	}
-	
-	public Object destructure(Object item, SessionFactoryImplementor factory) {
-		List list = (List) item;
+
+	@Override
+	public Object destructure(Object structured, SessionFactoryImplementor factory) {
+		final List list = (List) structured;
 		return new CollectionCacheEntry( list.toArray( new Serializable[list.size()] ) );
 	}
 
+	private StructuredCollectionCacheEntry() {
+	}
 }

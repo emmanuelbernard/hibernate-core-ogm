@@ -24,18 +24,16 @@
  */
 package org.hibernate.hql.internal.ast;
 
-
 /**
- * {@inheritDoc}
+ * Indicates an issue with the encountered with-clause.
  *
  * @author Steve Ebersole
  */
 public class InvalidWithClauseException extends QuerySyntaxException {
-	public InvalidWithClauseException(String message) {
-		super( message );
-	}
-
 	public InvalidWithClauseException(String message, String queryString) {
 		super( message, queryString );
+		if ( queryString == null ) {
+			throw new IllegalArgumentException( "Illegal to pass null as queryString argument" );
+		}
 	}
 }

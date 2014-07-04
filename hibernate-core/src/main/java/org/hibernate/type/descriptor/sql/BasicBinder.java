@@ -26,13 +26,13 @@ package org.hibernate.type.descriptor.sql;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
-import org.jboss.logging.Logger;
-
-import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.internal.CoreLogging;
 import org.hibernate.type.descriptor.JdbcTypeNameMapper;
 import org.hibernate.type.descriptor.ValueBinder;
 import org.hibernate.type.descriptor.WrapperOptions;
 import org.hibernate.type.descriptor.java.JavaTypeDescriptor;
+
+import org.jboss.logging.Logger;
 
 /**
  * Convenience base implementation of {@link ValueBinder}
@@ -40,11 +40,10 @@ import org.hibernate.type.descriptor.java.JavaTypeDescriptor;
  * @author Steve Ebersole
  */
 public abstract class BasicBinder<J> implements ValueBinder<J> {
+    private static final Logger log = CoreLogging.logger( BasicBinder.class );
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, BasicBinder.class.getName());
-
-    private static final String BIND_MSG_TEMPLATE = "binding parameter [%s] as [%s] - %s";
-    private static final String NULL_BIND_MSG_TEMPLATE = "binding parameter [%s] as [%s] - <null>";
+    private static final String BIND_MSG_TEMPLATE = "binding parameter [%s] as [%s] - [%s]";
+    private static final String NULL_BIND_MSG_TEMPLATE = "binding parameter [%s] as [%s] - [null]";
 
 	private final JavaTypeDescriptor<J> javaDescriptor;
 	private final SqlTypeDescriptor sqlDescriptor;
@@ -62,32 +61,31 @@ public abstract class BasicBinder<J> implements ValueBinder<J> {
 		this.sqlDescriptor = sqlDescriptor;
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public final void bind(PreparedStatement st, J value, int index, WrapperOptions options) throws SQLException {
+        final boolean traceEnabled = log.isTraceEnabled();
         if ( value == null ) {
-            if ( LOG.isTraceEnabled() ) {
-                LOG.trace(
-                        String.format(
-                                NULL_BIND_MSG_TEMPLATE,
-                                index,
-                                JdbcTypeNameMapper.getTypeName( sqlDescriptor.getSqlType() )
-                        )
-                );
+            if ( traceEnabled ) {
+                log.trace(
+						String.format(
+								NULL_BIND_MSG_TEMPLATE,
+								index,
+								JdbcTypeNameMapper.getTypeName( getSqlDescriptor().getSqlType() )
+						)
+				);
             }
             st.setNull( index, sqlDescriptor.getSqlType() );
         }
         else {
-            if ( LOG.isTraceEnabled() ) {
-                LOG.trace(
-                        String.format(
-                                BIND_MSG_TEMPLATE,
-                                index,
-                                JdbcTypeNameMapper.getTypeName( sqlDescriptor.getSqlType() ),
-                                getJavaDescriptor().extractLoggableRepresentation( value )
-                        )
-                );
+            if ( traceEnabled ) {
+                log.trace(
+						String.format(
+								BIND_MSG_TEMPLATE,
+								index,
+								JdbcTypeNameMapper.getTypeName( sqlDescriptor.getSqlType() ),
+								getJavaDescriptor().extractLoggableRepresentation( value )
+						)
+				);
             }
             doBind( st, value, index, options );
         }

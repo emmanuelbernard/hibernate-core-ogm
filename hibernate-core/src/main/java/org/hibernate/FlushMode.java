@@ -1,10 +1,10 @@
 /*
  * Hibernate, Relational Persistence for Idiomatic Java
  *
- * Copyright (c) 2008, Red Hat Middleware LLC or third-party contributors as
+ * Copyright (c) 2008 Red Hat Inc. or third-party contributors as
  * indicated by the @author tags or express copyright attribution
  * statements applied by the authors.  All third-party contributions are
- * distributed under license by Red Hat Middleware LLC.
+ * distributed under license by Red Hat Inc.
  *
  * This copyrighted material is made available to anyone wishing to use, modify,
  * copy, or redistribute it subject to the terms and conditions of the GNU
@@ -20,9 +20,10 @@
  * Free Software Foundation, Inc.
  * 51 Franklin Street, Fifth Floor
  * Boston, MA  02110-1301  USA
- *
  */
 package org.hibernate;
+
+import java.util.Locale;
 
 /**
  * Represents a flushing strategy. The flush process synchronizes
@@ -36,13 +37,14 @@ package org.hibernate;
  * @author Gavin King
  */
 public enum FlushMode {
-		/**
+	/**
 	 * The {@link Session} is never flushed unless {@link Session#flush}
 	 * is explicitly called by the application. This mode is very
 	 * efficient for read only transactions.
 	 *
 	 * @deprecated use {@link #MANUAL} instead.
 	 */
+	@Deprecated
 	NEVER ( 0 ),
 
 	/**
@@ -76,12 +78,57 @@ public enum FlushMode {
 	private FlushMode(int level) {
 		this.level = level;
 	}
-	
+
+	/**
+	 * Checks to see if {@code this} flush mode is less than the given flush mode.
+	 *
+	 * @param other THe flush mode value to be checked against {@code this}
+	 *
+	 * @return {@code true} indicates {@code other} is less than {@code this}; {@code false} otherwise
+	 */
 	public boolean lessThan(FlushMode other) {
-		return this.level<other.level;
+		return this.level < other.level;
 	}
 
+	/**
+	 * Checks to see if the given mode is the same as {@link #MANUAL}.
+	 *
+	 * @param mode The mode to check
+	 *
+	 * @return true/false
+	 *
+	 * @deprecated Just use equality check against {@link #MANUAL}.  Legacy from before this was an enum
+	 */
+	@Deprecated
 	public static boolean isManualFlushMode(FlushMode mode) {
 		return MANUAL.level == mode.level;
+	}
+
+	public String toExternalForm() {
+		return name().toLowerCase( Locale.ENGLISH );
+	}
+
+	/**
+	 * Interprets an external representation of the flush mode.  {@code null} is returned as {@code null}, otherwise
+	 * {@link FlushMode#valueOf(String)} is used with the upper-case version of the incoming value.  An unknown,
+	 * non-null value results in a MappingException being thrown.
+	 *
+	 * @param externalName The external representation
+	 *
+	 * @return The interpreted FlushMode value.
+	 *
+	 * @throws MappingException Indicates an unrecognized external representation
+	 */
+	public static FlushMode interpretExternalSetting(String externalName) {
+		if ( externalName == null ) {
+			return null;
+		}
+
+		try {
+			return FlushMode.valueOf( externalName.toUpperCase( Locale.ENGLISH ) );
+		}
+		catch ( IllegalArgumentException e ) {
+			throw new MappingException( "unknown FlushMode : " + externalName );
+		}
 	}
 }

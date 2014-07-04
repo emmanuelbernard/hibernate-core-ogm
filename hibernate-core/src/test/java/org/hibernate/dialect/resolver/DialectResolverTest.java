@@ -22,20 +22,22 @@
  * Boston, MA  02110-1301  USA
  */
 package org.hibernate.dialect.resolver;
+
 import java.sql.SQLException;
 
-import org.junit.Test;
-import static org.junit.Assert.fail;
-import static org.junit.Assert.assertEquals;
-
 import org.hibernate.dialect.Dialect;
-import org.hibernate.dialect.Mocks;
 import org.hibernate.dialect.TestingDialects;
+import org.hibernate.engine.jdbc.dialect.internal.DialectResolverSet;
+import org.hibernate.engine.jdbc.dialect.spi.BasicDialectResolver;
+import org.hibernate.engine.jdbc.dialect.spi.DialectResolver;
 import org.hibernate.exception.JDBCConnectionException;
-import org.hibernate.service.jdbc.dialect.internal.BasicDialectResolver;
-import org.hibernate.service.jdbc.dialect.internal.DialectResolverSet;
-import org.hibernate.service.jdbc.dialect.spi.DialectResolver;
+
+import org.junit.Test;
+
 import org.hibernate.testing.junit4.BaseUnitTestCase;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /**
  * @author Steve Ebersole
@@ -62,23 +64,12 @@ public class DialectResolverTest extends BaseUnitTestCase {
 	public void testErrorAndOrder() throws Exception {
 		DialectResolverSet resolvers = new DialectResolverSet();
 		resolvers.addResolverAtFirst( new TestingDialects.MyDialectResolver1() );
-		resolvers.addResolver( new TestingDialects.ErrorDialectResolver1() );
-		resolvers.addResolverAtFirst( new TestingDialects.ErrorDialectResolver1() );
 		resolvers.addResolver( new TestingDialects.MyDialectResolver2() );
 
 		// Non-connection errors are suppressed.
 		testDetermination( resolvers, "MyDatabase1", 1, TestingDialects.MyDialect1.class );
 		testDetermination( resolvers, "MyTrickyDatabase1", 1, TestingDialects.MyDialect1.class );
 		testDetermination( resolvers, "NoSuchDatabase", 1, null );
-
-		// Connection errors are reported
-		try {
-			testDetermination( resolvers, "ConnectionErrorDatabase1", 1, null );
-			fail();
-		}
-		catch ( JDBCConnectionException e ) {
-			// expected
-		}
 	}
 
 	@Test
@@ -104,7 +95,7 @@ public class DialectResolverTest extends BaseUnitTestCase {
 			String databaseName,
 			int version,
 			Class dialectClass) throws SQLException {
-		Dialect dialect = resolver.resolveDialect( Mocks.createConnection( databaseName, version ).getMetaData() );
+		Dialect dialect = resolver.resolveDialect( TestingDialectResolutionInfo.forDatabaseInfo( databaseName, version ) );
 		if ( dialectClass == null ) {
 			assertEquals( null, dialect );
 		}
@@ -112,4 +103,5 @@ public class DialectResolverTest extends BaseUnitTestCase {
 			assertEquals( dialectClass, dialect.getClass() );
 		}
 	}
+
 }

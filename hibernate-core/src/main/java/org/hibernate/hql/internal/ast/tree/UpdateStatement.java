@@ -23,12 +23,14 @@
  *
  */
 package org.hibernate.hql.internal.ast.tree;
-import org.hibernate.internal.CoreMessageLogger;
+
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
 import org.hibernate.hql.internal.antlr.SqlTokenTypes;
 import org.hibernate.hql.internal.ast.util.ASTUtil;
+import org.hibernate.internal.CoreMessageLogger;
 
 import org.jboss.logging.Logger;
+
 import antlr.collections.AST;
 
 /**

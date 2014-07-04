@@ -23,14 +23,11 @@
  */
 package org.hibernate.testing.cache;
 
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import org.jboss.logging.Logger;
-
 import org.hibernate.cache.CacheException;
 import org.hibernate.cache.spi.GeneralDataRegion;
 import org.hibernate.internal.CoreMessageLogger;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author Strong Liu
@@ -46,20 +43,20 @@ class BaseGeneralDataRegion extends BaseRegion implements GeneralDataRegion {
 
 	@Override
 	public Object get(Object key) throws CacheException {
-		LOG.debugf( "Cache lookup : key[%s]", key );
+		LOG.debugf( "Cache[%s] lookup : key[%s]",getName(), key );
 		if ( key == null ) {
 			return null;
 		}
 		Object result = cache.get( key );
 		if ( result != null ) {
-			LOG.debugf( "Cache hit: %s", key );
+			LOG.debugf( "Cache[%s] hit: %s",getName(), key );
 		}
 		return result;
 	}
 
 	@Override
 	public void put(Object key, Object value) throws CacheException {
-		LOG.debugf( "Caching : [%s] -> [%s]", key, value );
+		LOG.debugf( "Caching[%s] : [%s] -> [%s]",getName(), key, value );
 		if ( key == null || value == null ) {
 			LOG.debug( "Key or Value is null" );
 			return;
@@ -69,7 +66,7 @@ class BaseGeneralDataRegion extends BaseRegion implements GeneralDataRegion {
 
 	@Override
 	public void evict(Object key) throws CacheException {
-		LOG.debugf( "Invalidating: %s", key );
+		LOG.debugf( "Evicting[%s]: %s",getName(), key );
 		if ( key == null ) {
 			LOG.debug( "Key is null" );
 			return;
@@ -79,13 +76,7 @@ class BaseGeneralDataRegion extends BaseRegion implements GeneralDataRegion {
 
 	@Override
 	public void evictAll() throws CacheException {
-		LOG.debug( "evict cache" );
+		LOG.debugf( "evict cache[%s]", getName() );
 		cache.clear();
 	}
-
-
-
-
-
-
 }

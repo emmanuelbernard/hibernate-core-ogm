@@ -27,6 +27,7 @@ import java.io.Serializable;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+
 import org.hibernate.HibernateException;
 import org.hibernate.LockOptions;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
@@ -56,17 +57,13 @@ public abstract class AbstractEntityLoader extends OuterJoinLoader
 
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Object load(Serializable id, Object optionalObject, SessionImplementor session) {
 		// this form is deprecated!
 		return load( id, optionalObject, session, LockOptions.NONE );
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
+	@Override
 	public Object load(Serializable id, Object optionalObject, SessionImplementor session, LockOptions lockOptions) {
 		return load( session, id, optionalObject, id, lockOptions );
 	}

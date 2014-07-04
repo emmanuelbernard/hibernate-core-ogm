@@ -24,10 +24,12 @@
  */
 package org.hibernate.hql.internal.ast.util;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
+
 import org.jboss.logging.Logger;
+
 import antlr.ASTFactory;
 import antlr.collections.AST;
 
@@ -38,7 +40,7 @@ import antlr.collections.AST;
  */
 public final class PathHelper {
 
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, PathHelper.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, PathHelper.class.getName() );
 
 	private PathHelper() {
 	}
@@ -63,7 +65,9 @@ public final class PathHelper {
 				lhs = ASTUtil.createBinarySubtree( factory, HqlSqlTokenTypes.DOT, ".", lhs, child );
 			}
 		}
-        if (LOG.isDebugEnabled()) LOG.debugf("parsePath() : %s -> %s", path, ASTUtil.getDebugString(lhs));
+		if ( LOG.isDebugEnabled() ) {
+			LOG.debugf( "parsePath() : %s -> %s", path, ASTUtil.getDebugString( lhs ) );
+		}
 		return lhs;
 	}
 

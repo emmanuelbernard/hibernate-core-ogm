@@ -32,14 +32,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
 import org.hibernate.Version;
 import org.hibernate.bytecode.spi.BytecodeProvider;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ConfigHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
+
+import org.jboss.logging.Logger;
 
 
 /**
@@ -66,7 +66,7 @@ import org.hibernate.internal.util.config.ConfigurationHelper;
  * Properties may be either be <tt>System</tt> properties, properties
  * defined in a resource named <tt>/hibernate.properties</tt> or an instance of
  * <tt>java.util.Properties</tt> passed to
- * <tt>Configuration.buildSessionFactory()</tt><br>
+ * <tt>Configuration.build()</tt><br>
  * <br>
  * <table>
  * <tr><td><b>property</b></td><td><b>meaning</b></td></tr>
@@ -76,7 +76,7 @@ import org.hibernate.internal.util.config.ConfigurationHelper;
  * </tr>
  * <tr>
  *   <td><tt>hibernate.connection.provider_class</tt></td>
- *   <td>classname of <tt>org.hibernate.service.jdbc.connections.spi.ConnectionProvider</tt>
+ *   <td>classname of <tt>ConnectionProvider</tt>
  *   subclass (if not specified hueristics are used)</td>
  * </tr>
  * <tr><td><tt>hibernate.connection.username</tt></td><td>database username</td></tr>
@@ -151,8 +151,8 @@ import org.hibernate.internal.util.config.ConfigurationHelper;
  *   Session</tt> (de)serialization.</td>
  * </tr>
  * <tr>
- *   <td><tt>hibernate.transaction.manager_lookup_class</tt></td>
- *   <td>classname of <tt>org.hibernate.transaction.TransactionManagerLookup</tt>
+ *   <td><tt>hibernate.transaction.jta.platform</tt></td>
+ *   <td>classname of <tt>org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform</tt>
  *   implementor</td>
  * </tr>
  * <tr>
@@ -221,40 +221,44 @@ public final class Environment implements AvailableSettings {
 			InputStream stream = ConfigHelper.getResourceAsStream( "/hibernate.properties" );
 			try {
 				GLOBAL_PROPERTIES.load(stream);
-                LOG.propertiesLoaded(ConfigurationHelper.maskOut(GLOBAL_PROPERTIES, PASS));
+				LOG.propertiesLoaded( ConfigurationHelper.maskOut( GLOBAL_PROPERTIES, PASS ) );
 			}
 			catch (Exception e) {
-                LOG.unableToLoadProperties();
+				LOG.unableToLoadProperties();
 			}
 			finally {
 				try{
 					stream.close();
 				}
 				catch (IOException ioe){
-                    LOG.unableToCloseStreamError(ioe);
+					LOG.unableToCloseStreamError( ioe );
 				}
 			}
 		}
 		catch (HibernateException he) {
-            LOG.propertiesNotFound();
+			LOG.propertiesNotFound();
 		}
 
 		try {
-			GLOBAL_PROPERTIES.putAll( System.getProperties() );
-		}
-		catch (SecurityException se) {
-            LOG.unableToCopySystemProperties();
+		    Properties systemProperties = System.getProperties();
+		    // Must be thread-safe in case an application changes System properties during Hibernate initialization.
+		    // See HHH-8383.
+		    synchronized (systemProperties) {
+		    	GLOBAL_PROPERTIES.putAll(systemProperties);
+		    }
+		} catch (SecurityException se) {
+		    LOG.unableToCopySystemProperties();
 		}
 
 		verifyProperties(GLOBAL_PROPERTIES);
 
 		ENABLE_BINARY_STREAMS = ConfigurationHelper.getBoolean(USE_STREAMS_FOR_BINARY, GLOBAL_PROPERTIES);
-        if (ENABLE_BINARY_STREAMS) {
+		if ( ENABLE_BINARY_STREAMS ) {
 			LOG.usingStreams();
 		}
 
 		ENABLE_REFLECTION_OPTIMIZER = ConfigurationHelper.getBoolean(USE_REFLECTION_OPTIMIZER, GLOBAL_PROPERTIES);
-        if (ENABLE_REFLECTION_OPTIMIZER) {
+		if ( ENABLE_REFLECTION_OPTIMIZER ) {
 			LOG.usingReflectionOptimizer();
 		}
 
@@ -262,7 +266,7 @@ public final class Environment implements AvailableSettings {
 
 		long x = 123456789;
 		JVM_HAS_TIMESTAMP_BUG = new Timestamp(x).getTime() != x;
-        if (JVM_HAS_TIMESTAMP_BUG) {
+		if ( JVM_HAS_TIMESTAMP_BUG ) {
 			LOG.usingTimestampWorkaround();
 		}
 	}
@@ -339,7 +343,7 @@ public final class Environment implements AvailableSettings {
 
 	public static BytecodeProvider buildBytecodeProvider(Properties properties) {
 		String provider = ConfigurationHelper.getString( BYTECODE_PROVIDER, properties, "javassist" );
-        LOG.bytecodeProvider(provider);
+		LOG.bytecodeProvider( provider );
 		return buildBytecodeProvider( provider );
 	}
 
@@ -348,7 +352,7 @@ public final class Environment implements AvailableSettings {
 			return new org.hibernate.bytecode.internal.javassist.BytecodeProviderImpl();
 		}
 
-        LOG.unknownBytecodeProvider( providerName );
+		LOG.unknownBytecodeProvider( providerName );
 		return new org.hibernate.bytecode.internal.javassist.BytecodeProviderImpl();
 	}
 }

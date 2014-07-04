@@ -23,6 +23,11 @@
  */
 package org.hibernate.dialect;
 
+import org.hibernate.dialect.pagination.AbstractLimitHandler;
+import org.hibernate.dialect.pagination.LimitHandler;
+import org.hibernate.dialect.pagination.LimitHelper;
+import org.hibernate.engine.spi.RowSelection;
+
 
 /**
  * An SQL dialect for DB2/390. This class provides support for
@@ -31,44 +36,42 @@ package org.hibernate.dialect;
  * @author Kristoffer Dyrkorn
  */
 public class DB2390Dialect extends DB2Dialect {
-
+	@Override
 	public boolean supportsSequences() {
 		return false;
 	}
 
+	@Override
 	public String getIdentitySelectString() {
 		return "select identity_val_local() from sysibm.sysdummy1";
 	}
 
-	public boolean supportsLimit() {
-		return true;
-	}
+	@Override
+    public LimitHandler buildLimitHandler(String sql, RowSelection selection) {
+        return new AbstractLimitHandler(sql, selection) {
+        	@Override
+        	public String getProcessedSql() {
+        		if ( LimitHelper.hasFirstRow(selection) ) {
+        			throw new UnsupportedOperationException( "query result offset is not supported" );
+        		}
+    			return sql + " fetch first ? rows only";
+        	}
 
-	public boolean supportsLimitOffset() {
-		return false;
-	}
+        	@Override
+        	public boolean supportsLimit() {
+        		return true;
+        	}
 
-	public boolean useMaxForLimit() {
-		return true;
-	}
+        	@Override
+        	public boolean useMaxForLimit() {
+        		return true;
+        	}
 
-	public boolean supportsVariableLimit() {
-		return false;
-	}
-
-	public String getLimitString(String sql, int offset, int limit) {
-		if ( offset > 0 ) {
-			throw new UnsupportedOperationException( "query result offset is not supported" );
-		}
-		if ( limit == 0 ) {
-			return sql;
-		}
-		return new StringBuffer( sql.length() + 40 )
-				.append( sql )
-				.append( " fetch first " )
-				.append( limit )
-				.append( " rows only " )
-				.toString();
-	}
+        	@Override
+        	public boolean supportsVariableLimit() {
+        		return false;
+        	}
+        };
+    }
 
 }

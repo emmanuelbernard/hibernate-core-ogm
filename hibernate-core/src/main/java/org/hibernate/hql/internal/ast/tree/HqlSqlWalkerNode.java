@@ -23,9 +23,11 @@
  *
  */
 package org.hibernate.hql.internal.ast.tree;
+
 import org.hibernate.hql.internal.ast.HqlSqlWalker;
 import org.hibernate.hql.internal.ast.util.AliasGenerator;
 import org.hibernate.hql.internal.ast.util.SessionFactoryHelper;
+
 import antlr.ASTFactory;
 
 /**
@@ -40,7 +42,7 @@ public class HqlSqlWalkerNode extends SqlNode implements InitializeableNode {
 	private HqlSqlWalker walker;
 
 	public void initialize(Object param) {
-		walker = ( HqlSqlWalker ) param;
+		walker = (HqlSqlWalker) param;
 	}
 
 	public HqlSqlWalker getWalker() {

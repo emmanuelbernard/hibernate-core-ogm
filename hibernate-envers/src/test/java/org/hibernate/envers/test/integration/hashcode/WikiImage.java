@@ -1,8 +1,10 @@
 package org.hibernate.envers.test.integration.hashcode;
+
 import javax.persistence.Basic;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
+
 import org.hibernate.envers.Audited;
 
 /**
@@ -39,12 +41,18 @@ public class WikiImage {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o) return true;
-		if (!(o instanceof WikiImage)) return false;
+		if ( this == o ) {
+			return true;
+		}
+		if ( !(o instanceof WikiImage) ) {
+			return false;
+		}
 
 		WikiImage wikiImage = (WikiImage) o;
 
-		if (name != null ? !name.equals(wikiImage.name) : wikiImage.name != null) return false;
+		if ( name != null ? !name.equals( wikiImage.name ) : wikiImage.name != null ) {
+			return false;
+		}
 
 		return true;
 	}

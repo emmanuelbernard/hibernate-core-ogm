@@ -27,10 +27,10 @@ package org.hibernate.persister.entity;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.hibernate.engine.spi.Mapping;
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
+import org.hibernate.engine.spi.Mapping;
+import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.sql.Template;
@@ -38,6 +38,7 @@ import org.hibernate.type.AssociationType;
 import org.hibernate.type.CompositeType;
 import org.hibernate.type.EntityType;
 import org.hibernate.type.Type;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -138,8 +139,9 @@ public abstract class AbstractPropertyMapping implements PropertyMapping {
 			String[] formulaTemplates) {
 		// TODO : not quite sure yet of the difference, but this is only needed from annotations for @Id @ManyToOne support
 		if ( typesByPropertyPath.containsKey( path ) ) {
-            LOG.trace("Skipping duplicate registration of path [" + path + "], existing type = [" + typesByPropertyPath.get(path)
-                      + "], incoming type = [" + type + "]");
+			if ( LOG.isTraceEnabled() ) {
+				LOG.tracev( "Skipping duplicate registration of path [{0}], existing type = [{1}], incoming type = [{2}]", path, typesByPropertyPath.get( path ), type );
+			}
 			return;
 		}
 		typesByPropertyPath.put(path, type);
@@ -171,12 +173,13 @@ public abstract class AbstractPropertyMapping implements PropertyMapping {
 			final String[] formulaTemplates,
 			final Mapping factory)
 	throws MappingException {
-
-		if ( columns.length!=type.getColumnSpan(factory) ) {
+		
+		if ( columns.length != type.getColumnSpan(factory) ) {
 			throw new MappingException(
-					"broken column mapping for: " + path +
-					" of: " + getEntityName()
-				);
+					"broken column mapping [" + getEntityName() + '#' + path
+							+ "]; expecting " + columns.length + " columns, but type defined " +
+							type.getColumnSpan(factory)
+			);
 		}
 
 		if ( type.isAssociationType() ) {
@@ -290,11 +293,6 @@ public abstract class AbstractPropertyMapping implements PropertyMapping {
 	}
 
 	private static String extendPath(String path, String property) {
-		if ( path==null || "".equals(path) ) {
-			return property;
-		}
-		else {
-			return StringHelper.qualify(path, property);
-		}
+		return StringHelper.isEmpty( path ) ? property : StringHelper.qualify( path, property );
 	}
 }

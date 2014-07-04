@@ -23,12 +23,12 @@
  */
 package org.hibernate.test.annotations.derivedidentities.e5.b;
 
-import org.hibernate.Session;
-
 import org.junit.Test;
 
-import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.hibernate.Session;
 import org.hibernate.test.util.SchemaUtil;
+import org.hibernate.testing.FailureExpectedWithNewMetamodel;
+import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -36,12 +36,14 @@ import static org.junit.Assert.assertTrue;
 /**
  * @author Emmanuel Bernard
  */
+@FailureExpectedWithNewMetamodel
 public class DerivedIdentityIdClassParentSameIdTypeEmbeddedIdDepTest extends BaseCoreFunctionalTestCase {
 	@Test
 	public void testOneToOneExplicitJoinColumn() throws Exception {
-		assertTrue( SchemaUtil.isColumnPresent( "MedicalHistory", "FK1", configuration() ) );
-		assertTrue( SchemaUtil.isColumnPresent( "MedicalHistory", "FK2", configuration() ) );
-		assertTrue( ! SchemaUtil.isColumnPresent( "MedicalHistory", "firstname", configuration() ) );
+		assertTrue( SchemaUtil.isColumnPresent( "MedicalHistory", "FK1", metadata() ) );
+		assertTrue( SchemaUtil.isColumnPresent( "MedicalHistory", "FK2", metadata() ) );
+		assertTrue( ! SchemaUtil.isColumnPresent( "MedicalHistory", "firstname", metadata() ) );
+
 		Person e = new Person();
 		e.firstName = "Emmanuel";
 		e.lastName = "Bernard";
@@ -63,7 +65,8 @@ public class DerivedIdentityIdClassParentSameIdTypeEmbeddedIdDepTest extends Bas
 	protected Class<?>[] getAnnotatedClasses() {
 		return new Class<?>[] {
 				MedicalHistory.class,
-				Person.class
+				Person.class,
+				PersonId.class
 		};
 	}
 }

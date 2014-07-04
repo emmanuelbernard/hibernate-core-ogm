@@ -30,6 +30,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.dialect.Dialect;
@@ -146,7 +147,7 @@ public class SimpleSelect {
 	}
 
 	public String toStatementString() {
-		StringBuffer buf = new StringBuffer( 
+		StringBuilder buf = new StringBuilder( 
 				columns.size()*10 + 
 				tableName.length() + 
 				whereTokens.size() * 10 + 
@@ -176,7 +177,7 @@ public class SimpleSelect {
 		}
 		
 		buf.append(" from ")
-			.append( dialect.appendLockHint(lockOptions.getLockMode(), tableName) );
+			.append( dialect.appendLockHint(lockOptions, tableName) );
 		
 		if ( whereTokens.size() > 0 ) {
 			buf.append(" where ")
@@ -193,7 +194,7 @@ public class SimpleSelect {
 	}
 
 	public String toWhereClause() {
-		StringBuffer buf = new StringBuffer( whereTokens.size() * 5 );
+		StringBuilder buf = new StringBuilder( whereTokens.size() * 5 );
 		Iterator iter = whereTokens.iterator();
 		while ( iter.hasNext() ) {
 			buf.append( iter.next() );
